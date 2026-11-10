@@ -202,6 +202,9 @@ export function NotebookEditor({ notebookId, onClose }: { notebookId: string; on
     let pinch: { startDist: number; startZoom: number; current: number; midX: number; midY: number } | null = null;
     let inertia: number | null = null;
     let tap: { fingers: number; start: number; travel: number } | null = null;
+    // Where the view was when the current finger gesture began, so a palm that landed just
+    // before the Pencil can be undone (it would otherwise zoom or scroll the page).
+    let before: { zoom: number; left: number; top: number; at: number } | null = null;
 
     const stopInertia = () => {
       if (inertia != null) cancelAnimationFrame(inertia);
@@ -248,16 +251,30 @@ export function NotebookEditor({ notebookId, onClose }: { notebookId: string; on
 
     const onDown = (e: PointerEvent) => {
       if (e.pointerType === 'pen') {
-        // The Pencil wins: drop any scroll a resting palm may have started.
+        // The Pencil wins. Any finger gesture still going (or that started moments ago) was
+        // the palm resting on the screen: cancel it and put the view back.
+        const recent = before && (fingers.size > 0 || performance.now() - before.at < 1500);
         fingers.clear();
         pan = null;
-        endPinch();
         stopInertia();
         tap = null;
+        if (pinch) {
+          pinch = null;
+          const wrap = pagesWrapRef.current;
+          if (wrap) wrap.style.transform = '';
+        }
+        if (recent && before) {
+          if (Math.abs(zoomRef.current - before.zoom) > 0.001) setZoom(before.zoom);
+          el.scrollLeft = before.left;
+          el.scrollTop = before.top;
+        }
+        before = null;
         return;
       }
-      if (e.pointerType !== 'touch' || penActiveWithin(500)) return; // palm while writing
+      // While writing (and for a moment after), touches are the palm: ignore them.
+      if (e.pointerType !== 'touch' || penActiveWithin(1500)) return;
       stopInertia();
+      if (fingers.size === 0) before = { zoom: zoomRef.current, left: el.scrollLeft, top: el.scrollTop, at: performance.now() };
       fingers.set(e.pointerId, { x: e.clientX, y: e.clientY });
       tap = tap ? { ...tap, fingers: Math.max(tap.fingers, fingers.size) } : { fingers: 1, start: performance.now(), travel: 0 };
       if (fingers.size === 1) startPan();
@@ -505,7 +522,14 @@ export function NotebookEditor({ notebookId, onClose }: { notebookId: string; on
         <div className="pages" ref={pagesWrapRef}>
           {pages.map((page, index) => (
             <div key={page.id} className="page-slot">
-              <InkPage page={page} scale={scale} settings={settings} onChange={onChange} onHoverHold={openPalette} />
+              <InkPage
+                page={page}
+                scale={scale}
+                settings={settings}
+                scroller={scrollEl}
+                onChange={onChange}
+                onHoverHold={openPalette}
+              />
               <div className="page-footer">
                 <span>
                   Page {index + 1} of {pages.length}

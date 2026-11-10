@@ -66,17 +66,64 @@ export function drawStroke(ctx: CanvasRenderingContext2D, stroke: Stroke, live =
   ctx.restore();
 }
 
-/** Clears and redraws every stroke. `scale` maps page units to canvas pixels. */
+const boundsCache = new Map<string, [number, number, number, number]>();
+
+function cachedBounds(stroke: Stroke): [number, number, number, number] {
+  let b = boundsCache.get(stroke.id);
+  if (!b) {
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    for (let i = 0; i + 1 < stroke.points.length; i += 3) {
+      const x = stroke.points[i]!;
+      const y = stroke.points[i + 1]!;
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
+    }
+    const pad = stroke.size;
+    b = [minX - pad, minY - pad, maxX + pad, maxY + pad];
+    if (boundsCache.size >= MAX_CACHE) boundsCache.clear();
+    boundsCache.set(stroke.id, b);
+  }
+  return b;
+}
+
+/** The part of the page a canvas shows: page-unit origin and canvas pixels per page unit. */
+export interface CanvasRegion {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  /** Canvas pixels per page unit. */
+  k: number;
+}
+
+/** Sets the transform so drawing in page units lands correctly on a region canvas. */
+export function applyRegion(ctx: CanvasRenderingContext2D, region: CanvasRegion): void {
+  ctx.setTransform(region.k, 0, 0, region.k, -region.x * region.k, -region.y * region.k);
+}
+
+/** Clears and redraws every stroke that intersects the region. */
 export function drawPage(
   ctx: CanvasRenderingContext2D,
   strokes: Stroke[],
-  scale: number,
+  region: CanvasRegion,
   hidden?: ReadonlySet<string>,
 ): void {
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
-  ctx.setTransform(scale, 0, 0, scale, 0, 0);
+  applyRegion(ctx, region);
+  const right = region.x + region.width;
+  const bottom = region.y + region.height;
+  const visible = (s: Stroke) => {
+    if (hidden?.has(s.id)) return false;
+    const [x0, y0, x1, y1] = cachedBounds(s);
+    return x1 >= region.x && x0 <= right && y1 >= region.y && y0 <= bottom;
+  };
   // Highlighter first so it sits behind ink, like a real highlighter.
-  for (const s of strokes) if (s.tool === 'highlighter' && !hidden?.has(s.id)) drawStroke(ctx, s);
-  for (const s of strokes) if (s.tool !== 'highlighter' && !hidden?.has(s.id)) drawStroke(ctx, s);
+  for (const s of strokes) if (s.tool === 'highlighter' && visible(s)) drawStroke(ctx, s);
+  for (const s of strokes) if (s.tool !== 'highlighter' && visible(s)) drawStroke(ctx, s);
 }

@@ -12,6 +12,12 @@ for (const type of ['gesturestart', 'gesturechange', 'gestureend']) {
   document.addEventListener(type, (e) => e.preventDefault(), { passive: false });
 }
 
+// No text selection outside form fields: a selection loupe can grab the Pencil mid-stroke.
+document.addEventListener('selectstart', (e) => {
+  const target = e.target as HTMLElement | null;
+  if (!target?.closest?.('input, textarea, [contenteditable]')) e.preventDefault();
+});
+
 function start(): void {
   // Opened inside the Noteboard Shell's sign-in sheet: pass Google's answer back to the app.
   if (bounceToShellApp()) return;

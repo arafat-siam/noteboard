@@ -35,6 +35,17 @@
 
 * {
   box-sizing: border-box;
+  /* App UI, not a document: no text selection, loupe or callout that can steal the Pencil. */
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+}
+input,
+textarea,
+[contenteditable] {
+  -webkit-user-select: text;
+  user-select: text;
 }
 
 html {
@@ -709,10 +720,13 @@ button.link.muted {
 }
 .ink-layer {
   position: absolute;
-  inset: 0;
+  left: 0;
+  top: 0;
+  pointer-events: none;
 }
-.ink-input {
+.ink-page {
   cursor: crosshair;
+  touch-action: none;
 }
 .page-footer {
   display: flex;

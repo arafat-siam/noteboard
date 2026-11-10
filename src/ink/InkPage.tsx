@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { newId, type Page, type Stroke } from '../model/types';
-import { drawPage, drawStroke } from './render';
+import { applyRegion, drawPage, drawStroke, type CanvasRegion } from './render';
 import { recognizeShape } from './shapes';
 import {
   boundsOf,
@@ -15,7 +15,7 @@ import {
   type Rect,
 } from './geometry';
 import { templateStyle } from './templates';
-import { notePen } from './penState';
+import { notePen, penActiveWithin } from './penState';
 import { diagnostics, recordEvent, recordFrame } from './diagnostics';
 
 export type ToolKind = 'pen' | 'highlighter' | 'eraser' | 'lasso';
@@ -38,6 +38,8 @@ interface Props {
   /** CSS pixels per page unit. */
   scale: number;
   settings: ToolSettings;
+  /** The scrolling element; canvases cover only the part of the page visible in it. */
+  scroller: HTMLElement | null;
   onChange: (pageId: string, added: Stroke[], removedIds: string[]) => void;
   /** Pencil hovered still above the page (client coordinates). */
   onHoverHold?: (clientX: number, clientY: number) => void;
@@ -46,7 +48,7 @@ interface Props {
 interface Gesture {
   pointerId: number;
   kind: 'ink' | 'erase' | 'lasso' | 'move';
-  /** Canvas position at gesture start; reading layout on every sample would stall the pen. */
+  /** Page position on screen at gesture start; reading layout on every sample would stall the pen. */
   origin: { left: number; top: number };
   points: number[];
   hasPressure: boolean;
@@ -70,16 +72,24 @@ interface Selection {
 }
 
 const HOLD_TO_SNAP_MS = 500;
-const HOVER_HOLD_MS = 650;
-/** iPad Safari refuses canvases above ~16.7M pixels; stay well under. */
-const MAX_CANVAS_PIXELS = 12_000_000;
+const HOVER_HOLD_MS = 900;
+/** Extra area rendered around the visible part, so small scrolls need no redraw. */
+const VIEW_MARGIN = 0.3;
+/** iPad Safari refuses canvases above ~16.7M pixels; stay well under per canvas. */
+const MAX_CANVAS_PIXELS = 10_000_000;
 
 function getLiveContext(canvas: HTMLCanvasElement | null): CanvasRenderingContext2D | null {
   // `desynchronized` lets browsers that support it skip the compositor for lower latency.
   return canvas?.getContext('2d', { desynchronized: true }) as CanvasRenderingContext2D | null;
 }
 
-export function InkPage({ page, scale, settings, onChange, onHoverHold }: Props) {
+const contains = (outer: Rect, inner: Rect) =>
+  inner.x >= outer.x - 0.5 &&
+  inner.y >= outer.y - 0.5 &&
+  inner.x + inner.width <= outer.x + outer.width + 0.5 &&
+  inner.y + inner.height <= outer.y + outer.height + 0.5;
+
+export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const inkRef = useRef<HTMLCanvasElement>(null);
   const liveRef = useRef<HTMLCanvasElement>(null);
@@ -88,78 +98,143 @@ export function InkPage({ page, scale, settings, onChange, onHoverHold }: Props)
   const frameRef = useRef<number | null>(null);
   const cursorRef = useRef<HTMLDivElement>(null);
   const hoverRef = useRef<{ x: number; y: number; timer: number | null } | null>(null);
-  /** What is currently painted on the ink canvas, to avoid needless full redraws. */
-  const paintedRef = useRef<{ canvas: HTMLCanvasElement | null; scale: number; ids: Set<string> }>({
-    canvas: null,
-    scale: 0,
-    ids: new Set(),
-  });
-  const [nearViewport, setNearViewport] = useState(false);
+  /** Which part of the page the canvases currently show, at what resolution. */
+  const regionRef = useRef<CanvasRegion | null>(null);
+  /** What is painted on the ink canvas, to skip needless full redraws. */
+  const paintedRef = useRef<{ region: CanvasRegion | null; ids: Set<string> }>({ region: null, ids: new Set() });
+  const strokesRef = useRef(page.strokes);
+  strokesRef.current = page.strokes;
   const [selection, setSelection] = useState<Selection | null>(null);
 
   const cssWidth = page.width * scale;
   const cssHeight = page.height * scale;
   const dpr = typeof window === 'undefined' ? 1 : window.devicePixelRatio || 1;
-  const pixelScale = Math.min(scale * dpr, Math.sqrt(MAX_CANVAS_PIXELS / (page.width * page.height)));
-  const pixelWidth = Math.round(page.width * pixelScale);
-  const pixelHeight = Math.round(page.height * pixelScale);
   diagnostics.devicePixelRatio = dpr;
 
-  // Only pages near the viewport keep canvases alive (iPad Safari has a tight canvas memory budget).
-  useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-    const observer = new IntersectionObserver(([entry]) => setNearViewport(!!entry?.isIntersecting), {
-      rootMargin: '60% 0px',
-    });
-    observer.observe(el);
-    return () => observer.disconnect();
+  // ---- Rendering ---------------------------------------------------------------------------
+  const paintInk = useCallback((force = false) => {
+    const canvas = inkRef.current;
+    const region = regionRef.current;
+    const ctx = canvas?.getContext('2d');
+    if (!canvas || !ctx || !region) return;
+    const strokes = strokesRef.current;
+    const hidden = hiddenRef.current;
+    const painted = paintedRef.current;
+    // Fast path: a committed stroke was already painted, so the saved page coming back from
+    // the database needs no repaint.
+    const unchanged =
+      !force &&
+      painted.region === region &&
+      hidden.size === 0 &&
+      painted.ids.size === strokes.length &&
+      strokes.every((s) => painted.ids.has(s.id));
+    if (unchanged) return;
+    drawPage(ctx, strokes, region, hidden);
+    paintedRef.current = {
+      region,
+      ids: hidden.size ? new Set() : new Set(strokes.map((s) => s.id)),
+    };
   }, []);
 
-  const redrawInk = useCallback(
+  /** Sizes the canvases to the visible part of the page (+ margin) at full screen sharpness. */
+  const layout = useCallback(
     (force = false) => {
-      const canvas = inkRef.current;
-      const ctx = canvas?.getContext('2d');
-      if (!canvas || !ctx) return;
-      const painted = paintedRef.current;
-      const hidden = hiddenRef.current;
-      // Fast path: after a stroke is committed we already painted it, so the saved page
-      // coming back from the database needs no repaint.
-      const unchanged =
-        !force &&
-        painted.canvas === canvas &&
-        painted.scale === pixelScale &&
-        hidden.size === 0 &&
-        painted.ids.size === page.strokes.length &&
-        page.strokes.every((s) => painted.ids.has(s.id));
-      if (unchanged) return;
-      drawPage(ctx, page.strokes, pixelScale, hidden);
-      paintedRef.current = {
-        canvas,
-        scale: pixelScale,
-        ids: new Set(page.strokes.filter((s) => !hidden.has(s.id)).map((s) => s.id)),
-      };
-      if (hidden.size) paintedRef.current.ids = new Set(); // force a full repaint once hidden strokes return
-      diagnostics.canvasPixels = canvas.width * canvas.height;
+      const container = containerRef.current;
+      if (!container || !scroller) return;
+      const pr = container.getBoundingClientRect();
+      const sr = scroller.getBoundingClientRect();
+      const toPage = (left: number, top: number, right: number, bottom: number): Rect => ({
+        x: (left - pr.left) / scale,
+        y: (top - pr.top) / scale,
+        width: (right - left) / scale,
+        height: (bottom - top) / scale,
+      });
+      const visibleLeft = Math.max(pr.left, sr.left);
+      const visibleRight = Math.min(pr.right, sr.right);
+      const visibleTop = Math.max(pr.top, sr.top);
+      const visibleBottom = Math.min(pr.bottom, sr.bottom);
+      const mx = sr.width * VIEW_MARGIN;
+      const my = sr.height * VIEW_MARGIN;
+      const left = Math.max(pr.left, sr.left - mx);
+      const right = Math.min(pr.right, sr.right + mx);
+      const top = Math.max(pr.top, sr.top - my);
+      const bottom = Math.min(pr.bottom, sr.bottom + my);
+
+      const canvases = [inkRef.current, liveRef.current].filter((c): c is HTMLCanvasElement => !!c);
+      if (right <= left || bottom <= top) {
+        // Far from view: free the canvas memory.
+        if (regionRef.current) {
+          for (const c of canvases) c.width = c.height = 0;
+          regionRef.current = null;
+          paintedRef.current = { region: null, ids: new Set() };
+        }
+        return;
+      }
+
+      const needed = toPage(left, top, right, bottom);
+      const want = scale * dpr;
+      const k = Math.min(want, Math.sqrt(MAX_CANVAS_PIXELS / (needed.width * needed.height)));
+      const current = regionRef.current;
+      const visible =
+        visibleRight > visibleLeft && visibleBottom > visibleTop
+          ? toPage(visibleLeft, visibleTop, visibleRight, visibleBottom)
+          : needed;
+      if (!force && current && Math.abs(current.k - k) < 1e-6 && contains(current, visible)) return;
+
+      const region: CanvasRegion = { ...needed, k };
+      regionRef.current = region;
+      const pixelWidth = Math.max(1, Math.ceil(region.width * k));
+      const pixelHeight = Math.max(1, Math.ceil(region.height * k));
+      for (const c of canvases) {
+        c.width = pixelWidth;
+        c.height = pixelHeight;
+        c.style.left = `${region.x * scale}px`;
+        c.style.top = `${region.y * scale}px`;
+        c.style.width = `${(pixelWidth / k) * scale}px`;
+        c.style.height = `${(pixelHeight / k) * scale}px`;
+      }
+      diagnostics.canvasPixels = pixelWidth * pixelHeight;
+      paintInk(true);
     },
-    [page.strokes, pixelScale],
+    [scroller, scale, dpr, paintInk],
   );
 
+  // Re-layout when zoom changes (before paint, so nothing flashes) …
+  useLayoutEffect(() => {
+    layout(true);
+  }, [layout]);
+
+  // … and when scrolling or resizing.
+  useEffect(() => {
+    if (!scroller) return;
+    let raf: number | null = null;
+    const onScroll = () => {
+      if (raf == null) {
+        raf = requestAnimationFrame(() => {
+          raf = null;
+          if (!gestureRef.current) layout();
+        });
+      }
+    };
+    scroller.addEventListener('scroll', onScroll, { passive: true });
+    const observer = new ResizeObserver(() => layout());
+    observer.observe(scroller);
+    return () => {
+      scroller.removeEventListener('scroll', onScroll);
+      observer.disconnect();
+      if (raf != null) cancelAnimationFrame(raf);
+    };
+  }, [scroller, layout]);
+
+  // New strokes from the database (or undo, sync…).
   useEffect(() => {
     if (!gestureRef.current && hiddenRef.current.size) {
       hiddenRef.current = new Set();
-      redrawInk(true);
+      paintInk(true);
     } else {
-      redrawInk();
+      paintInk();
     }
-  }, [redrawInk, nearViewport]);
-
-  // Release canvas memory when scrolled away.
-  useEffect(() => {
-    if (nearViewport) return;
-    for (const c of [inkRef.current, liveRef.current]) if (c) c.width = c.height = 0;
-    paintedRef.current = { canvas: null, scale: 0, ids: new Set() };
-  }, [nearViewport]);
+  }, [page.strokes, paintInk]);
 
   useEffect(() => {
     if (settings.tool !== 'lasso') setSelection(null);
@@ -200,24 +275,26 @@ export function InkPage({ page, scale, settings, onChange, onHoverHold }: Props)
   };
 
   const clearLive = (ctx: CanvasRenderingContext2D, area: Rect | null) => {
+    const region = regionRef.current;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-    if (!area) {
+    if (!area || !region) {
       ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
       return;
     }
     ctx.clearRect(
-      Math.floor(area.x * pixelScale) - 2,
-      Math.floor(area.y * pixelScale) - 2,
-      Math.ceil(area.width * pixelScale) + 4,
-      Math.ceil(area.height * pixelScale) + 4,
+      Math.floor((area.x - region.x) * region.k) - 2,
+      Math.floor((area.y - region.y) * region.k) - 2,
+      Math.ceil(area.width * region.k) + 4,
+      Math.ceil(area.height * region.k) + 4,
     );
   };
 
   const renderLive = () => {
     frameRef.current = null;
     const g = gestureRef.current;
+    const region = regionRef.current;
     const ctx = getLiveContext(liveRef.current);
-    if (!ctx) return;
+    if (!ctx || !region) return;
     if (!g) {
       clearLive(ctx, null);
       return;
@@ -245,7 +322,7 @@ export function InkPage({ page, scale, settings, onChange, onHoverHold }: Props)
       if (g.needsDraw) {
         const start = performance.now();
         clearLive(ctx, g.dirty);
-        ctx.setTransform(pixelScale, 0, 0, pixelScale, 0, 0);
+        applyRegion(ctx, region);
         drawStroke(ctx, liveStroke(g, true), true);
         g.needsDraw = false;
         if (diagnostics.enabled) recordFrame(performance.now() - start, performance.now() - g.lastSampleAt);
@@ -256,7 +333,7 @@ export function InkPage({ page, scale, settings, onChange, onHoverHold }: Props)
     }
 
     clearLive(ctx, null);
-    ctx.setTransform(pixelScale, 0, 0, pixelScale, 0, 0);
+    applyRegion(ctx, region);
     if (g.kind === 'lasso' && g.lasso.length > 1) {
       ctx.setLineDash([6 / scale, 5 / scale]);
       ctx.lineWidth = 1.5 / scale;
@@ -285,7 +362,7 @@ export function InkPage({ page, scale, settings, onChange, onHoverHold }: Props)
         changed = true;
       }
     }
-    if (changed) redrawInk(true);
+    if (changed) paintInk(true);
   };
 
   // ---- Pencil hover (iPad Pro with Apple Pencil 2 / Pro) --------------------------------
@@ -295,7 +372,7 @@ export function InkPage({ page, scale, settings, onChange, onHoverHold }: Props)
     if (cursorRef.current) cursorRef.current.style.display = 'none';
   };
 
-  const onHover = (e: React.PointerEvent<HTMLCanvasElement>) => {
+  const onHover = (e: React.PointerEvent<HTMLDivElement>) => {
     const cursor = cursorRef.current;
     const box = containerRef.current?.getBoundingClientRect();
     if (!cursor || !box) return;
@@ -309,14 +386,15 @@ export function InkPage({ page, scale, settings, onChange, onHoverHold }: Props)
         : tool === 'highlighter'
           ? settings.highlighterSize * scale
           : Math.max(4, settings.penSize * scale);
-    cursor.style.display = 'block';
-    cursor.className = 'hover-cursor ' + tool;
-    cursor.style.width = cursor.style.height = size + 'px';
-    cursor.style.transform = 'translate(' + (x - size / 2) + 'px, ' + (y - size / 2) + 'px)';
+    cursor.style.display = tool === 'lasso' ? 'none' : 'block';
+    cursor.className = `hover-cursor ${tool}`;
+    cursor.style.width = cursor.style.height = `${size}px`;
+    cursor.style.transform = `translate(${x - size / 2}px, ${y - size / 2}px)`;
     cursor.style.background =
-      tool === 'pen' ? settings.color : tool === 'highlighter' ? settings.highlighterColor + '80' : 'transparent';
+      tool === 'pen' ? settings.color : tool === 'highlighter' ? `${settings.highlighterColor}80` : 'transparent';
 
-    if (!settings.hoverPalette || !onHoverHold) return;
+    // Hover-hold palette, but never right after writing (pausing between words isn't a request).
+    if (!settings.hoverPalette || !onHoverHold || penActiveWithin(1200)) return;
     const h = hoverRef.current;
     if (!h || Math.hypot(e.clientX - h.x, e.clientY - h.y) > 6) {
       if (h?.timer != null) clearTimeout(h.timer);
@@ -334,7 +412,9 @@ export function InkPage({ page, scale, settings, onChange, onHoverHold }: Props)
 
   useEffect(() => endHover, []);
 
-  const onPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
+  // ---- Pointer input (on the page itself; canvases only display) --------------------------
+  const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if ((e.target as Element).closest('button')) return; // selection menu buttons
     endHover();
     const native = e.nativeEvent;
     if (diagnostics.enabled) {
@@ -346,16 +426,16 @@ export function InkPage({ page, scale, settings, onChange, onHoverHold }: Props)
     // Fingers scroll/zoom (handled by the editor) unless finger drawing is on.
     if (e.pointerType === 'touch' && !settings.fingerDraws) return;
     if (e.pointerType === 'mouse' && e.button !== 0) return;
-    if (gestureRef.current) return;
+    if (gestureRef.current || !regionRef.current) return;
     e.preventDefault();
     e.stopPropagation();
     try {
-      liveRef.current?.setPointerCapture(e.pointerId);
+      containerRef.current?.setPointerCapture(e.pointerId);
     } catch {
       // Capture is an optimisation (keeps strokes going past the page edge); never let it block ink.
     }
 
-    const rect = liveRef.current!.getBoundingClientRect();
+    const rect = containerRef.current!.getBoundingClientRect();
     const origin = { left: rect.left, top: rect.top };
     const p = { x: (e.clientX - origin.left) / scale, y: (e.clientY - origin.top) / scale };
     const g: Gesture = {
@@ -382,7 +462,7 @@ export function InkPage({ page, scale, settings, onChange, onHoverHold }: Props)
       if (selection && rectContains(selection.bounds, p)) {
         g.kind = 'move';
         for (const id of selection.ids) hiddenRef.current.add(id);
-        redrawInk(true);
+        paintInk(true);
       } else {
         setSelection(null);
         g.kind = 'lasso';
@@ -395,7 +475,7 @@ export function InkPage({ page, scale, settings, onChange, onHoverHold }: Props)
     requestRender();
   };
 
-  const onPointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+  const onPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
     const g = gestureRef.current;
     if (diagnostics.enabled && e.pointerType === 'pen') {
       const n = e.nativeEvent as PointerEvent & { altitudeAngle?: number; azimuthAngle?: number };
@@ -403,8 +483,8 @@ export function InkPage({ page, scale, settings, onChange, onHoverHold }: Props)
       const deg = (r: number) => Math.round((r * 180) / Math.PI);
       diagnostics.tilt =
         n.altitudeAngle != null
-          ? 'altitude ' + deg(n.altitudeAngle) + '° azimuth ' + deg(n.azimuthAngle ?? 0) + '°'
-          : 'x ' + e.tiltX + ' y ' + e.tiltY;
+          ? `altitude ${deg(n.altitudeAngle)}° azimuth ${deg(n.azimuthAngle ?? 0)}°`
+          : `x ${e.tiltX} y ${e.tiltY}`;
       diagnostics.twist = e.twist;
     }
     if (!g && e.pointerType === 'pen' && e.buttons === 0) {
@@ -461,7 +541,7 @@ export function InkPage({ page, scale, settings, onChange, onHoverHold }: Props)
     requestRender();
   };
 
-  const finish = (e: React.PointerEvent<HTMLCanvasElement>, cancelled: boolean) => {
+  const finish = (e: React.PointerEvent<HTMLDivElement>, cancelled: boolean) => {
     if (e.pointerType === 'pen') notePen(false);
     const g = gestureRef.current;
     if (!g || g.pointerId !== e.pointerId) return;
@@ -476,8 +556,9 @@ export function InkPage({ page, scale, settings, onChange, onHoverHold }: Props)
           if (g.points.length === 3) g.points.push(g.points[0]! + 0.1, g.points[1]! + 0.1, g.points[2]!); // a dot
           const stroke = { ...liveStroke(g, false), id: newId() };
           const ctx = inkRef.current?.getContext('2d');
-          if (ctx) {
-            ctx.setTransform(pixelScale, 0, 0, pixelScale, 0, 0);
+          const region = regionRef.current;
+          if (ctx && region) {
+            applyRegion(ctx, region);
             drawStroke(ctx, stroke); // show immediately; the saved page won't need a repaint
             paintedRef.current.ids.add(stroke.id);
           }
@@ -498,7 +579,7 @@ export function InkPage({ page, scale, settings, onChange, onHoverHold }: Props)
           const { x: dx, y: dy } = g.offset;
           if (Math.hypot(dx, dy) < 0.5) {
             hiddenRef.current = new Set();
-            redrawInk(true);
+            paintInk(true);
             break;
           }
           const moved = page.strokes
@@ -514,7 +595,7 @@ export function InkPage({ page, scale, settings, onChange, onHoverHold }: Props)
       }
     } else if (g.erased.size || g.kind === 'move') {
       hiddenRef.current = new Set();
-      redrawInk(true);
+      paintInk(true);
     }
     requestRender(); // clears the live layer
   };
@@ -543,31 +624,15 @@ export function InkPage({ page, scale, settings, onChange, onHoverHold }: Props)
       ref={containerRef}
       className="ink-page"
       style={{ width: cssWidth, height: cssHeight, ...templateStyle(page.template, scale) }}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={(e) => finish(e, false)}
+      onPointerCancel={(e) => finish(e, true)}
+      onPointerLeave={endHover}
+      onContextMenu={(e) => e.preventDefault()}
     >
-      {nearViewport && (
-        <>
-          <canvas
-            ref={inkRef}
-            className="ink-layer"
-            width={pixelWidth}
-            height={pixelHeight}
-            style={{ width: cssWidth, height: cssHeight }}
-          />
-          <canvas
-            ref={liveRef}
-            className="ink-layer ink-input"
-            width={pixelWidth}
-            height={pixelHeight}
-            style={{ width: cssWidth, height: cssHeight }}
-            onPointerDown={onPointerDown}
-            onPointerMove={onPointerMove}
-            onPointerUp={(e) => finish(e, false)}
-            onPointerCancel={(e) => finish(e, true)}
-            onPointerLeave={endHover}
-            onContextMenu={(e) => e.preventDefault()}
-          />
-        </>
-      )}
+      <canvas ref={inkRef} className="ink-layer" width={0} height={0} />
+      <canvas ref={liveRef} className="ink-layer ink-input" width={0} height={0} />
       <div ref={cursorRef} className="hover-cursor" style={{ display: 'none' }} />
       {selection && (
         <div

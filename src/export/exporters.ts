@@ -99,7 +99,7 @@ export async function exportPagePng(page: Page, pixelScale = 2): Promise<Blob> {
   const ink = document.createElement('canvas');
   ink.width = canvas.width;
   ink.height = canvas.height;
-  drawPage(ink.getContext('2d')!, page.strokes, pixelScale);
+  drawPage(ink.getContext('2d')!, page.strokes, { x: 0, y: 0, width: page.width, height: page.height, k: pixelScale });
   ctx.drawImage(ink, 0, 0);
   return new Promise((resolve, reject) =>
     canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('Could not create image.'))), 'image/png'),

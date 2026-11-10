@@ -39,6 +39,8 @@ export class SyncEngine {
   private again = false;
   private timer: ReturnType<typeof setTimeout> | null = null;
   private lastSyncedAt: number | null = null;
+  /** While this returns true (e.g. the user is writing), syncing waits so it never steals frames. */
+  private busy: () => boolean = () => false;
 
   constructor(private readonly db: NoteboardDB) {
     this.status = this.restingStatus();
@@ -84,11 +86,19 @@ export class SyncEngine {
     };
   }
 
+  deferWhile(busy: () => boolean): void {
+    this.busy = busy;
+  }
+
   /** Call after any local edit; batches rapid edits into one sync. */
   syncSoon(delay = AUTO_SYNC_DELAY_MS): void {
     if (this.timer) clearTimeout(this.timer);
     this.timer = setTimeout(() => {
       this.timer = null;
+      if (this.busy()) {
+        this.syncSoon(1_500);
+        return;
+      }
       void this.syncNow();
     }, delay);
   }
