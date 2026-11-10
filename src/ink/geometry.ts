@@ -124,3 +124,17 @@ export function scaleStroke(stroke: Stroke, anchor: Point, factor: number, id: s
 export function recolorStroke(stroke: Stroke, color: string, id: string): Stroke {
   return { ...stroke, id, color };
 }
+
+/** Rotates a stroke about `center` by `angle` radians. */
+export function rotateStroke(stroke: Stroke, center: Point, angle: number, id: string): Stroke {
+  const cos = Math.cos(angle);
+  const sin = Math.sin(angle);
+  const points = stroke.points.slice();
+  for (let i = 0; i + 1 < points.length; i += 3) {
+    const dx = points[i]! - center.x;
+    const dy = points[i + 1]! - center.y;
+    points[i] = center.x + dx * cos - dy * sin;
+    points[i + 1] = center.y + dx * sin + dy * cos;
+  }
+  return { ...stroke, id, points };
+}

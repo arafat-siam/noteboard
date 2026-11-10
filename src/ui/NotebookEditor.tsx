@@ -15,7 +15,8 @@ import { Modal, PromptDialog } from './Dialogs';
 import { SyncBadge } from './SyncBadge';
 import { QuickPalette } from './QuickPalette';
 import { ToolPalette } from './ToolPalette';
-import { HIGHLIGHTER_COLORS, PEN_COLORS } from '../ink/palette';
+import { DEFAULT_SLOTS, PEN_COLORS, type PenSlot } from '../ink/palette';
+import { newId as makeId } from '../model/types';
 
 interface Op {
   pageId: string;
@@ -24,23 +25,43 @@ interface Op {
 }
 
 
-const DEFAULT_SETTINGS: ToolSettings = {
-  tool: 'pen',
-  color: PEN_COLORS[0]!,
-  highlighterColor: HIGHLIGHTER_COLORS[0]!,
-  penSize: 2.5,
-  highlighterSize: 20,
-  eraserSize: 18,
-  penBrush: 'fountain',
-  eraserMode: 'stroke',
-  shapeSnap: true,
-  fingerDraws: false,
-  hoverPalette: true,
-};
+/** Puts a pen from the tray in hand: the drawing fields mirror the chosen slot. */
+function withSlot(s: ToolSettings, id: string): ToolSettings {
+  const slot = s.slots.find((x) => x.id === id) ?? s.slots[0];
+  if (!slot) return s;
+  return slot.kind === 'pen'
+    ? { ...s, activeSlot: slot.id, tool: 'pen', color: slot.color, penSize: slot.size, penBrush: slot.brush }
+    : { ...s, activeSlot: slot.id, tool: 'highlighter', highlighterColor: slot.color, highlighterSize: slot.size };
+}
+
+const DEFAULT_SETTINGS: ToolSettings = withSlot(
+  {
+    tool: 'pen',
+    color: PEN_COLORS[0]!,
+    highlighterColor: '#ffe14d',
+    penSize: 2.5,
+    highlighterSize: 20,
+    eraserSize: 18,
+    penBrush: 'fountain',
+    eraserMode: 'stroke',
+    shapeSnap: true,
+    fingerDraws: false,
+    hoverPalette: true,
+    slots: DEFAULT_SLOTS,
+    activeSlot: DEFAULT_SLOTS[0]!.id,
+  },
+  DEFAULT_SLOTS[0]!.id,
+);
 
 function loadSettings(): ToolSettings {
   try {
-    return { ...DEFAULT_SETTINGS, ...(JSON.parse(localStorage.getItem('noteboard.tools') ?? '{}') as Partial<ToolSettings>) };
+    const saved = JSON.parse(localStorage.getItem('noteboard.tools') ?? '{}') as Partial<ToolSettings>;
+    const merged = { ...DEFAULT_SETTINGS, ...saved };
+    if (!Array.isArray(saved.slots) || !saved.slots.length) merged.slots = DEFAULT_SLOTS;
+    // Keep using the eraser/lasso if that was in hand; otherwise restore the pen in hand.
+    return merged.tool === 'eraser' || merged.tool === 'lasso'
+      ? { ...withSlot(merged, merged.activeSlot), tool: merged.tool }
+      : withSlot(merged, merged.activeSlot);
   } catch {
     return DEFAULT_SETTINGS;
   }
@@ -87,9 +108,36 @@ export function NotebookEditor({ notebookId, onClose }: { notebookId: string; on
 
   const update = (patch: Partial<ToolSettings>) => setSettings((s) => ({ ...s, ...patch }));
   const selectTool = useCallback((tool: ToolKind) => {
+    if (tool === 'pen' || tool === 'highlighter') {
+      setSettings((s) => withSlot(s, s.slots.find((x) => x.kind === tool)?.id ?? s.activeSlot));
+      return;
+    }
+    setSettings((s) => ({ ...s, tool }));
+  }, []);
+  const selectSlot = useCallback((id: string) => setSettings((s) => withSlot(s, id)), []);
+  const updateSlot = useCallback(
+    (patch: Partial<PenSlot>) =>
+      setSettings((s) => withSlot({ ...s, slots: s.slots.map((x) => (x.id === s.activeSlot ? { ...x, ...patch } : x)) }, s.activeSlot)),
+    [],
+  );
+  const addSlot = useCallback(() => {
+    // A new pen starts as a copy of the one in hand, ready for a different colour or size.
+    const id = makeId();
     setSettings((s) => {
-      if (s.tool !== tool) previousTool.current = s.tool;
-      return { ...s, tool };
+      const base = s.slots.find((x) => x.id === s.activeSlot) ?? DEFAULT_SLOTS[0]!;
+      const index = s.slots.findIndex((x) => x.id === base.id);
+      const slots = [...s.slots];
+      slots.splice(index + 1, 0, { ...base, id });
+      return withSlot({ ...s, slots }, id);
+    });
+  }, []);
+  const removeSlot = useCallback((id: string) => {
+    setSettings((s) => {
+      if (s.slots.length <= 1) return s;
+      const index = s.slots.findIndex((x) => x.id === id);
+      const slots = s.slots.filter((x) => x.id !== id);
+      const next = slots[Math.max(0, index - 1)]!;
+      return withSlot({ ...s, slots }, next.id);
     });
   }, []);
 
@@ -175,8 +223,13 @@ export function NotebookEditor({ notebookId, onClose }: { notebookId: string; on
       if (gesture === 'doubleTap') {
         // Like Apple Notes: double-tap flips between the current tool and the eraser.
         const current = settingsRef.current.tool;
-        if (current === 'eraser') selectTool(previousTool.current === 'eraser' ? 'pen' : previousTool.current);
-        else selectTool('eraser');
+        if (current === 'eraser') {
+          if (previousTool.current === 'lasso') selectTool('lasso');
+          else selectSlot(settingsRef.current.activeSlot);
+        } else {
+          previousTool.current = current;
+          selectTool('eraser');
+        }
       } else {
         // Squeeze (Pencil Pro): open the quick palette right under the Pencil tip.
         setPalette(point ?? { x: window.innerWidth / 2, y: window.innerHeight / 2 });
@@ -186,7 +239,7 @@ export function NotebookEditor({ notebookId, onClose }: { notebookId: string; on
       window.removeEventListener('keydown', onKey);
       offPencil();
     };
-  }, [undo, redo, selectTool]);
+  }, [undo, redo, selectTool, selectSlot]);
 
   // ---- Fingers: scroll with momentum, pinch to zoom, two/three-finger tap = undo/redo -------
   // The page area has `touch-action: none`, so Safari can never turn a Pencil stroke into a
@@ -427,6 +480,10 @@ export function NotebookEditor({ notebookId, onClose }: { notebookId: string; on
         settings={settings}
         update={update}
         selectTool={selectTool}
+        selectSlot={selectSlot}
+        updateSlot={updateSlot}
+        addSlot={addSlot}
+        removeSlot={removeSlot}
         undo={undo}
         redo={redo}
         canUndo={undoStack.length > 0}
@@ -444,6 +501,7 @@ export function NotebookEditor({ notebookId, onClose }: { notebookId: string; on
                 scroller={scrollEl}
                 onChange={onChange}
                 onHoverHold={openPalette}
+                onRequestSelect={() => selectTool('lasso')}
               />
               <div className="page-footer">
                 <span>
@@ -511,13 +569,10 @@ export function NotebookEditor({ notebookId, onClose }: { notebookId: string; on
           x={palette.x}
           y={palette.y}
           settings={settings}
-          penColors={PEN_COLORS}
-          highlighterColors={HIGHLIGHTER_COLORS}
-          onSelect={(patch) => {
-            if (patch.tool) selectTool(patch.tool);
-            const { tool: _tool, ...rest } = patch;
-            if (Object.keys(rest).length) update(rest);
-          }}
+          selectSlot={selectSlot}
+          selectTool={selectTool}
+          undo={undo}
+          redo={redo}
           onClose={closePalette}
         />
       )}

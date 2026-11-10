@@ -4,3 +4,24 @@ export const HIGHLIGHTER_COLORS = ['#ffe14d', '#7cf29c', '#7cd4ff', '#ff9ad5', '
 export const PEN_SIZE_RANGE = { min: 0.8, max: 12, step: 0.1 };
 export const HIGHLIGHTER_SIZE_RANGE = { min: 6, max: 40, step: 1 };
 export const ERASER_SIZE_RANGE = { min: 4, max: 60, step: 1 };
+
+import type { BrushKind } from './brushes';
+
+/** One pen in the user's tray. Several can share a type with different colours or sizes. */
+export interface PenSlot {
+  id: string;
+  kind: 'pen' | 'highlighter';
+  brush: BrushKind;
+  color: string;
+  size: number;
+}
+
+export const DEFAULT_SLOTS: PenSlot[] = [
+  { id: 'slot-fountain', kind: 'pen', brush: 'fountain', color: '#1c1c1e', size: 2.5 },
+  { id: 'slot-ballpoint', kind: 'pen', brush: 'ballpoint', color: '#2f6fde', size: 2 },
+  { id: 'slot-pencil', kind: 'pen', brush: 'pencil', color: '#3a3a3c', size: 2.5 },
+  { id: 'slot-brush', kind: 'pen', brush: 'brush', color: '#d93025', size: 5 },
+  { id: 'slot-highlighter', kind: 'highlighter', brush: 'fountain', color: '#ffe14d', size: 20 },
+];
+
+export const MAX_SLOTS = 12;

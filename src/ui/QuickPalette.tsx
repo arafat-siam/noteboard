@@ -1,45 +1,44 @@
 import { useEffect, useRef } from 'react';
-import type { ToolKind, ToolSettings } from '../ink/InkPage';
+import type { ToolSettings } from '../ink/InkPage';
+import { BRUSHES } from '../ink/brushes';
+import { PenIcon } from './PenIcon';
+import { slotIcon } from './ToolPalette';
 
 interface Props {
   x: number;
   y: number;
   settings: ToolSettings;
-  penColors: string[];
-  highlighterColors: string[];
-  onSelect: (patch: Partial<ToolSettings>) => void;
+  selectSlot: (id: string) => void;
+  selectTool: (tool: 'eraser' | 'lasso') => void;
+  undo: () => void;
+  redo: () => void;
   onClose: () => void;
 }
 
-const TOOLS: [ToolKind, string, string][] = [
-  ['pen', '✒️', 'Pen'],
-  ['highlighter', '🖍️', 'Highlighter'],
-  ['eraser', '🩹', 'Eraser'],
-  ['lasso', '➰', 'Lasso'],
-];
-
 /** How long the hovering Pencil rests on an item before it is chosen (no touch needed). */
-const DWELL_MS = 280;
-const TOOL_RADIUS = 62;
-const COLOR_RADIUS = 112;
+const DWELL_MS = 260;
+const RING_RADIUS = 92;
+const DISC_RADIUS = 136;
+
+type Entry = { key: string; label: string; icon: Parameters<typeof PenIcon>[0]; active: boolean; choose: () => void };
 
 /**
- * Radial tool palette that opens where the Pencil hovers still. Pick an item by hovering
- * over it briefly or by tapping it — the closest a web app can get to Pencil Pro squeeze.
+ * Circular palette under the Pencil tip (squeeze in the shell app, or hover-hold): your pens,
+ * eraser and lasso around the ring, undo/redo in the middle. Pick by hovering or tapping.
  */
-export function QuickPalette({ x, y, settings, penColors, highlighterColors, onSelect, onClose }: Props) {
+export function QuickPalette({ x, y, settings, selectSlot, selectTool, undo, redo, onClose }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const dwell = useRef<number | null>(null);
 
-  const cx = Math.min(Math.max(x, COLOR_RADIUS + 24), window.innerWidth - COLOR_RADIUS - 24);
-  const cy = Math.min(Math.max(y, COLOR_RADIUS + 24), window.innerHeight - COLOR_RADIUS - 24);
+  const cx = Math.min(Math.max(x, DISC_RADIUS + 12), window.innerWidth - DISC_RADIUS - 12);
+  const cy = Math.min(Math.max(y, DISC_RADIUS + 12), window.innerHeight - DISC_RADIUS - 12);
 
   useEffect(() => {
     const onDown = (e: PointerEvent) => {
       if (!ref.current?.contains(e.target as Node)) onClose(); // the stroke still happens
     };
     const onMove = (e: PointerEvent) => {
-      if (Math.hypot(e.clientX - cx, e.clientY - cy) > COLOR_RADIUS + 70) onClose();
+      if (Math.hypot(e.clientX - cx, e.clientY - cy) > DISC_RADIUS + 90) onClose();
     };
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
     window.addEventListener('pointerdown', onDown, true);
@@ -53,57 +52,70 @@ export function QuickPalette({ x, y, settings, penColors, highlighterColors, onS
     };
   }, [cx, cy, onClose]);
 
-  const choose = (patch: Partial<ToolSettings>) => {
-    onSelect(patch);
+  const penInHand = settings.tool === 'pen' || settings.tool === 'highlighter';
+  const entries: Entry[] = [
+    ...settings.slots.map((slot) => ({
+      key: slot.id,
+      label: slot.kind === 'highlighter' ? 'Highlighter' : BRUSHES[slot.brush].label,
+      icon: { kind: slotIcon(slot), color: slot.color },
+      active: penInHand && slot.id === settings.activeSlot,
+      choose: () => selectSlot(slot.id),
+    })),
+    { key: 'eraser', label: 'Eraser', icon: { kind: 'eraser', color: '#888' }, active: settings.tool === 'eraser', choose: () => selectTool('eraser') },
+    { key: 'lasso', label: 'Lasso', icon: { kind: 'lasso', color: '#888' }, active: settings.tool === 'lasso', choose: () => selectTool('lasso') },
+  ];
+
+  const pick = (choose: () => void) => {
+    choose();
     onClose();
   };
 
-  const hoverProps = (patch: Partial<ToolSettings>) => ({
+  const hoverPick = (choose: () => void) => ({
     onPointerEnter: (e: React.PointerEvent) => {
       if (e.pointerType !== 'pen' || e.buttons !== 0) return;
       if (dwell.current != null) clearTimeout(dwell.current);
-      dwell.current = window.setTimeout(() => choose(patch), DWELL_MS);
+      dwell.current = window.setTimeout(() => pick(choose), DWELL_MS);
     },
     onPointerLeave: () => {
       if (dwell.current != null) clearTimeout(dwell.current);
       dwell.current = null;
     },
-    onClick: () => choose(patch),
+    onClick: () => pick(choose),
   });
 
-  const colorTool = settings.tool === 'highlighter' ? 'highlighter' : 'pen';
-  const colors = colorTool === 'highlighter' ? highlighterColors : penColors;
-  const current = colorTool === 'highlighter' ? settings.highlighterColor : settings.color;
-  const place = (angleDeg: number, radius: number) => {
-    const a = (angleDeg * Math.PI) / 180;
-    return { left: cx + radius * Math.cos(a), top: cy + radius * Math.sin(a) };
-  };
+  const activeColor = settings.slots.find((s) => s.id === settings.activeSlot)?.color ?? '#000';
 
   return (
     <div ref={ref} className="quick-palette" role="menu" aria-label="Quick tools">
-      <div className="quick-ring" style={{ left: cx, top: cy, width: COLOR_RADIUS * 2 + 44, height: COLOR_RADIUS * 2 + 44 }} />
-      {TOOLS.map(([tool, icon, label], i) => (
-        <button
-          key={tool}
-          role="menuitem"
-          aria-label={label}
-          className={`quick-item tool ${settings.tool === tool ? 'active' : ''}`}
-          style={place(-90 + i * 90, TOOL_RADIUS)}
-          {...hoverProps({ tool })}
-        >
-          {icon}
+      <div className="quick-disc" style={{ left: cx, top: cy, width: DISC_RADIUS * 2, height: DISC_RADIUS * 2 }} />
+      {entries.map((entry, i) => {
+        const angle = -90 + (i * 360) / entries.length;
+        const a = (angle * Math.PI) / 180;
+        return (
+          <button
+            key={entry.key}
+            role="menuitem"
+            aria-label={entry.label}
+            className={`quick-item ${entry.active ? 'active' : ''}`}
+            style={{ left: cx + RING_RADIUS * Math.cos(a), top: cy + RING_RADIUS * Math.sin(a) }}
+            {...hoverPick(entry.choose)}
+          >
+            {/* Pens point outward, like tools arranged around a dial. */}
+            <span className="quick-pen" style={{ transform: `rotate(${angle + 90}deg)` }}>
+              <PenIcon {...entry.icon} />
+            </span>
+          </button>
+        );
+      })}
+      <div className="quick-center" style={{ left: cx, top: cy }}>
+        <button aria-label="Undo" className="quick-action" onClick={undo}>
+          ↶
         </button>
-      ))}
-      {colors.map((color, i) => (
-        <button
-          key={color}
-          role="menuitem"
-          aria-label={`Color ${color}`}
-          className={`quick-item color ${color === current && settings.tool === colorTool ? 'active' : ''}`}
-          style={{ ...place(-90 + (i + 0.5) * (360 / colors.length), COLOR_RADIUS), background: color }}
-          {...hoverProps(colorTool === 'highlighter' ? { tool: 'highlighter', highlighterColor: color } : { tool: 'pen', color })}
-        />
-      ))}
+        <span className="quick-color" style={{ background: activeColor }} />
+        <button aria-label="Redo" className="quick-action" onClick={redo}>
+          ↷
+        </button>
+      </div>
     </div>
   );
 }

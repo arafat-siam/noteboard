@@ -12,13 +12,14 @@ import {
   translateStroke,
   scaleStroke,
   recolorStroke,
+  rotateStroke,
   unionRects,
   type Point,
   type Rect,
 } from './geometry';
 import { eraseFromStroke } from './erase';
 import type { BrushKind } from './brushes';
-import { PEN_COLORS } from './palette';
+import { PEN_COLORS, type PenSlot } from './palette';
 import { templateStyle } from './templates';
 import { notePen, penActiveWithin } from './penState';
 import { diagnostics, recordEvent, recordFrame } from './diagnostics';
@@ -40,6 +41,9 @@ export interface ToolSettings {
   penBrush: BrushKind;
   /** Eraser removes whole strokes, or only the ink under it. */
   eraserMode: 'stroke' | 'partial';
+  /** The user's pens (tray order) and which one is in hand. color/penSize/... mirror it. */
+  slots: PenSlot[];
+  activeSlot: string;
 }
 
 interface Props {
@@ -52,11 +56,13 @@ interface Props {
   onChange: (pageId: string, added: Stroke[], removedIds: string[]) => void;
   /** Pencil hovered still above the page (client coordinates). */
   onHoverHold?: (clientX: number, clientY: number) => void;
+  /** A finger long-press selected ink: switch to the lasso tool so the selection can be edited. */
+  onRequestSelect?: () => void;
 }
 
 interface Gesture {
   pointerId: number;
-  kind: 'ink' | 'erase' | 'lasso' | 'move' | 'scale';
+  kind: 'ink' | 'erase' | 'lasso' | 'move' | 'scale' | 'rotate';
   /** Page position on screen at gesture start; reading layout on every sample would stall the pen. */
   origin: { left: number; top: number };
   points: number[];
@@ -79,6 +85,9 @@ interface Gesture {
   anchor: Point;
   scaleFrom: Point;
   factor: number;
+  /** Rotating a selection: pointer angle at start and current rotation (radians). */
+  startAngle: number;
+  angle: number;
 }
 
 interface Selection {
@@ -88,6 +97,11 @@ interface Selection {
 
 const HOLD_TO_SNAP_MS = 500;
 type Corner = 'nw' | 'ne' | 'se' | 'sw';
+type Handle = Corner | 'rotate';
+const LONG_PRESS_MS = 480;
+
+/** Only one hover cursor may be visible across all pages. */
+let visibleCursor: HTMLDivElement | null = null;
 const HOVER_HOLD_MS = 900;
 /** Extra area rendered around the visible part, so small scrolls need no redraw. */
 const VIEW_MARGIN = 0.3;
@@ -105,7 +119,7 @@ const contains = (outer: Rect, inner: Rect) =>
   inner.x + inner.width <= outer.x + outer.width + 0.5 &&
   inner.y + inner.height <= outer.y + outer.height + 0.5;
 
-export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold }: Props) {
+export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold, onRequestSelect }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const inkRef = useRef<HTMLCanvasElement>(null);
   const liveRef = useRef<HTMLCanvasElement>(null);
@@ -114,6 +128,8 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
   const frameRef = useRef<number | null>(null);
   const cursorRef = useRef<HTMLDivElement>(null);
   const hoverRef = useRef<{ x: number; y: number; timer: number | null } | null>(null);
+  const hoverHideRef = useRef<number | null>(null);
+  const pressRef = useRef<{ id: number; x: number; y: number; timer: number } | null>(null);
   /** Which part of the page the canvases currently show, at what resolution. */
   const regionRef = useRef<CanvasRegion | null>(null);
   /** What is painted on the ink canvas, to skip needless full redraws. */
@@ -367,6 +383,11 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
       ctx.scale(g.factor, g.factor);
       ctx.translate(-g.anchor.x, -g.anchor.y);
       for (const s of page.strokes) if (selection.ids.has(s.id)) drawStroke(ctx, s);
+    } else if (g.kind === 'rotate' && selection) {
+      ctx.translate(g.anchor.x, g.anchor.y);
+      ctx.rotate(g.angle);
+      ctx.translate(-g.anchor.x, -g.anchor.y);
+      for (const s of page.strokes) if (selection.ids.has(s.id)) drawStroke(ctx, s);
     } else if (g.kind === 'erase' && g.pieces.size) {
       for (const pieces of g.pieces.values()) for (const s of pieces) drawStroke(ctx, s);
     }
@@ -415,7 +436,30 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
   const endHover = () => {
     if (hoverRef.current?.timer != null) clearTimeout(hoverRef.current.timer);
     hoverRef.current = null;
+    if (hoverHideRef.current != null) clearTimeout(hoverHideRef.current);
+    hoverHideRef.current = null;
     if (cursorRef.current) cursorRef.current.style.display = 'none';
+    if (visibleCursor === cursorRef.current) visibleCursor = null;
+  };
+
+  /** The topmost stroke under a point (for tap / long-press selection). */
+  const strokeAt = (p: Point): Stroke | undefined => {
+    const radius = Math.max(5, 12 / scale);
+    for (let i = page.strokes.length - 1; i >= 0; i--) {
+      const s = page.strokes[i]!;
+      if (strokeHit(s, p, radius)) return s;
+    }
+    return undefined;
+  };
+
+  const selectStroke = (s: Stroke) => {
+    const b = strokeBounds(s);
+    setSelection({ ids: new Set([s.id]), bounds: b });
+  };
+
+  const cancelPress = () => {
+    if (pressRef.current) clearTimeout(pressRef.current.timer);
+    pressRef.current = null;
   };
 
   const onHover = (e: React.PointerEvent<HTMLDivElement>) => {
@@ -432,6 +476,10 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
         : tool === 'highlighter'
           ? settings.highlighterSize * scale
           : Math.max(4, settings.penSize * scale);
+    if (visibleCursor && visibleCursor !== cursor) visibleCursor.style.display = 'none';
+    visibleCursor = cursor;
+    if (hoverHideRef.current != null) clearTimeout(hoverHideRef.current);
+    hoverHideRef.current = window.setTimeout(endHover, 350);
     cursor.style.display = tool === 'lasso' ? 'none' : 'block';
     cursor.className = `hover-cursor ${tool}`;
     cursor.style.width = cursor.style.height = `${size}px`;
@@ -469,13 +517,31 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
       diagnostics.predictedSupported = typeof native.getPredictedEvents === 'function';
     }
     if (e.pointerType === 'pen') notePen(true);
-    const handle = (e.target as Element).closest('[data-handle]')?.getAttribute('data-handle') as Corner | null;
+    const handle = (e.target as Element).closest('[data-handle]')?.getAttribute('data-handle') as Handle | null;
     const box = containerRef.current!.getBoundingClientRect();
     const at = { x: (e.clientX - box.left) / scale, y: (e.clientY - box.top) / scale };
     const onSelection = !!selection && (!!handle || rectContains(selection.bounds, at));
     // Fingers scroll/zoom (handled by the editor) unless finger drawing is on — but a finger
     // may always move or resize a selection.
-    if (e.pointerType === 'touch' && !settings.fingerDraws && !onSelection) return;
+    if (e.pointerType === 'touch' && !settings.fingerDraws && !onSelection) {
+      // Long-press ink with a finger to select it (any tool), like in Apple Notes.
+      cancelPress();
+      if (!onRequestSelect) return;
+      pressRef.current = {
+        id: e.pointerId,
+        x: e.clientX,
+        y: e.clientY,
+        timer: window.setTimeout(() => {
+          pressRef.current = null;
+          const hit = strokeAt(at);
+          if (!hit) return;
+          selectStroke(hit);
+          onRequestSelect();
+          navigator.vibrate?.(10);
+        }, LONG_PRESS_MS),
+      };
+      return;
+    }
     if (e.pointerType === 'mouse' && e.button !== 0) return;
     if (gestureRef.current || !regionRef.current) return;
     e.preventDefault();
@@ -510,10 +576,19 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
       anchor: p,
       scaleFrom: p,
       factor: 1,
+      startAngle: 0,
+      angle: 0,
     };
     growDirty(g, p.x, p.y);
 
-    if (handle && selection) {
+    if (handle === 'rotate' && selection) {
+      const b = selection.bounds;
+      g.kind = 'rotate';
+      g.anchor = { x: b.x + b.width / 2, y: b.y + b.height / 2 };
+      g.startAngle = Math.atan2(p.y - g.anchor.y, p.x - g.anchor.x);
+      for (const id of selection.ids) hiddenRef.current.add(id);
+      paintInk(true);
+    } else if (handle && handle !== 'rotate' && selection) {
       const b = selection.bounds;
       const corners: Record<Corner, Point> = {
         nw: { x: b.x, y: b.y },
@@ -545,6 +620,8 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
   };
 
   const onPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const press = pressRef.current;
+    if (press && press.id === e.pointerId && Math.hypot(e.clientX - press.x, e.clientY - press.y) > 10) cancelPress();
     const g = gestureRef.current;
     if (diagnostics.enabled && e.pointerType === 'pen') {
       const n = e.nativeEvent as PointerEvent & { altitudeAngle?: number; azimuthAngle?: number };
@@ -594,6 +671,15 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
         case 'move':
           g.offset = { x: p.x - g.moveStart.x, y: p.y - g.moveStart.y };
           break;
+        case 'rotate': {
+          let angle = Math.atan2(p.y - g.anchor.y, p.x - g.anchor.x) - g.startAngle;
+          // Snap to straight angles (0°, 45°, 90°…) when close.
+          const step = Math.PI / 4;
+          const snapped = Math.round(angle / step) * step;
+          if (Math.abs(angle - snapped) < (4 * Math.PI) / 180) angle = snapped;
+          g.angle = angle;
+          break;
+        }
         case 'scale': {
           const from = Math.hypot(g.scaleFrom.x - g.anchor.x, g.scaleFrom.y - g.anchor.y);
           const to = Math.hypot(p.x - g.anchor.x, p.y - g.anchor.y);
@@ -617,6 +703,7 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
   };
 
   const finish = (e: React.PointerEvent<HTMLDivElement>, cancelled: boolean) => {
+    if (pressRef.current?.id === e.pointerId) cancelPress();
     if (e.pointerType === 'pen') notePen(false);
     const g = gestureRef.current;
     if (!g || g.pointerId !== e.pointerId) return;
@@ -647,6 +734,21 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
             onChange(page.id, [], [...g.erased]);
           }
           break;
+        case 'rotate': {
+          if (!selection) break;
+          if (Math.abs(g.angle) < 0.005) {
+            hiddenRef.current = new Set();
+            paintInk(true);
+            break;
+          }
+          const rotated = page.strokes
+            .filter((s) => selection.ids.has(s.id))
+            .map((s) => rotateStroke(s, g.anchor, g.angle, newId()));
+          onChange(page.id, rotated, [...selection.ids]);
+          const bounds = unionRects(rotated.map(strokeBounds));
+          if (bounds) setSelection({ ids: new Set(rotated.map((s) => s.id)), bounds });
+          break;
+        }
         case 'scale': {
           if (!selection) break;
           if (Math.abs(g.factor - 1) < 0.01) {
@@ -671,6 +773,13 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
           break;
         }
         case 'lasso': {
+          // A tap (no real loop) selects the ink under the tip.
+          const loop = boundsOf(g.lasso);
+          if (loop.width < 8 && loop.height < 8) {
+            const hit = strokeAt(g.lasso[0]!);
+            if (hit) selectStroke(hit);
+            break;
+          }
           const picked = page.strokes.filter((s) => strokeInLasso(s, g.lasso));
           const bounds = unionRects(picked.map(strokeBounds));
           if (picked.length && bounds) setSelection({ ids: new Set(picked.map((s) => s.id)), bounds });
@@ -695,7 +804,7 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
           break;
         }
       }
-    } else if (g.erased.size || g.pieces.size || g.kind === 'move' || g.kind === 'scale') {
+    } else if (g.erased.size || g.pieces.size || g.kind === 'move' || g.kind === 'scale' || g.kind === 'rotate') {
       hiddenRef.current = new Set();
       paintInk(true);
     }
@@ -753,7 +862,7 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
             height: selection.bounds.height * scale,
           }}
         >
-          <div className="selection-menu">
+          <div className={`selection-menu ${selection.bounds.y * scale < 130 ? 'below' : ''}`}>
             {PEN_COLORS.map((c) => (
               <button
                 key={c}
@@ -769,6 +878,9 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
           {(['nw', 'ne', 'se', 'sw'] as const).map((corner) => (
             <div key={corner} className={`selection-handle ${corner}`} data-handle={corner} aria-label="Resize" />
           ))}
+          <div className="selection-rotate" data-handle="rotate" aria-label="Rotate">
+            ↻
+          </div>
         </div>
       )}
     </div>

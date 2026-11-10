@@ -5,6 +5,7 @@ import { AppLock } from './security/AppLock';
 import { bounceToShellApp, getToken, handleRedirect, isConfigured, signIn, wasConnected } from './sync/auth';
 import './pencil/bridge';
 import './styles.css';
+import './palette.css';
 
 // Safari's own pinch-zoom of the whole page enlarges canvases as bitmaps (blurry ink); the
 // editor implements its own sharp zoom instead.
