@@ -18,6 +18,15 @@ document.addEventListener('selectstart', (e) => {
   if (!target?.closest?.('input, textarea, [contenteditable]')) e.preventDefault();
 });
 
+// The Noteboard Shell hands Google's answer back by changing only the URL fragment, which
+// doesn't reload the page. Pick the answer up here, then restart cleanly with the new token.
+window.addEventListener('hashchange', () => {
+  if (location.hash.includes('access_token') || location.hash.includes('error=')) {
+    handleRedirect();
+    location.reload();
+  }
+});
+
 function start(): void {
   // Opened inside the Noteboard Shell's sign-in sheet: pass Google's answer back to the app.
   if (bounceToShellApp()) return;
