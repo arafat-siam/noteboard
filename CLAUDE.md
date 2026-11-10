@@ -39,6 +39,9 @@ Verify UI changes in the browser pane (launch config `noteboard-dev`). Synthetic
 - Every library mutation goes through `src/db/library.ts` / `pages.ts` (they bump `libraryRev` / page `dirty` for sync), then call `sync.syncSoon()` (UI uses `act()`).
 - Never run side effects inside React state updater functions (StrictMode runs them twice — this already caused a double-undo bug).
 - iPad Safari canvas memory is tight: only pages near the viewport keep canvases (see InkPage).
+- iPadOS Scribble delays Pencil touches in web pages; the editor `preventDefault`s stylus touchstart/touchmove (except on buttons/inputs) to opt out. Don't remove it.
+- Pencil hover (`pointermove` with `buttons === 0`) drives the hover cursor and hover-hold quick palette; hovering must never count as pen contact for palm rejection.
+- Web pages can't receive Pencil double-tap, squeeze or barrel roll; those need the native wrapper (see `src/pencil/bridge.ts`).
 - Pencil must never scroll the page (touchstart with `touchType === 'stylus'` is prevented in NotebookEditor); fingers scroll.
 - App lock (`src/security/`): the user sets the PIN on first launch; only a salted PBKDF2 hash is stored on the device. Never hard-code a PIN or any secret — the repo and the deployed JS are public. It's a lock screen, not disk encryption; say so honestly.
 - Data privacy model: the site is public but holds no data. Each visitor's notes live in their own browser (IndexedDB) and their own Google Drive.

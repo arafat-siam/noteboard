@@ -29,6 +29,8 @@ export interface ToolSettings {
   eraserSize: number;
   shapeSnap: boolean;
   fingerDraws: boolean;
+  /** Hold the hovering Pencil still to open the quick tool palette. */
+  hoverPalette: boolean;
 }
 
 interface Props {
@@ -37,6 +39,8 @@ interface Props {
   scale: number;
   settings: ToolSettings;
   onChange: (pageId: string, added: Stroke[], removedIds: string[]) => void;
+  /** Pencil hovered still above the page (client coordinates). */
+  onHoverHold?: (clientX: number, clientY: number) => void;
 }
 
 interface Gesture {
@@ -66,6 +70,7 @@ interface Selection {
 }
 
 const HOLD_TO_SNAP_MS = 500;
+const HOVER_HOLD_MS = 650;
 /** iPad Safari refuses canvases above ~16.7M pixels; stay well under. */
 const MAX_CANVAS_PIXELS = 12_000_000;
 
@@ -74,13 +79,15 @@ function getLiveContext(canvas: HTMLCanvasElement | null): CanvasRenderingContex
   return canvas?.getContext('2d', { desynchronized: true }) as CanvasRenderingContext2D | null;
 }
 
-export function InkPage({ page, scale, settings, onChange }: Props) {
+export function InkPage({ page, scale, settings, onChange, onHoverHold }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const inkRef = useRef<HTMLCanvasElement>(null);
   const liveRef = useRef<HTMLCanvasElement>(null);
   const gestureRef = useRef<Gesture | null>(null);
   const hiddenRef = useRef<Set<string>>(new Set());
   const frameRef = useRef<number | null>(null);
+  const cursorRef = useRef<HTMLDivElement>(null);
+  const hoverRef = useRef<{ x: number; y: number; timer: number | null } | null>(null);
   /** What is currently painted on the ink canvas, to avoid needless full redraws. */
   const paintedRef = useRef<{ canvas: HTMLCanvasElement | null; scale: number; ids: Set<string> }>({
     canvas: null,
@@ -281,7 +288,54 @@ export function InkPage({ page, scale, settings, onChange }: Props) {
     if (changed) redrawInk(true);
   };
 
+  // ---- Pencil hover (iPad Pro with Apple Pencil 2 / Pro) --------------------------------
+  const endHover = () => {
+    if (hoverRef.current?.timer != null) clearTimeout(hoverRef.current.timer);
+    hoverRef.current = null;
+    if (cursorRef.current) cursorRef.current.style.display = 'none';
+  };
+
+  const onHover = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const cursor = cursorRef.current;
+    const box = containerRef.current?.getBoundingClientRect();
+    if (!cursor || !box) return;
+    const x = e.clientX - box.left;
+    const y = e.clientY - box.top;
+    const tool = settings.tool;
+    // Preview exactly where (and how big) ink will land.
+    const size =
+      tool === 'eraser'
+        ? settings.eraserSize * scale
+        : tool === 'highlighter'
+          ? settings.highlighterSize * scale
+          : Math.max(4, settings.penSize * scale);
+    cursor.style.display = 'block';
+    cursor.className = 'hover-cursor ' + tool;
+    cursor.style.width = cursor.style.height = size + 'px';
+    cursor.style.transform = 'translate(' + (x - size / 2) + 'px, ' + (y - size / 2) + 'px)';
+    cursor.style.background =
+      tool === 'pen' ? settings.color : tool === 'highlighter' ? settings.highlighterColor + '80' : 'transparent';
+
+    if (!settings.hoverPalette || !onHoverHold) return;
+    const h = hoverRef.current;
+    if (!h || Math.hypot(e.clientX - h.x, e.clientY - h.y) > 6) {
+      if (h?.timer != null) clearTimeout(h.timer);
+      const { clientX, clientY } = e;
+      hoverRef.current = {
+        x: clientX,
+        y: clientY,
+        timer: window.setTimeout(() => {
+          endHover();
+          onHoverHold(clientX, clientY);
+        }, HOVER_HOLD_MS),
+      };
+    }
+  };
+
+  useEffect(() => endHover, []);
+
   const onPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    endHover();
     const native = e.nativeEvent;
     if (diagnostics.enabled) {
       diagnostics.pointerType = e.pointerType;
@@ -343,7 +397,22 @@ export function InkPage({ page, scale, settings, onChange }: Props) {
 
   const onPointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
     const g = gestureRef.current;
-    if (e.pointerType === 'pen') notePen();
+    if (diagnostics.enabled && e.pointerType === 'pen') {
+      const n = e.nativeEvent as PointerEvent & { altitudeAngle?: number; azimuthAngle?: number };
+      if (e.buttons === 0) diagnostics.hover = 'yes';
+      const deg = (r: number) => Math.round((r * 180) / Math.PI);
+      diagnostics.tilt =
+        n.altitudeAngle != null
+          ? 'altitude ' + deg(n.altitudeAngle) + '° azimuth ' + deg(n.azimuthAngle ?? 0) + '°'
+          : 'x ' + e.tiltX + ' y ' + e.tiltY;
+      diagnostics.twist = e.twist;
+    }
+    if (!g && e.pointerType === 'pen' && e.buttons === 0) {
+      onHover(e);
+      return;
+    }
+    // Only contact counts for palm rejection; a hovering Pencil must not block finger scrolling.
+    if (e.pointerType === 'pen' && e.buttons > 0) notePen();
     if (!g || g.pointerId !== e.pointerId) return;
     e.stopPropagation();
     const native = e.nativeEvent;
@@ -494,10 +563,12 @@ export function InkPage({ page, scale, settings, onChange }: Props) {
             onPointerMove={onPointerMove}
             onPointerUp={(e) => finish(e, false)}
             onPointerCancel={(e) => finish(e, true)}
+            onPointerLeave={endHover}
             onContextMenu={(e) => e.preventDefault()}
           />
         </>
       )}
+      <div ref={cursorRef} className="hover-cursor" style={{ display: 'none' }} />
       {selection && (
         <div
           className="selection-box"

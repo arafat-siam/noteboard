@@ -13,6 +13,7 @@ import { diagnostics } from '../ink/diagnostics';
 import { sync } from '../sync/instance';
 import { Modal, PromptDialog } from './Dialogs';
 import { SyncBadge } from './SyncBadge';
+import { QuickPalette } from './QuickPalette';
 
 interface Op {
   pageId: string;
@@ -35,6 +36,7 @@ const DEFAULT_SETTINGS: ToolSettings = {
   eraserSize: ERASER_SIZES[1]!,
   shapeSnap: true,
   fingerDraws: false,
+  hoverPalette: true,
 };
 
 function loadSettings(): ToolSettings {
@@ -61,6 +63,9 @@ export function NotebookEditor({ notebookId, onClose }: { notebookId: string; on
   const [pageMenu, setPageMenu] = useState<Page | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
   const [showDiagnostics, setShowDiagnostics] = useState(diagnostics.enabled);
+  const [palette, setPalette] = useState<{ x: number; y: number } | null>(null);
+  const openPalette = useCallback((x: number, y: number) => setPalette({ x, y }), []);
+  const closePalette = useCallback(() => setPalette(null), []);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   // The scroll area only exists after the notebook has loaded, so effects must re-run when it
   // appears (a plain ref read on mount would be null and gestures would never attach).
@@ -326,6 +331,17 @@ export function NotebookEditor({ notebookId, onClose }: { notebookId: string; on
       }
     };
 
+    // iPadOS Scribble (Pencil handwriting-to-text) holds back Pencil touches in web pages while
+    // it decides whether you're writing into a text field. That delay is why the Pencil felt
+    // laggier than a finger. Claiming the touch (preventDefault) opts this area out of Scribble.
+    const claimTouch = (e: TouchEvent) => {
+      const target = e.target as Element | null;
+      if (target?.closest?.('button, input, select, textarea, a, label')) return;
+      const stylus = [...e.changedTouches].some((t) => (t as Touch & { touchType?: string }).touchType === 'stylus');
+      if (stylus || target instanceof HTMLCanvasElement) e.preventDefault();
+    };
+    el.addEventListener('touchstart', claimTouch, { passive: false });
+    el.addEventListener('touchmove', claimTouch, { passive: false });
     el.addEventListener('pointerdown', onDown);
     el.addEventListener('pointermove', onMove);
     el.addEventListener('pointerup', onUp);
@@ -336,6 +352,8 @@ export function NotebookEditor({ notebookId, onClose }: { notebookId: string; on
       el.removeEventListener('pointermove', onMove);
       el.removeEventListener('pointerup', onUp);
       el.removeEventListener('pointercancel', onUp);
+      el.removeEventListener('touchstart', claimTouch);
+      el.removeEventListener('touchmove', claimTouch);
     };
   }, [undo, redo, scrollEl]);
 
@@ -487,7 +505,7 @@ export function NotebookEditor({ notebookId, onClose }: { notebookId: string; on
         <div className="pages" ref={pagesWrapRef}>
           {pages.map((page, index) => (
             <div key={page.id} className="page-slot">
-              <InkPage page={page} scale={scale} settings={settings} onChange={onChange} />
+              <InkPage page={page} scale={scale} settings={settings} onChange={onChange} onHoverHold={openPalette} />
               <div className="page-footer">
                 <span>
                   Page {index + 1} of {pages.length}
@@ -538,10 +556,32 @@ export function NotebookEditor({ notebookId, onClose }: { notebookId: string; on
               {showDiagnostics ? 'Hide' : 'Show'} Pencil diagnostics
             </button>
           </div>
+          <label className="field-label">Apple Pencil</label>
+          <div className="menu-list">
+            <button onClick={() => update({ hoverPalette: !settings.hoverPalette })}>
+              Hover palette: {settings.hoverPalette ? 'On' : 'Off'} (hold the Pencil still just above the page)
+            </button>
+          </div>
         </Modal>
       )}
 
       {showDiagnostics && <DiagnosticsOverlay />}
+
+      {palette && (
+        <QuickPalette
+          x={palette.x}
+          y={palette.y}
+          settings={settings}
+          penColors={PEN_COLORS}
+          highlighterColors={HIGHLIGHTER_COLORS}
+          onSelect={(patch) => {
+            if (patch.tool) selectTool(patch.tool);
+            const { tool: _tool, ...rest } = patch;
+            if (Object.keys(rest).length) update(rest);
+          }}
+          onClose={closePalette}
+        />
+      )}
 
       {pageMenu && (
         <Modal title="Page options" onClose={() => setPageMenu(null)}>
@@ -603,6 +643,9 @@ function DiagnosticsOverlay() {
         `draw frame   ${d.frameMs} ms   input→draw ${d.inputToDrawMs} ms`,
         `canvas       ${(d.canvasPixels / 1e6).toFixed(1)} MP   dpr ${d.devicePixelRatio}`,
         `cancelled    ${d.cancels}`,
+        `hover        ${d.hover}`,
+        `tilt         ${d.tilt}`,
+        `roll/twist   ${d.twist}`,
       ].join('\n')}
     </div>
   );

@@ -19,6 +19,11 @@ export const diagnostics = {
   canvasPixels: 0,
   devicePixelRatio: 1,
   cancels: 0,
+  /** 'yes' once the Pencil has been seen hovering (iPad Pro M2+ with Pencil 2 / Pro). */
+  hover: 'not seen',
+  tilt: '-',
+  /** Barrel roll would show here if Safari reported it (PointerEvent.twist). */
+  twist: 0,
 };
 
 let events = 0;
