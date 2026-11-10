@@ -1,47 +1,46 @@
 # Noteboard Architecture
 
 ## Goals
-1. Writing must feel instant (Apple Pencil latency, 120 Hz) on notebooks with 1000+ pages.
-2. User data is never lost: atomic writes, versioned format, conflict-safe sync, backups.
-3. Organization is first-class: nested folders, tags, smart folders, search across handwriting and PDFs.
-4. Native iPadOS citizen: multi-window, drag and drop, Files app, Spotlight, keyboard and pointer.
+1. Ink that feels precise and immediate with Apple Pencil in iPad Safari.
+2. Never lose user data: local-first, conflict-free merges, Google Drive as durable storage, backups.
+3. Best-in-class organization: nested folders, tags, favorites, recents, search, trash, drag & drop, bulk actions.
+4. Zero cost: static hosting (GitHub Pages), the user's own Google Drive, no backend.
 
-## Modules
+## Data model (`src/model/types.ts`)
+- **LibraryItem** = Folder | Notebook. Tree via `parentId`. `trashedAt` (Trash), `deleted` (purged tombstone, kept so the deletion syncs), `updatedAt` for last-writer-wins.
+- **Notebook** keeps `pageIds` (order) and `deletedPageIds` (page tombstones).
+- **Page**: template, size in page units (A4 at 96 dpi = 794×1123), `strokes`, `deletedStrokeIds`, `dirty`.
+- **Stroke** is immutable: `{id, tool, color, size, points:[x,y,pressure…], hasPressure}`. Moving a stroke = delete + add with a new id.
 
-| Module | Owns | Depends on |
-|---|---|---|
-| `NoteboardCore` | Value-type models (`NotebookManifest`, `PageDescriptor`, `PaperTemplate`), document package read/write, IDs, errors, logging | Foundation only |
-| `NoteboardLibrary` | `LibraryEntry` index (SwiftData), folders, tags, smart-folder queries, trash, recents/favorites, search index, Spotlight | Core |
-| `NoteboardCanvas` | Canvas views, tools, page virtualization, templates rendering, undo | Core, PencilKit |
-| `NoteboardPDF` | PDF import, page rendering/thumbnails, export (flattened / annotated) | Core, PDFKit |
-| `NoteboardSync` | Ubiquity container, file coordination, `NSFileVersion` conflicts, backups | Core |
-| `App` | Scenes, navigation, dependency composition, settings | all modules |
+## Local storage
+IndexedDB via Dexie (`src/db/db.ts`): `items`, `pages`, `meta` (library revision, Drive folder id), `sync` (Drive file id + last seen `modifiedTime` per record).
 
-## Document format: `.noteboard` package
-A directory bundle (UTType `com.noteboard.notebook`, conforms to `com.apple.package`) so iCloud syncs per-file and conflicts stay page-sized.
+## Ink pipeline (`src/ink/InkPage.tsx`)
+- Pointer Events; `getCoalescedEvents()` captures every digitizer sample; `getPredictedEvents()` extends the live stroke to hide latency (prediction is never saved).
+- Two canvases per visible page: committed ink + live layer. Paper templates are CSS gradients (no canvas memory). Canvases exist only for pages near the viewport.
+- `perfect-freehand` with low streamline (0.12) for precision; pressure from Pencil, simulated for finger/mouse.
+- Palm rejection: touch contacts never draw while the Pencil was used in the last 1.5 s; by default fingers only scroll/zoom.
+- Hold-to-snap: holding the Pencil still for 0.5 s runs `recognizeShape` (line, circle, ellipse, triangle, rectangle, polygon).
+- Tools: pen, highlighter (multiply blend, drawn under ink), stroke eraser, lasso (move / duplicate / delete).
+- Undo/redo per editor session; undoing an erase re-adds copies with new ids (old ids stay tombstoned for sync).
 
-```
-My Notes.noteboard/
-  manifest.json            NotebookManifest (formatVersion, id, title, page order, cover, timestamps)
-  pages/<pageID>.drawing   PKDrawing dataRepresentation per page
-  pages/<pageID>.json      Page metadata: template, size, background ref, text boxes, images
-  assets/<sha256>.<ext>    Content-addressed images / stickers
-  sources/<id>.pdf         Imported PDFs, never modified (pages reference sourceID + pageIndex)
-  thumbnails/<pageID>.jpg  Cache, safe to delete
-```
-- `formatVersion` is an integer. Readers migrate older versions forward on open; they refuse newer versions with a clear message.
-- Saves are per-page and atomic (`Data.write(options: .atomic)` inside file coordination).
+## Google Drive sync (`src/sync/`)
+- **Auth**: OAuth 2.0 token flow with full-page redirect (popups are unreliable in home-screen apps). Scope `drive.file`: the app sees only files it created. Tokens last ~1 h; on launch the app silently renews via redirect (`prompt=none`). No refresh tokens (no backend).
+- **Layout in Drive**: a visible `Noteboard` folder containing `library.json` and one `page_<id>.json` per page.
+- **Cycle** (`SyncEngine.run`): list folder → pull changed files (compare `modifiedTime`) → merge → push library if `libraryRev` changed → push dirty pages. Runs on launch, 4 s after edits, every 60 s, on reconnect and when the app goes to background.
+- **Merge rules** (`merge.ts`): pages = union of strokes minus tombstones (two devices writing offline never lose ink); library items = last-writer-wins per item, purge is sticky, notebook page lists union minus page tombstones.
 
-## Library model
-- **Source of truth**: the folder hierarchy on disk inside the app's Documents (or iCloud Drive) container. A Noteboard folder is a real directory, so the library is browsable in the Files app.
-- **Index**: SwiftData `LibraryEntry` rows mirror disk (path, kind, title, dates, tags, favorite, color, trashed state, extracted text). `LibraryIndexer.rebuild()` can regenerate it from disk at any time.
-- Tags, colors, favorites and manual sort order live in the index and are also written to the package/folder metadata (`.noteboard-folder.json` / manifest) so they survive an index rebuild and sync between devices.
-- **Trash**: items move to `.Trash/` with their original path recorded; auto-purge after 30 days.
-- **Smart folders**: a stored `LibraryQuery` (tags any/all, kinds, date range, text, favorites) evaluated against the index.
+## Export (`src/export/`)
+Vector PDF (pdf-lib, lazy-loaded), PNG per page, JSON backup export/import (merged, never overwrites newer work). iPad share sheet via Web Share API.
 
-## Concurrency
-- Swift 6 strict concurrency. UI on `@MainActor`; disk and index work in actors (`DocumentStore`, `LibraryIndexer`).
-- Canvas saves are debounced (≈1 s idle) and flushed on scene background.
+## Apple Pencil double-tap / squeeze
+Not exposed to web pages by iPadOS. `src/pencil/bridge.ts` defines `window.noteboardPencil()` for an optional native WKWebView wrapper. Note: Google blocks OAuth inside embedded web views, so a wrapper must sign in via `ASWebAuthenticationSession` and hand the token to the page.
 
 ## Dependencies
-None beyond Apple SDKs. Add rows here with justification before adding any package.
+| Package | Why |
+|---|---|
+| react, react-dom | UI |
+| dexie, dexie-react-hooks | IndexedDB with transactions and live queries |
+| perfect-freehand | Pressure-sensitive stroke outlines (MIT) |
+| pdf-lib | PDF export, later PDF import/annotation |
+| vite-plugin-pwa | Service worker + manifest |

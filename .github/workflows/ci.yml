@@ -11,48 +11,46 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build-and-test:
-    runs-on: macos-15
+  check:
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
 
-      - name: Show toolchain
-        run: |
-          xcodebuild -version
-          swift --version
-
-      # Each check runs even if an earlier one failed, so one CI run reports every error.
-      - name: Package unit tests
+      # Each check runs even if an earlier one failed, so one run reports every error.
+      # Errors are re-emitted as annotations, which are readable without signing in to GitHub.
+      - name: Type check
         if: success() || failure()
-        working-directory: Packages/NoteboardKit
-        run: bash "$GITHUB_WORKSPACE/scripts/ci-run.sh" "Package tests" swift test
-
-      - name: Generate Xcode project
+        run: bash scripts/ci-run.sh "Type check" npx tsc --noEmit
+      - name: Unit tests
         if: success() || failure()
-        run: brew install xcodegen && xcodegen generate
-
-      - name: Build app for iPad simulator
+        run: bash scripts/ci-run.sh "Unit tests" npx vitest run
+      - name: Build
         if: success() || failure()
-        run: >
-          bash scripts/ci-run.sh "iPad app build"
-          xcodebuild build
-          -project Noteboard.xcodeproj
-          -scheme Noteboard
-          -destination 'generic/platform=iOS Simulator'
-          CODE_SIGNING_ALLOWED=NO
+        run: bash scripts/ci-run.sh "Build" npx vite build
+        env:
+          VITE_GOOGLE_CLIENT_ID: ${{ vars.GOOGLE_CLIENT_ID }}
 
-      # Same code merged into one module, as Swift Playgrounds on the iPad compiles it.
-      - name: Generate Swift Playgrounds project
-        if: success() || failure()
-        shell: pwsh
-        run: ./scripts/build-playground.ps1
+      - uses: actions/upload-pages-artifact@v3
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        with:
+          path: dist
 
-      - name: Build Swift Playgrounds project
-        if: success() || failure()
-        working-directory: Playground/Noteboard.swiftpm
-        run: >
-          bash "$GITHUB_WORKSPACE/scripts/ci-run.sh" "Playgrounds build"
-          xcodebuild build
-          -scheme Noteboard
-          -destination 'generic/platform=iOS Simulator'
-          CODE_SIGNING_ALLOWED=NO
+  deploy:
+    # Publishes the app to https://arafat-siam.github.io/noteboard/
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    needs: check
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

@@ -1,54 +1,39 @@
-# Noteboard Roadmap
+# Noteboard Roadmap (PWA)
 
-Each milestone should be shippable to TestFlight.
+## M0 — Foundation ✅
+- [x] Vite + React + TypeScript PWA, offline service worker, installable on iPad
+- [x] CI: type check, tests, build, deploy to GitHub Pages
+- [x] Data model, IndexedDB, unit tests
 
-## M0 — Foundation (current)
-- [x] Project structure, XcodeGen, NoteboardKit modules, subagents
-- [x] Core models + `.noteboard` manifest format v1
-- [x] CI on macOS runner (build + `swift test`) — not yet run, repo not on GitHub
-- [x] Swift Playgrounds build for running on iPad without a Mac
-- [x] First usable slice: browse/create/rename/move (drag & drop)/trash/restore folders and notebooks; notebook editor with paper templates, Pencil ink, add page, auto-save
-- [ ] Logging, error reporting, app settings scaffold
+## M1 — Core (current)
+- [x] Precise ink: coalesced + predicted Pencil events, pressure, palm rejection
+- [x] Pen, highlighter, stroke eraser, lasso (move/duplicate/delete), colors, sizes
+- [x] Hold-to-snap shape recognition
+- [x] Undo/redo (buttons, ⌘Z, two/three-finger tap), pinch zoom
+- [x] Folders (nested), drag & drop, move dialog, bulk select, favorites, recents, tags, search, trash (30 days)
+- [x] Google Drive sync (library.json + per-page files, conflict-free merge)
+- [x] Export PDF / PNG, JSON backup & import
+- [ ] Verify on a real iPad: Pencil feel, scrolling, sign-in, sync between two devices
 
-## M1 — Library & organization (differentiator)
-- [ ] Nested folders on disk, SwiftData index, rebuild-from-disk
-- [ ] Three-column `NavigationSplitView`: sidebar (Library, Favorites, Recents, Tags, Smart Folders, Trash) / folder contents / preview
-- [ ] Grid & list views, sort options, folder colors/icons
-- [ ] Create/rename/move/duplicate/delete, multi-select bulk actions, drag & drop
-- [ ] Tags, favorites, recents, trash with restore + 30-day purge
-- [ ] Smart folders (saved queries)
-- [ ] Files app visibility, import from Files
+## M2 — Pro tools
+- [ ] Partial (pixel) eraser, eraser that only erases highlighter
+- [ ] Text boxes, images, stickers
+- [ ] Shapes: arrows, resize/rotate selection, ruler
+- [ ] Laser pointer / presentation mode
+- [ ] Page thumbnails sidebar, reorder pages by drag, templates: Cornell, planner, music
+- [ ] Notebook covers, folder icons, custom sort order (manual)
 
-## M2 — Notebook editor & ink
-- [ ] Notebook with paper templates (blank, ruled, grid, dotted, Cornell, planner), page sizes, covers
-- [ ] PencilKit canvas with page virtualization, vertical & horizontal scroll, zoom
-- [ ] Pens (fountain, ball, brush), highlighter, erasers (stroke/pixel/partial), lasso (move/resize/recolor)
-- [ ] Favorite tools bar, color presets, Pencil double-tap/squeeze
-- [ ] Page manager: thumbnails, add/reorder/duplicate/delete pages
-- [ ] Undo/redo, auto-save
+## M3 — PDF
+- [ ] Import PDF (pdf.js render) as notebook, annotate on top, export with annotations
+- [ ] PDF text search, outline, links
 
-## M3 — PDF (Drawboard parity)
-- [ ] Import PDF as notebook or into existing notebook
-- [ ] Annotate over PDF, insert blank pages between PDF pages
-- [ ] PDF text search, outline/bookmarks, links
-- [ ] Export: flattened PDF, PDF with annotations, images, `.noteboard`
+## M4 — Smart features
+- [ ] Handwriting search / convert to text (on-device model or optional cloud OCR)
+- [ ] Smart folders (saved searches)
+- [ ] Hyperlinks between pages/notebooks
 
-## M4 — Pro features (GoodNotes parity)
-- [ ] Shape recognition, ruler, laser pointer, tape tool
-- [ ] Text boxes, images, stickers/elements library
-- [ ] Handwriting search (Vision) + convert handwriting to text
-- [ ] Global search across library (titles, text, PDF text, handwriting), Spotlight
-- [ ] Hyperlinks between pages/notebooks, document outline
-- [ ] Presentation mode (external display), multi-window side-by-side
-- [ ] Audio recording synced to ink
-- [ ] Templates & covers marketplace (local packs)
-
-## M5 — Sync & reliability
-- [ ] iCloud Drive sync, conflict resolution UI
-- [ ] Automatic backups, export entire library
-- [ ] Password/Face ID lock for folders
-
-## M6 — Launch
-- [ ] Onboarding, paywall (StoreKit 2), analytics (privacy-preserving)
-- [ ] Localization, accessibility audit, performance audit
-- [ ] App Store assets
+## M5 — Reliability & polish
+- [ ] Lazy page download for huge libraries, Drive changes API
+- [ ] Sync conflict log, automatic backups to Drive
+- [ ] Optional native wrapper for Pencil double-tap/squeeze (personal use via Swift Playgrounds)
+- [ ] Accessibility audit, localization, onboarding

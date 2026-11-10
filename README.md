@@ -1,32 +1,27 @@
 # Noteboard
 
-A handwriting and note-taking app for iPad with GoodNotes/Drawboard-level ink and PDF tools, plus proper folder, tag and smart-folder organization.
+Handwritten notes for iPad and Apple Pencil, in the browser. Precise ink, shape recognition, real folder organization, and automatic sync to your own Google Drive. Free, no App Store, no account on our side.
 
-## Run it on your iPad (free, no Mac needed)
+**Open the app:** https://arafat-siam.github.io/noteboard/
 
-1. Install **Swift Playgrounds** from the App Store on your iPad.
-2. On Windows, build the playground project:
-   ```bash
-   powershell -ExecutionPolicy Bypass -File scripts/build-playground.ps1
-   ```
-   This creates `Playground/Noteboard.swiftpm.zip`.
-3. Get the zip onto the iPad (iCloud Drive, OneDrive, Google Drive, or email it to yourself). With iCloud for Windows installed you can copy straight into iCloud Drive:
-   ```bash
-   powershell -ExecutionPolicy Bypass -File scripts/build-playground.ps1 -Destination "$env:USERPROFILE\iCloudDrive"
-   ```
-4. In the iPad **Files** app, tap the zip to unzip it, then tap `Noteboard.swiftpm` — it opens in Swift Playgrounds.
-5. Tap **Run** (▶). Use the expand button to run it full screen.
+## Install on iPad
+1. Open the link above in **Safari**.
+2. Tap the **Share** button → **Add to Home Screen** → **Add**.
+3. Open Noteboard from the Home Screen. It runs full screen and works offline.
 
-After changing code, run the script again and replace the old `Noteboard.swiftpm` on the iPad.
+## Writing
+- The Pencil writes; fingers scroll. Pinch to zoom.
+- Two-finger tap = undo, three-finger tap = redo.
+- Hold the Pencil still at the end of a stroke to snap it into a perfect line, circle, rectangle or triangle.
+- Lasso a selection to move, duplicate or delete it.
 
-Not available in the Playgrounds build: iCloud sync, opening `.noteboard` files from Files, and multiple windows. Those need the full Xcode build.
+## Google Drive sync
+One-time setup: [docs/GOOGLE_DRIVE_SETUP.md](docs/GOOGLE_DRIVE_SETUP.md). Notes are stored in a `Noteboard` folder in your Drive and sync automatically.
 
-## Full Xcode build (macOS + Xcode 16 or newer)
+## Development
 ```bash
-brew install xcodegen
-xcodegen generate
-open Noteboard.xcodeproj
+npm install
+npm run dev
+npm test
 ```
-Package unit tests: `cd Packages/NoteboardKit && swift test`. CI runs both on GitHub Actions.
-
-See [CLAUDE.md](CLAUDE.md), [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/ROADMAP.md](docs/ROADMAP.md).
+See [CLAUDE.md](CLAUDE.md) and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
