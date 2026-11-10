@@ -27,6 +27,8 @@ export default defineConfig(({ command }) => ({
       workbox: {
         globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
         navigateFallback: 'index.html',
+        // Opening the shell app download must fetch the zip, not the app page.
+        navigateFallbackDenylist: [/\.zip$/],
       },
     }),
   ],

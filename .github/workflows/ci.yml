@@ -35,6 +35,11 @@ jobs:
         env:
           VITE_GOOGLE_CLIENT_ID: ${{ vars.GOOGLE_CLIENT_ID }}
 
+      # The Noteboard Shell app, downloadable at https://arafat-siam.github.io/noteboard/NoteboardShell.swiftpm.zip
+      - name: Package shell app
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        run: cd wrapper && zip -qr ../dist/NoteboardShell.swiftpm.zip NoteboardShell.swiftpm
+
       - uses: actions/upload-pages-artifact@v3
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         with:

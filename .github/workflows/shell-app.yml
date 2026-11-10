@@ -1,0 +1,26 @@
+name: Shell app
+
+# Compiles the Swift Playgrounds shell app on a Mac, so Swift errors are caught before
+# the user opens it on the iPad.
+on:
+  push:
+    branches: [main]
+    paths: ['wrapper/**', '.github/workflows/shell-app.yml']
+  pull_request:
+    paths: ['wrapper/**', '.github/workflows/shell-app.yml']
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v5
+      - name: Show toolchain
+        run: xcodebuild -version
+      - name: Build for iPad simulator
+        working-directory: wrapper/NoteboardShell.swiftpm
+        run: |
+          SCHEME=$(xcodebuild -list -json | python3 -c 'import json,sys; d=json.load(sys.stdin); print((d.get("workspace") or d.get("project"))["schemes"][0])')
+          echo "Scheme: $SCHEME"
+          bash "$GITHUB_WORKSPACE/scripts/ci-run.sh" "Shell app build" \
+            xcodebuild build -scheme "$SCHEME" -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO

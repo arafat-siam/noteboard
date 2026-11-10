@@ -47,7 +47,9 @@ export function getToken(): string | null {
  * agreed before (Google still shows the account picker if it can't tell who is signed in).
  */
 export function signIn(silent = false): void {
-  const state = crypto.randomUUID();
+  // Inside the Noteboard Shell app, Google runs in the system sign-in sheet; the "shell." prefix
+  // tells the page that opens there to hand the result back to the app (bounceToShellApp).
+  const state = (window.noteboardShell ? SHELL_STATE_PREFIX : '') + crypto.randomUUID();
   sessionStorage.setItem(STATE_KEY, state);
   const params = new URLSearchParams({
     client_id: GOOGLE_CLIENT_ID,
@@ -59,6 +61,22 @@ export function signIn(silent = false): void {
   });
   if (silent) params.set('prompt', 'none');
   location.assign(`https://accounts.google.com/o/oauth2/v2/auth?${params}`);
+}
+
+const SHELL_STATE_PREFIX = 'shell.';
+const SHELL_CALLBACK = 'noteboardshell://auth';
+
+/**
+ * Runs in the system sign-in sheet opened by the Noteboard Shell app: Google redirected here,
+ * but the token belongs to the app, so pass it on through the shell's callback URL.
+ * Returns true when it bounced (the page should render nothing).
+ */
+export function bounceToShellApp(): boolean {
+  if (window.noteboardShell || !location.hash) return false;
+  const params = new URLSearchParams(location.hash.slice(1));
+  if (!params.get('state')?.startsWith(SHELL_STATE_PREFIX)) return false;
+  location.replace(`${SHELL_CALLBACK}?${location.hash.slice(1)}`);
+  return true;
 }
 
 export function signOut(): void {

@@ -54,6 +54,8 @@ export function NotebookEditor({ notebookId, onClose }: { notebookId: string; on
   pagesRef.current = pages ?? [];
 
   const [settings, setSettings] = useState<ToolSettings>(loadSettings);
+  const settingsRef = useRef(settings);
+  settingsRef.current = settings;
   const previousTool = useRef<ToolKind>('pen');
   const [undoStack, setUndoStack] = useState<Op[]>([]);
   const [redoStack, setRedoStack] = useState<Op[]>([]);
@@ -169,18 +171,16 @@ export function NotebookEditor({ notebookId, onClose }: { notebookId: string; on
       }
     };
     window.addEventListener('keydown', onKey);
-    const offPencil = onPencilGesture((gesture) => {
+    // Pencil gestures forwarded by the Noteboard Shell app (web pages can't receive them).
+    const offPencil = onPencilGesture(({ gesture, point }) => {
       if (gesture === 'doubleTap') {
         // Like Apple Notes: double-tap flips between the current tool and the eraser.
-        setSettings((s) => {
-          if (s.tool === 'eraser') {
-            return { ...s, tool: previousTool.current === 'eraser' ? 'pen' : previousTool.current };
-          }
-          previousTool.current = s.tool;
-          return { ...s, tool: 'eraser' };
-        });
+        const current = settingsRef.current.tool;
+        if (current === 'eraser') selectTool(previousTool.current === 'eraser' ? 'pen' : previousTool.current);
+        else selectTool('eraser');
       } else {
-        setSettings((s) => ({ ...s, tool: s.tool === 'highlighter' ? 'pen' : 'highlighter' }));
+        // Squeeze (Pencil Pro): open the quick palette right under the Pencil tip.
+        setPalette(point ?? { x: window.innerWidth / 2, y: window.innerHeight / 2 });
       }
     });
     return () => {
