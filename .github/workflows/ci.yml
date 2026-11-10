@@ -4,26 +4,55 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build-and-test:
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v4
-      - name: Select Xcode
-        run: sudo xcode-select -s /Applications/Xcode_16.4.app || true
+      - uses: actions/checkout@v5
+
+      - name: Show toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+
+      # Each check runs even if an earlier one failed, so one CI run reports every error.
       - name: Package unit tests
+        if: success() || failure()
         working-directory: Packages/NoteboardKit
-        run: swift test
-      - name: Check Swift Playgrounds project generates
+        run: bash "$GITHUB_WORKSPACE/scripts/ci-run.sh" "Package tests" swift test
+
+      - name: Generate Xcode project
+        if: success() || failure()
+        run: brew install xcodegen && xcodegen generate
+
+      - name: Build app for iPad simulator
+        if: success() || failure()
+        run: >
+          bash scripts/ci-run.sh "iPad app build"
+          xcodebuild build
+          -project Noteboard.xcodeproj
+          -scheme Noteboard
+          -destination 'generic/platform=iOS Simulator'
+          CODE_SIGNING_ALLOWED=NO
+
+      # Same code merged into one module, as Swift Playgrounds on the iPad compiles it.
+      - name: Generate Swift Playgrounds project
+        if: success() || failure()
         shell: pwsh
         run: ./scripts/build-playground.ps1
-      - name: Generate Xcode project
-        run: brew install xcodegen && xcodegen generate
-      - name: Build app for iPad simulator
-        run: |
-          xcodebuild build \
-            -project Noteboard.xcodeproj \
-            -scheme Noteboard \
-            -destination 'generic/platform=iOS Simulator' \
-            CODE_SIGNING_ALLOWED=NO
+
+      - name: Build Swift Playgrounds project
+        if: success() || failure()
+        working-directory: Playground/Noteboard.swiftpm
+        run: >
+          bash "$GITHUB_WORKSPACE/scripts/ci-run.sh" "Playgrounds build"
+          xcodebuild build
+          -scheme Noteboard
+          -destination 'generic/platform=iOS Simulator'
+          CODE_SIGNING_ALLOWED=NO
