@@ -1,22 +1,19 @@
 import { getStroke } from 'perfect-freehand';
 import type { Stroke } from '../model/types';
+import { smoothInput } from './smoothing';
 
 /**
- * Tuned for precision: low streamline keeps ink glued to the Pencil tip,
- * light smoothing removes digitizer jitter without rounding off handwriting.
+ * Input is pre-smoothed (smoothing.ts) so curves are fluid and line width changes gradually;
+ * streamline stays low so the ink still sits right under the Pencil tip.
  */
 export function strokeOutline(stroke: Pick<Stroke, 'points' | 'size' | 'tool' | 'hasPressure'>, complete: boolean) {
-  const input: [number, number, number][] = [];
-  for (let i = 0; i + 2 < stroke.points.length + 1; i += 3) {
-    input.push([stroke.points[i]!, stroke.points[i + 1]!, stroke.points[i + 2] ?? 0.5]);
-  }
+  const input = smoothInput(stroke.points);
   const highlighter = stroke.tool === 'highlighter';
   return getStroke(input, {
     size: stroke.size,
     thinning: highlighter ? 0 : 0.6,
-    // Streamline makes ink trail behind the tip, so keep it minimal; Pencil input is already clean.
-    smoothing: 0.35,
-    streamline: 0.04,
+    smoothing: 0.62,
+    streamline: 0.18,
     simulatePressure: !stroke.hasPressure && !highlighter,
     last: complete,
     start: { taper: 0, cap: true },
