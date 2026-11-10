@@ -37,6 +37,11 @@
   box-sizing: border-box;
 }
 
+html {
+  /* Allow scrolling but never Safari's own page zoom (it blurs the ink canvases). */
+  touch-action: pan-x pan-y;
+}
+
 html,
 body,
 #root {
@@ -673,8 +678,13 @@ button.link.muted {
 .pages-scroll {
   flex: 1;
   overflow: auto;
-  -webkit-overflow-scrolling: touch;
+  position: relative;
   overscroll-behavior: contain;
+  /* No browser gestures here: the Pencil must only ever draw. Fingers scroll/zoom via JS. */
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
 }
 .pages {
   display: flex;
@@ -839,4 +849,21 @@ button.link.muted {
 .form-ok {
   color: var(--ok);
   font-size: 14px;
+}
+
+.ink-layer {
+  touch-action: none;
+}
+.diagnostics {
+  position: fixed;
+  right: 12px;
+  bottom: calc(12px + env(safe-area-inset-bottom));
+  z-index: 40;
+  background: rgba(0, 0, 0, 0.78);
+  color: #7cf29c;
+  font: 12px/1.45 ui-monospace, Menlo, monospace;
+  padding: 10px 12px;
+  border-radius: 10px;
+  pointer-events: none;
+  white-space: pre;
 }

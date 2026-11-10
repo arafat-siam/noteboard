@@ -6,6 +6,12 @@ import { getToken, handleRedirect, isConfigured, signIn, wasConnected } from './
 import './pencil/bridge';
 import './styles.css';
 
+// Safari's own pinch-zoom of the whole page enlarges canvases as bitmaps (blurry ink); the
+// editor implements its own sharp zoom instead.
+for (const type of ['gesturestart', 'gesturechange', 'gestureend']) {
+  document.addEventListener(type, (e) => e.preventDefault(), { passive: false });
+}
+
 const redirect = handleRedirect();
 
 // Google tokens last an hour and there is no backend to refresh them, so on launch we

@@ -8,6 +8,8 @@ import { InkPage, type ToolKind, type ToolSettings } from '../ink/InkPage';
 import { TEMPLATE_LABELS } from '../ink/templates';
 import { PAGE_WIDTH, newId, type Page, type PaperTemplate, type Stroke } from '../model/types';
 import { onPencilGesture } from '../pencil/bridge';
+import { penActiveWithin } from '../ink/penState';
+import { diagnostics } from '../ink/diagnostics';
 import { sync } from '../sync/instance';
 import { Modal, PromptDialog } from './Dialogs';
 import { SyncBadge } from './SyncBadge';
@@ -58,7 +60,15 @@ export function NotebookEditor({ notebookId, onClose }: { notebookId: string; on
   const [renaming, setRenaming] = useState(false);
   const [pageMenu, setPageMenu] = useState<Page | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
-  const scrollRef = useRef<HTMLDivElement>(null);
+  const [showDiagnostics, setShowDiagnostics] = useState(diagnostics.enabled);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  // The scroll area only exists after the notebook has loaded, so effects must re-run when it
+  // appears (a plain ref read on mount would be null and gestures would never attach).
+  const [scrollEl, setScrollEl] = useState<HTMLDivElement | null>(null);
+  const attachScroll = useCallback((el: HTMLDivElement | null) => {
+    scrollRef.current = el;
+    setScrollEl(el);
+  }, []);
   const pagesWrapRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -78,12 +88,13 @@ export function NotebookEditor({ notebookId, onClose }: { notebookId: string; on
   }, []);
 
   useLayoutEffect(() => {
-    const el = scrollRef.current;
+    const el = scrollEl;
     if (!el) return;
+    setContainerWidth(el.clientWidth || 800);
     const observer = new ResizeObserver(([entry]) => setContainerWidth(entry?.contentRect.width ?? 800));
     observer.observe(el);
     return () => observer.disconnect();
-  }, []);
+  }, [scrollEl]);
 
   const fitScale = Math.min((containerWidth - 32) / PAGE_WIDTH, 1.6);
   const scale = Math.max(0.2, fitScale * zoom);
@@ -173,93 +184,160 @@ export function NotebookEditor({ notebookId, onClose }: { notebookId: string; on
     };
   }, [undo, redo, selectTool]);
 
-  // ---- Touch: Pencil never scrolls, two/three-finger tap = undo/redo, pinch = zoom ---------
+  // ---- Fingers: scroll with momentum, pinch to zoom, two/three-finger tap = undo/redo -------
+  // The page area has `touch-action: none`, so Safari can never turn a Pencil stroke into a
+  // scroll (which cancels or breaks strokes). Finger scrolling is implemented here instead.
   const zoomRef = useRef(zoom);
   zoomRef.current = zoom;
   useEffect(() => {
-    const el = scrollRef.current;
+    const el = scrollEl;
     if (!el) return;
-    let pinch: { startDist: number; startZoom: number; current: number; active: boolean } | null = null;
-    let tap: { fingers: number; start: number; moved: boolean; x: number; y: number } | null = null;
+    const fingers = new Map<number, { x: number; y: number }>();
+    let pan: { x: number; y: number; t: number; vx: number; vy: number } | null = null;
+    let pinch: { startDist: number; startZoom: number; current: number; midX: number; midY: number } | null = null;
+    let inertia: number | null = null;
+    let tap: { fingers: number; start: number; travel: number } | null = null;
 
-    const fingers = (list: TouchList) => [...list].filter((t) => (t as Touch & { touchType?: string }).touchType !== 'stylus');
-    const hasStylus = (list: TouchList) =>
-      [...list].some((t) => (t as Touch & { touchType?: string }).touchType === 'stylus');
-    const dist = (a: Touch, b: Touch) => Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
-
-    const onStart = (e: TouchEvent) => {
-      if (hasStylus(e.changedTouches)) {
-        e.preventDefault(); // the Pencil writes; it must never scroll the page
-        return;
-      }
-      const f = fingers(e.touches);
-      if (f.length >= 2) {
-        tap = tap && !tap.moved ? { ...tap, fingers: Math.max(tap.fingers, f.length) } : { fingers: f.length, start: Date.now(), moved: false, x: f[0]!.clientX, y: f[0]!.clientY };
-      } else if (f.length === 1) {
-        tap = { fingers: 1, start: Date.now(), moved: false, x: f[0]!.clientX, y: f[0]!.clientY };
-      }
-      if (f.length === 2) pinch = { startDist: dist(f[0]!, f[1]!), startZoom: zoomRef.current, current: zoomRef.current, active: false };
+    const stopInertia = () => {
+      if (inertia != null) cancelAnimationFrame(inertia);
+      inertia = null;
+    };
+    const pair = () => [...fingers.values()].slice(0, 2) as [{ x: number; y: number }, { x: number; y: number }];
+    const fingerDistance = () => {
+      const [a, b] = pair();
+      return Math.hypot(a.x - b.x, a.y - b.y);
+    };
+    const startPan = () => {
+      const first = [...fingers.values()][0];
+      pan = first ? { x: first.x, y: first.y, t: performance.now(), vx: 0, vy: 0 } : null;
+    };
+    const startPinch = () => {
+      const rect = el.getBoundingClientRect();
+      const [a, b] = pair();
+      pinch = {
+        startDist: Math.max(1, fingerDistance()),
+        startZoom: zoomRef.current,
+        current: zoomRef.current,
+        midX: (a.x + b.x) / 2 - rect.left,
+        midY: (a.y + b.y) / 2 - rect.top,
+      };
+      pan = null;
+    };
+    const endPinch = () => {
+      if (!pinch) return;
+      const { current, startZoom, midX, midY } = pinch;
+      pinch = null;
+      const wrap = pagesWrapRef.current;
+      if (wrap) wrap.style.transform = '';
+      if (Math.abs(current - startZoom) < 0.01) return;
+      const ratio = current / startZoom;
+      // Keep the spot between the fingers in place after re-rendering sharply at the new zoom.
+      const anchorX = el.scrollLeft + midX;
+      const anchorY = el.scrollTop + midY;
+      setZoom(current);
+      requestAnimationFrame(() => {
+        el.scrollLeft = anchorX * ratio - midX;
+        el.scrollTop = anchorY * ratio - midY;
+      });
     };
 
-    const onMove = (e: TouchEvent) => {
-      if (hasStylus(e.touches)) {
-        e.preventDefault();
+    const onDown = (e: PointerEvent) => {
+      if (e.pointerType === 'pen') {
+        // The Pencil wins: drop any scroll a resting palm may have started.
+        fingers.clear();
+        pan = null;
+        endPinch();
+        stopInertia();
+        tap = null;
         return;
       }
-      const f = fingers(e.touches);
-      if (tap && f[0] && Math.hypot(f[0].clientX - tap.x, f[0].clientY - tap.y) > 12) tap.moved = true;
-      if (pinch && f.length === 2) {
-        const ratio = dist(f[0]!, f[1]!) / pinch.startDist;
-        if (pinch.active || Math.abs(ratio - 1) > 0.06) {
-          pinch.active = true;
-          tap = null;
-          e.preventDefault();
-          pinch.current = Math.min(4, Math.max(0.5, pinch.startZoom * ratio));
-          const wrap = pagesWrapRef.current;
-          if (wrap) {
-            const midX = (f[0]!.clientX + f[1]!.clientX) / 2 - wrap.getBoundingClientRect().left;
-            const midY = (f[0]!.clientY + f[1]!.clientY) / 2 - wrap.getBoundingClientRect().top;
-            wrap.style.transformOrigin = `${midX}px ${midY}px`;
-            wrap.style.transform = `scale(${pinch.current / pinch.startZoom})`;
-          }
-        }
-      }
+      if (e.pointerType !== 'touch' || penActiveWithin(500)) return; // palm while writing
+      stopInertia();
+      fingers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      tap = tap ? { ...tap, fingers: Math.max(tap.fingers, fingers.size) } : { fingers: 1, start: performance.now(), travel: 0 };
+      if (fingers.size === 1) startPan();
+      else if (fingers.size === 2) startPinch();
     };
 
-    const onEnd = (e: TouchEvent) => {
-      if (pinch?.active && fingers(e.touches).length < 2) {
-        const { current, startZoom } = pinch;
+    const onMove = (e: PointerEvent) => {
+      const prev = fingers.get(e.pointerId);
+      if (!prev) return;
+      if (penActiveWithin(0)) {
+        fingers.clear();
+        pan = null;
+        return;
+      }
+      const p = { x: e.clientX, y: e.clientY };
+      fingers.set(e.pointerId, p);
+      if (tap) tap.travel += Math.hypot(p.x - prev.x, p.y - prev.y);
+
+      if (pinch && fingers.size >= 2) {
+        pinch.current = Math.min(4, Math.max(0.5, pinch.startZoom * (fingerDistance() / pinch.startDist)));
         const wrap = pagesWrapRef.current;
-        if (wrap) wrap.style.transform = '';
-        const ratio = current / startZoom;
-        setZoom(current);
-        requestAnimationFrame(() => {
-          el.scrollTop *= ratio;
-          el.scrollLeft *= ratio;
-        });
-        pinch = null;
+        if (wrap) {
+          wrap.style.transformOrigin = `${pinch.midX + el.scrollLeft - wrap.offsetLeft}px ${pinch.midY + el.scrollTop - wrap.offsetTop}px`;
+          wrap.style.transform = `scale(${pinch.current / pinch.startZoom})`;
+        }
+      } else if (pan) {
+        const now = performance.now();
+        const dx = p.x - pan.x;
+        const dy = p.y - pan.y;
+        el.scrollLeft -= dx;
+        el.scrollTop -= dy;
+        const dt = Math.max(1, now - pan.t);
+        pan.vx = 0.7 * (dx / dt) + 0.3 * pan.vx;
+        pan.vy = 0.7 * (dy / dt) + 0.3 * pan.vy;
+        pan.x = p.x;
+        pan.y = p.y;
+        pan.t = now;
       }
-      if (e.touches.length === 0) {
-        if (tap && !tap.moved && Date.now() - tap.start < 300) {
+    };
+
+    const onUp = (e: PointerEvent) => {
+      if (!fingers.has(e.pointerId)) return;
+      fingers.delete(e.pointerId);
+      if (pinch && fingers.size < 2) {
+        endPinch();
+        if (fingers.size === 1) startPan();
+      } else if (fingers.size === 0 && pan) {
+        // Momentum, like native scrolling.
+        let { vx, vy } = pan;
+        if (performance.now() - pan.t > 80) vx = vy = 0; // finger stopped before lifting
+        pan = null;
+        let last = performance.now();
+        const step = (now: number) => {
+          const dt = now - last;
+          last = now;
+          el.scrollLeft -= vx * dt;
+          el.scrollTop -= vy * dt;
+          const decay = Math.pow(0.996, dt);
+          vx *= decay;
+          vy *= decay;
+          inertia = Math.hypot(vx, vy) > 0.02 ? requestAnimationFrame(step) : null;
+        };
+        if (Math.hypot(vx, vy) > 0.05) inertia = requestAnimationFrame(step);
+      }
+      if (fingers.size === 0 && tap) {
+        if (tap.travel < 12 && performance.now() - tap.start < 300) {
           if (tap.fingers === 2) undo();
           else if (tap.fingers === 3) redo();
         }
         tap = null;
-        pinch = null;
       }
     };
 
-    el.addEventListener('touchstart', onStart, { passive: false });
-    el.addEventListener('touchmove', onMove, { passive: false });
-    el.addEventListener('touchend', onEnd);
-    el.addEventListener('touchcancel', onEnd);
+    el.addEventListener('pointerdown', onDown);
+    el.addEventListener('pointermove', onMove);
+    el.addEventListener('pointerup', onUp);
+    el.addEventListener('pointercancel', onUp);
     return () => {
-      el.removeEventListener('touchstart', onStart);
-      el.removeEventListener('touchmove', onMove);
-      el.removeEventListener('touchend', onEnd);
-      el.removeEventListener('touchcancel', onEnd);
+      stopInertia();
+      el.removeEventListener('pointerdown', onDown);
+      el.removeEventListener('pointermove', onMove);
+      el.removeEventListener('pointerup', onUp);
+      el.removeEventListener('pointercancel', onUp);
     };
-  }, [undo, redo]);
+  }, [undo, redo, scrollEl]);
 
   if (notebook === undefined || pages === undefined) return <div className="loading">Loading…</div>;
   if (!notebook || notebook.kind !== 'notebook' || notebook.deleted) {
@@ -302,7 +380,7 @@ export function NotebookEditor({ notebookId, onClose }: { notebookId: string; on
         <div className="spacer" />
         <SyncBadge compact />
         <button className="text-button" onClick={() => setExportOpen(true)}>
-          Export
+          Export ⋯
         </button>
       </header>
 
@@ -405,7 +483,7 @@ export function NotebookEditor({ notebookId, onClose }: { notebookId: string; on
         </div>
       </div>
 
-      <div className="pages-scroll" ref={scrollRef}>
+      <div className="pages-scroll" ref={attachScroll}>
         <div className="pages" ref={pagesWrapRef}>
           {pages.map((page, index) => (
             <div key={page.id} className="page-slot">
@@ -442,13 +520,28 @@ export function NotebookEditor({ notebookId, onClose }: { notebookId: string; on
       )}
 
       {exportOpen && (
-        <Modal title="Export" onClose={() => setExportOpen(false)}>
+        <Modal title="More" onClose={() => setExportOpen(false)}>
+          <label className="field-label">Export</label>
           <div className="menu-list">
             <button onClick={() => void exportPdf()}>Whole notebook as PDF</button>
             <button onClick={() => void exportVisiblePagePng()}>Current page as image (PNG)</button>
           </div>
+          <label className="field-label">Troubleshooting</label>
+          <div className="menu-list">
+            <button
+              onClick={() => {
+                diagnostics.enabled = !diagnostics.enabled;
+                setShowDiagnostics(diagnostics.enabled);
+                setExportOpen(false);
+              }}
+            >
+              {showDiagnostics ? 'Hide' : 'Show'} Pencil diagnostics
+            </button>
+          </div>
         </Modal>
       )}
+
+      {showDiagnostics && <DiagnosticsOverlay />}
 
       {pageMenu && (
         <Modal title="Page options" onClose={() => setPageMenu(null)}>
@@ -489,6 +582,28 @@ export function NotebookEditor({ notebookId, onClose }: { notebookId: string; on
           </div>
         </Modal>
       )}
+    </div>
+  );
+}
+
+function DiagnosticsOverlay() {
+  const [, tick] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => tick((n) => n + 1), 500);
+    return () => clearInterval(t);
+  }, []);
+  const d = diagnostics;
+  const yes = (v: boolean) => (v ? 'yes' : 'NO');
+  return (
+    <div className="diagnostics" aria-hidden="true">
+      {[
+        `input        ${d.pointerType}   pressure ${d.pressure}`,
+        `samples/s    ${d.samplesPerSecond}   (events/s ${d.eventsPerSecond})`,
+        `coalesced    ${yes(d.coalescedSupported)}   predicted ${yes(d.predictedSupported)}`,
+        `draw frame   ${d.frameMs} ms   input→draw ${d.inputToDrawMs} ms`,
+        `canvas       ${(d.canvasPixels / 1e6).toFixed(1)} MP   dpr ${d.devicePixelRatio}`,
+        `cancelled    ${d.cancels}`,
+      ].join('\n')}
     </div>
   );
 }

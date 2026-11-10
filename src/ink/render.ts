@@ -14,8 +14,9 @@ export function strokeOutline(stroke: Pick<Stroke, 'points' | 'size' | 'tool' | 
   return getStroke(input, {
     size: stroke.size,
     thinning: highlighter ? 0 : 0.6,
-    smoothing: 0.45,
-    streamline: 0.12,
+    // Streamline makes ink trail behind the tip, so keep it minimal; Pencil input is already clean.
+    smoothing: 0.35,
+    streamline: 0.04,
     simulatePressure: !stroke.hasPressure && !highlighter,
     last: complete,
     start: { taper: 0, cap: true },
