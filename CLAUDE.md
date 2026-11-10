@@ -32,7 +32,17 @@ open Noteboard.xcodeproj
 cd Packages/NoteboardKit && swift test     # package unit tests (non-UIKit parts)
 xcodebuild test -scheme Noteboard -destination 'platform=iOS Simulator,name=iPad Pro 13-inch (M4)'
 ```
-The current dev machine is Windows: code can be written here but not built or run. Builds need a Mac, or a cloud Mac CI (Xcode Cloud, GitHub Actions `macos-latest`, Codemagic).
+The current dev machine is Windows with no Mac and no paid Apple Developer account. Code is written here; CI on GitHub Actions (`macos-15`) builds it.
+
+### Running on the iPad: Swift Playgrounds (primary loop)
+```bash
+powershell -ExecutionPolicy Bypass -File scripts/build-playground.ps1
+```
+This merges `App/` and every `NoteboardKit` module into one module at `Playground/Noteboard.swiftpm/Sources/` (gitignored) and zips it. The user opens it in Swift Playgrounds on their iPad Pro. Consequences for all code:
+- **No duplicate file names and no duplicate internal/private-at-file-scope type names across modules** — they collide when merged (the script fails on duplicate file names).
+- Must compile in Swift 5 language mode on iOS 17 too (Playgrounds uses tools 5.9); avoid Swift-6-only syntax.
+- No Info.plist / entitlements in Playgrounds: iCloud, document types and multi-window are unavailable there; guard features so the app still runs without them.
+- Never edit files under `Playground/Noteboard.swiftpm/Sources/` — they are regenerated.
 
 ## Rules
 - File system (`.noteboard` packages) is the source of truth; SwiftData is a rebuildable index.

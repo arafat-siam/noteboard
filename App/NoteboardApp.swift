@@ -1,6 +1,5 @@
 import SwiftUI
-import NoteboardCore
-import NoteboardLibrary
+import NoteboardCanvas
 
 @main
 struct NoteboardApp: App {
@@ -15,10 +14,15 @@ struct NoteboardApp: App {
 
         // Opens a notebook in its own window (Stage Manager / Split View side-by-side).
         WindowGroup(id: "notebook", for: String.self) { $relativePath in
-            if let relativePath {
-                NotebookPlaceholderView(relativePath: relativePath)
-                    .environment(model)
+            NavigationStack {
+                if let relativePath, let url = model.notebookURL(for: relativePath) {
+                    NotebookEditorView(packageURL: url)
+                } else {
+                    ContentUnavailableView("Notebook Unavailable", systemImage: "book.closed")
+                }
             }
+            .environment(model)
+            .task { await model.bootstrap() }
         }
     }
 }

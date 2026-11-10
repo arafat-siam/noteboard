@@ -5,7 +5,9 @@ Each milestone should be shippable to TestFlight.
 ## M0 — Foundation (current)
 - [x] Project structure, XcodeGen, NoteboardKit modules, subagents
 - [x] Core models + `.noteboard` manifest format v1
-- [ ] CI on macOS runner (build + `swift test`)
+- [x] CI on macOS runner (build + `swift test`) — not yet run, repo not on GitHub
+- [x] Swift Playgrounds build for running on iPad without a Mac
+- [x] First usable slice: browse/create/rename/move (drag & drop)/trash/restore folders and notebooks; notebook editor with paper templates, Pencil ink, add page, auto-save
 - [ ] Logging, error reporting, app settings scaffold
 
 ## M1 — Library & organization (differentiator)

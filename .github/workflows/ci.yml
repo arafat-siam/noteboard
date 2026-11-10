@@ -15,6 +15,9 @@ jobs:
       - name: Package unit tests
         working-directory: Packages/NoteboardKit
         run: swift test
+      - name: Check Swift Playgrounds project generates
+        shell: pwsh
+        run: ./scripts/build-playground.ps1
       - name: Generate Xcode project
         run: brew install xcodegen && xcodegen generate
       - name: Build app for iPad simulator
