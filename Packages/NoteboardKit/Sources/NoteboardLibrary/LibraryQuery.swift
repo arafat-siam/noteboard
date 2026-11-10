@@ -7,7 +7,7 @@ public struct LibraryQuery: Codable, Sendable, Hashable {
     public var text: String?
     public var tags: Set<String>
     public var tagMatch: TagMatch
-    public var kinds: Set<LibraryItem.Kind>
+    public var kinds: Set<LibraryEntry.Kind>
     public var favoritesOnly: Bool
     public var modifiedAfter: Date?
     public var modifiedBefore: Date?
@@ -15,7 +15,7 @@ public struct LibraryQuery: Codable, Sendable, Hashable {
     public var withinFolder: String?
 
     public init(text: String? = nil, tags: Set<String> = [], tagMatch: TagMatch = .any,
-                kinds: Set<LibraryItem.Kind> = [], favoritesOnly: Bool = false,
+                kinds: Set<LibraryEntry.Kind> = [], favoritesOnly: Bool = false,
                 modifiedAfter: Date? = nil, modifiedBefore: Date? = nil, withinFolder: String? = nil) {
         self.text = text
         self.tags = tags
@@ -27,7 +27,7 @@ public struct LibraryQuery: Codable, Sendable, Hashable {
         self.withinFolder = withinFolder
     }
 
-    public func matches(_ item: LibraryItem) -> Bool {
+    public func matches(_ item: LibraryEntry) -> Bool {
         if !kinds.isEmpty, !kinds.contains(item.kind) { return false }
         if favoritesOnly, !item.isFavorite { return false }
         if let after = modifiedAfter, item.modifiedAt < after { return false }

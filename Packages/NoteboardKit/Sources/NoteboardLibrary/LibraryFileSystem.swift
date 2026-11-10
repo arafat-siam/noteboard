@@ -73,12 +73,12 @@ public actor LibraryFileSystem {
     // MARK: Listing
 
     /// Folders and notebooks directly inside `folder` (unsorted).
-    public func contents(of folder: String = "") throws -> [LibraryItem] {
+    public func contents(of folder: String = "") throws -> [LibraryEntry] {
         let keys: [URLResourceKey] = [.isDirectoryKey, .creationDateKey, .contentModificationDateKey]
         let urls = try fileManager.contentsOfDirectory(
             at: url(for: folder), includingPropertiesForKeys: keys, options: [.skipsHiddenFiles])
 
-        var items: [LibraryItem] = []
+        var items: [LibraryEntry] = []
         for itemURL in urls {
             let values = try itemURL.resourceValues(forKeys: Set(keys))
             guard values.isDirectory == true else { continue }
@@ -87,13 +87,13 @@ public actor LibraryFileSystem {
             if itemURL.pathExtension == NotebookPackage.fileExtension {
                 // TODO(M1): surface unreadable notebooks instead of hiding them.
                 guard let manifest = try? NotebookPackage(url: itemURL).readManifest() else { continue }
-                items.append(LibraryItem(
+                items.append(LibraryEntry(
                     id: manifest.id, kind: .notebook, title: manifest.title, relativePath: relative,
                     tags: Set(manifest.tags), colorHex: manifest.coverColorHex,
                     createdAt: manifest.createdAt, modifiedAt: manifest.modifiedAt))
             } else {
                 let created = values.creationDate ?? .now
-                items.append(LibraryItem(
+                items.append(LibraryEntry(
                     kind: .folder, title: itemURL.lastPathComponent, relativePath: relative,
                     createdAt: created, modifiedAt: values.contentModificationDate ?? created))
             }

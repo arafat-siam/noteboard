@@ -8,7 +8,7 @@ struct LibraryBrowserView: View {
     @Environment(\.openWindow) private var openWindow
     @Environment(\.supportsMultipleWindows) private var supportsMultipleWindows
 
-    @State private var renamingItem: LibraryItem?
+    @State private var renamingItem: LibraryEntry?
     @State private var newName = ""
 
     private let columns = [GridItem(.adaptive(minimum: 140, maximum: 200), spacing: 20)]
@@ -77,7 +77,7 @@ struct LibraryBrowserView: View {
     }
 
     @ViewBuilder
-    private func tile(for item: LibraryItem) -> some View {
+    private func tile(for item: LibraryEntry) -> some View {
         LibraryTile(item: item, isSelected: model.openNotebookPath == item.relativePath)
             .onTapGesture { model.open(item) }
             .draggable(item.relativePath)
@@ -107,7 +107,7 @@ struct LibraryBrowserView: View {
 }
 
 struct LibraryTile: View {
-    let item: LibraryItem
+    let item: LibraryEntry
     let isSelected: Bool
 
     var body: some View {

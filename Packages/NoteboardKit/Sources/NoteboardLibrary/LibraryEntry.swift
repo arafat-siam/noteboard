@@ -3,7 +3,7 @@ import NoteboardCore
 
 /// Value snapshot of an entry in the library (folder, notebook, or PDF).
 /// The SwiftData index (M1) stores these fields; queries and UI work on this type.
-public struct LibraryItem: Sendable, Hashable, Identifiable {
+public struct LibraryEntry: Sendable, Hashable, Identifiable {
     public enum Kind: String, Sendable, Codable, CaseIterable {
         case folder, notebook, pdf
     }
@@ -43,7 +43,7 @@ public struct LibraryItem: Sendable, Hashable, Identifiable {
 public enum LibrarySort: String, Sendable, Codable, CaseIterable {
     case title, dateCreated, dateModified, lastOpened
 
-    public func sorted(_ items: [LibraryItem], ascending: Bool = true) -> [LibraryItem] {
+    public func sorted(_ items: [LibraryEntry], ascending: Bool = true) -> [LibraryEntry] {
         let result = items.sorted { a, b in
             // Folders always first, like Files.app.
             if (a.kind == .folder) != (b.kind == .folder) { return a.kind == .folder }

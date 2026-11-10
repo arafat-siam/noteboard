@@ -3,9 +3,9 @@ import Testing
 @testable import NoteboardLibrary
 
 struct LibraryQueryTests {
-    let physics = LibraryItem(kind: .notebook, title: "Lecture 1", relativePath: "School/Physics/Lecture 1.noteboard",
+    let physics = LibraryEntry(kind: .notebook, title: "Lecture 1", relativePath: "School/Physics/Lecture 1.noteboard",
                               tags: ["school", "exam"], isFavorite: true, searchableText: "Newton's laws")
-    let recipe = LibraryItem(kind: .pdf, title: "Pancakes", relativePath: "Home/Pancakes.noteboard", tags: ["food"])
+    let recipe = LibraryEntry(kind: .pdf, title: "Pancakes", relativePath: "Home/Pancakes.noteboard", tags: ["food"])
 
     @Test func emptyQueryMatchesEverything() {
         #expect(LibraryQuery().matches(physics))
@@ -25,7 +25,7 @@ struct LibraryQueryTests {
     }
 
     @Test func folderScopeDoesNotMatchSiblingPrefix() {
-        let sibling = LibraryItem(kind: .notebook, title: "x", relativePath: "Schoolwork/x.noteboard")
+        let sibling = LibraryEntry(kind: .notebook, title: "x", relativePath: "Schoolwork/x.noteboard")
         let query = LibraryQuery(withinFolder: "School")
         #expect(query.matches(physics))
         #expect(!query.matches(sibling))
@@ -41,9 +41,9 @@ struct LibraryQueryTests {
 struct LibrarySortTests {
     @Test func foldersComeFirstInBothDirections() {
         let items = [
-            LibraryItem(kind: .notebook, title: "b", relativePath: "b"),
-            LibraryItem(kind: .folder, title: "z", relativePath: "z"),
-            LibraryItem(kind: .notebook, title: "a", relativePath: "a"),
+            LibraryEntry(kind: .notebook, title: "b", relativePath: "b"),
+            LibraryEntry(kind: .folder, title: "z", relativePath: "z"),
+            LibraryEntry(kind: .notebook, title: "a", relativePath: "a"),
         ]
         #expect(LibrarySort.title.sorted(items).map(\.title) == ["z", "a", "b"])
         #expect(LibrarySort.title.sorted(items, ascending: false).map(\.title) == ["z", "b", "a"])

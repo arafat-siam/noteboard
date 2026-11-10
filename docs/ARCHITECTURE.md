@@ -11,7 +11,7 @@
 | Module | Owns | Depends on |
 |---|---|---|
 | `NoteboardCore` | Value-type models (`NotebookManifest`, `PageDescriptor`, `PaperTemplate`), document package read/write, IDs, errors, logging | Foundation only |
-| `NoteboardLibrary` | `LibraryItem` index (SwiftData), folders, tags, smart-folder queries, trash, recents/favorites, search index, Spotlight | Core |
+| `NoteboardLibrary` | `LibraryEntry` index (SwiftData), folders, tags, smart-folder queries, trash, recents/favorites, search index, Spotlight | Core |
 | `NoteboardCanvas` | Canvas views, tools, page virtualization, templates rendering, undo | Core, PencilKit |
 | `NoteboardPDF` | PDF import, page rendering/thumbnails, export (flattened / annotated) | Core, PDFKit |
 | `NoteboardSync` | Ubiquity container, file coordination, `NSFileVersion` conflicts, backups | Core |
@@ -34,7 +34,7 @@ My Notes.noteboard/
 
 ## Library model
 - **Source of truth**: the folder hierarchy on disk inside the app's Documents (or iCloud Drive) container. A Noteboard folder is a real directory, so the library is browsable in the Files app.
-- **Index**: SwiftData `LibraryItem` rows mirror disk (path, kind, title, dates, tags, favorite, color, trashed state, extracted text). `LibraryIndexer.rebuild()` can regenerate it from disk at any time.
+- **Index**: SwiftData `LibraryEntry` rows mirror disk (path, kind, title, dates, tags, favorite, color, trashed state, extracted text). `LibraryIndexer.rebuild()` can regenerate it from disk at any time.
 - Tags, colors, favorites and manual sort order live in the index and are also written to the package/folder metadata (`.noteboard-folder.json` / manifest) so they survive an index rebuild and sync between devices.
 - **Trash**: items move to `.Trash/` with their original path recorded; auto-purge after 30 days.
 - **Smart folders**: a stored `LibraryQuery` (tags any/all, kinds, date range, text, favorites) evaluated against the index.

@@ -20,7 +20,7 @@ final class AppModel {
     var selection: SidebarSelection? = .library
     /// Folder shown in the library browser, relative to the library root ("" = root).
     private(set) var currentFolder = ""
-    private(set) var items: [LibraryItem] = []
+    private(set) var items: [LibraryEntry] = []
     private(set) var trashEntries: [TrashEntry] = []
     var sort: LibrarySort = .title {
         didSet { items = sort.sorted(items) }
@@ -69,7 +69,7 @@ final class AppModel {
         currentFolder.isEmpty ? nil : (currentFolder as NSString).deletingLastPathComponent
     }
 
-    func open(_ item: LibraryItem) {
+    func open(_ item: LibraryEntry) {
         switch item.kind {
         case .folder: show(folder: item.relativePath)
         case .notebook, .pdf: openNotebookPath = item.relativePath
@@ -103,7 +103,7 @@ final class AppModel {
         }
     }
 
-    func rename(_ item: LibraryItem, to newName: String) async {
+    func rename(_ item: LibraryEntry, to newName: String) async {
         await perform { fileSystem in
             let newPath = try await fileSystem.rename(item.relativePath, to: newName)
             self.updateOpenNotebook(from: item.relativePath, to: newPath)
@@ -119,7 +119,7 @@ final class AppModel {
         }
     }
 
-    func moveToTrash(_ item: LibraryItem) async {
+    func moveToTrash(_ item: LibraryEntry) async {
         await perform { fileSystem in
             try await fileSystem.moveToTrash(item.relativePath)
             self.updateOpenNotebook(from: item.relativePath, to: nil)
