@@ -10,10 +10,15 @@ import {
   strokeInLasso,
   strokePoints,
   translateStroke,
+  scaleStroke,
+  recolorStroke,
   unionRects,
   type Point,
   type Rect,
 } from './geometry';
+import { eraseFromStroke } from './erase';
+import type { BrushKind } from './brushes';
+import { PEN_COLORS } from './palette';
 import { templateStyle } from './templates';
 import { notePen, penActiveWithin } from './penState';
 import { diagnostics, recordEvent, recordFrame } from './diagnostics';
@@ -31,6 +36,10 @@ export interface ToolSettings {
   fingerDraws: boolean;
   /** Hold the hovering Pencil still to open the quick tool palette. */
   hoverPalette: boolean;
+  /** Pen type used by the pen tool. */
+  penBrush: BrushKind;
+  /** Eraser removes whole strokes, or only the ink under it. */
+  eraserMode: 'stroke' | 'partial';
 }
 
 interface Props {
@@ -47,7 +56,7 @@ interface Props {
 
 interface Gesture {
   pointerId: number;
-  kind: 'ink' | 'erase' | 'lasso' | 'move';
+  kind: 'ink' | 'erase' | 'lasso' | 'move' | 'scale';
   /** Page position on screen at gesture start; reading layout on every sample would stall the pen. */
   origin: { left: number; top: number };
   points: number[];
@@ -64,6 +73,12 @@ interface Gesture {
   lasso: Point[];
   moveStart: Point;
   offset: Point;
+  /** Partial eraser: original stroke id -> the pieces left of it so far. */
+  pieces: Map<string, Stroke[]>;
+  /** Resizing a selection: fixed corner, the dragged corner's start, current factor. */
+  anchor: Point;
+  scaleFrom: Point;
+  factor: number;
 }
 
 interface Selection {
@@ -72,6 +87,7 @@ interface Selection {
 }
 
 const HOLD_TO_SNAP_MS = 500;
+type Corner = 'nw' | 'ne' | 'se' | 'sw';
 const HOVER_HOLD_MS = 900;
 /** Extra area rendered around the visible part, so small scrolls need no redraw. */
 const VIEW_MARGIN = 0.3;
@@ -259,6 +275,7 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
       points: withPrediction && !g.snapped ? g.points.concat(g.predicted) : g.points,
       hasPressure: g.hasPressure,
       createdAt: Date.now(),
+      ...(highlighter ? {} : { brush: settings.penBrush }),
     };
   };
 
@@ -301,7 +318,7 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
     }
 
     if (g.kind === 'ink') {
-      if (settings.shapeSnap && !g.snapped && Date.now() - g.holdSince > HOLD_TO_SNAP_MS && g.points.length > 24) {
+      if (settings.shapeSnap && !g.snapped && Date.now() - g.holdSince > HOLD_TO_SNAP_MS && g.points.length > 12) {
         const pts: Point[] = [];
         let pressure = 0;
         for (let i = 0; i < g.points.length; i += 3) {
@@ -345,6 +362,13 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
     } else if (g.kind === 'move' && selection) {
       ctx.translate(g.offset.x, g.offset.y);
       for (const s of page.strokes) if (selection.ids.has(s.id)) drawStroke(ctx, s);
+    } else if (g.kind === 'scale' && selection) {
+      ctx.translate(g.anchor.x, g.anchor.y);
+      ctx.scale(g.factor, g.factor);
+      ctx.translate(-g.anchor.x, -g.anchor.y);
+      for (const s of page.strokes) if (selection.ids.has(s.id)) drawStroke(ctx, s);
+    } else if (g.kind === 'erase' && g.pieces.size) {
+      for (const pieces of g.pieces.values()) for (const s of pieces) drawStroke(ctx, s);
     }
   };
 
@@ -355,6 +379,28 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
   const eraseAt = (g: Gesture, p: Point) => {
     const radius = settings.eraserSize / 2;
     let changed = false;
+    if (settings.eraserMode === 'partial') {
+      for (const s of page.strokes) {
+        const current = g.pieces.get(s.id) ?? (g.erased.has(s.id) ? [] : [s]);
+        let touched = false;
+        const next: Stroke[] = [];
+        for (const piece of current) {
+          const result = eraseFromStroke(piece, p, radius, newId);
+          if (result) touched = true;
+          next.push(...(result ?? [piece]));
+        }
+        if (touched) {
+          g.pieces.set(s.id, next);
+          hiddenRef.current.add(s.id);
+          changed = true;
+        }
+      }
+      if (changed) {
+        paintInk(true);
+        requestRender();
+      }
+      return;
+    }
     for (const s of page.strokes) {
       if (!g.erased.has(s.id) && strokeHit(s, p, radius)) {
         g.erased.add(s.id);
@@ -423,8 +469,13 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
       diagnostics.predictedSupported = typeof native.getPredictedEvents === 'function';
     }
     if (e.pointerType === 'pen') notePen(true);
-    // Fingers scroll/zoom (handled by the editor) unless finger drawing is on.
-    if (e.pointerType === 'touch' && !settings.fingerDraws) return;
+    const handle = (e.target as Element).closest('[data-handle]')?.getAttribute('data-handle') as Corner | null;
+    const box = containerRef.current!.getBoundingClientRect();
+    const at = { x: (e.clientX - box.left) / scale, y: (e.clientY - box.top) / scale };
+    const onSelection = !!selection && (!!handle || rectContains(selection.bounds, at));
+    // Fingers scroll/zoom (handled by the editor) unless finger drawing is on — but a finger
+    // may always move or resize a selection.
+    if (e.pointerType === 'touch' && !settings.fingerDraws && !onSelection) return;
     if (e.pointerType === 'mouse' && e.button !== 0) return;
     if (gestureRef.current || !regionRef.current) return;
     e.preventDefault();
@@ -455,10 +506,28 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
       lasso: [p],
       moveStart: p,
       offset: { x: 0, y: 0 },
+      pieces: new Map(),
+      anchor: p,
+      scaleFrom: p,
+      factor: 1,
     };
     growDirty(g, p.x, p.y);
 
-    if (settings.tool === 'lasso') {
+    if (handle && selection) {
+      const b = selection.bounds;
+      const corners: Record<Corner, Point> = {
+        nw: { x: b.x, y: b.y },
+        ne: { x: b.x + b.width, y: b.y },
+        se: { x: b.x + b.width, y: b.y + b.height },
+        sw: { x: b.x, y: b.y + b.height },
+      };
+      const opposite: Record<Corner, Corner> = { nw: 'se', ne: 'sw', se: 'nw', sw: 'ne' };
+      g.kind = 'scale';
+      g.anchor = corners[opposite[handle]];
+      g.scaleFrom = corners[handle];
+      for (const id of selection.ids) hiddenRef.current.add(id);
+      paintInk(true);
+    } else if (settings.tool === 'lasso') {
       if (selection && rectContains(selection.bounds, p)) {
         g.kind = 'move';
         for (const id of selection.ids) hiddenRef.current.add(id);
@@ -525,6 +594,12 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
         case 'move':
           g.offset = { x: p.x - g.moveStart.x, y: p.y - g.moveStart.y };
           break;
+        case 'scale': {
+          const from = Math.hypot(g.scaleFrom.x - g.anchor.x, g.scaleFrom.y - g.anchor.y);
+          const to = Math.hypot(p.x - g.anchor.x, p.y - g.anchor.y);
+          g.factor = Math.min(8, Math.max(0.1, from > 0 ? to / from : 1));
+          break;
+        }
       }
     }
     if (g.kind === 'ink' && !g.snapped) {
@@ -566,8 +641,35 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
           break;
         }
         case 'erase':
-          if (g.erased.size) onChange(page.id, [], [...g.erased]);
+          if (g.pieces.size) {
+            onChange(page.id, [...g.pieces.values()].flat(), [...g.pieces.keys()]);
+          } else if (g.erased.size) {
+            onChange(page.id, [], [...g.erased]);
+          }
           break;
+        case 'scale': {
+          if (!selection) break;
+          if (Math.abs(g.factor - 1) < 0.01) {
+            hiddenRef.current = new Set();
+            paintInk(true);
+            break;
+          }
+          const f = g.factor;
+          const scaled = page.strokes
+            .filter((s) => selection.ids.has(s.id))
+            .map((s) => scaleStroke(s, g.anchor, f, newId()));
+          onChange(page.id, scaled, [...selection.ids]);
+          const b = selection.bounds;
+          const x0 = g.anchor.x + (b.x - g.anchor.x) * f;
+          const y0 = g.anchor.y + (b.y - g.anchor.y) * f;
+          const x1 = g.anchor.x + (b.x + b.width - g.anchor.x) * f;
+          const y1 = g.anchor.y + (b.y + b.height - g.anchor.y) * f;
+          setSelection({
+            ids: new Set(scaled.map((s) => s.id)),
+            bounds: { x: Math.min(x0, x1), y: Math.min(y0, y1), width: Math.abs(x1 - x0), height: Math.abs(y1 - y0) },
+          });
+          break;
+        }
         case 'lasso': {
           const picked = page.strokes.filter((s) => strokeInLasso(s, g.lasso));
           const bounds = unionRects(picked.map(strokeBounds));
@@ -593,11 +695,18 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
           break;
         }
       }
-    } else if (g.erased.size || g.kind === 'move') {
+    } else if (g.erased.size || g.pieces.size || g.kind === 'move' || g.kind === 'scale') {
       hiddenRef.current = new Set();
       paintInk(true);
     }
     requestRender(); // clears the live layer
+  };
+
+  const recolorSelection = (color: string) => {
+    if (!selection) return;
+    const recolored = page.strokes.filter((s) => selection.ids.has(s.id)).map((s) => recolorStroke(s, color, newId()));
+    onChange(page.id, recolored, [...selection.ids]);
+    setSelection({ ...selection, ids: new Set(recolored.map((s) => s.id)) });
   };
 
   const deleteSelection = () => {
@@ -645,9 +754,21 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
           }}
         >
           <div className="selection-menu">
+            {PEN_COLORS.map((c) => (
+              <button
+                key={c}
+                className="selection-color"
+                style={{ background: c }}
+                aria-label={`Recolor ${c}`}
+                onClick={() => recolorSelection(c)}
+              />
+            ))}
             <button onClick={duplicateSelection}>Duplicate</button>
             <button onClick={deleteSelection}>Delete</button>
           </div>
+          {(['nw', 'ne', 'se', 'sw'] as const).map((corner) => (
+            <div key={corner} className={`selection-handle ${corner}`} data-handle={corner} aria-label="Resize" />
+          ))}
         </div>
       )}
     </div>

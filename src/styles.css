@@ -943,3 +943,288 @@ button.link.muted {
   outline: 3px solid var(--accent);
   outline-offset: 2px;
 }
+
+/* ---- Floating tool palette (Apple Notes style) ---- */
+.tool-palette {
+  position: fixed;
+  z-index: 35;
+  left: 50%;
+  bottom: calc(18px + env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  background: color-mix(in srgb, var(--surface) 82%, transparent);
+  -webkit-backdrop-filter: blur(20px) saturate(1.6);
+  backdrop-filter: blur(20px) saturate(1.6);
+  border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  border-radius: 24px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.22), 0 2px 6px rgba(0, 0, 0, 0.12);
+  padding: 4px 10px 0;
+  touch-action: none;
+}
+.tool-palette.placed {
+  bottom: auto;
+  transform: none;
+}
+.palette-grip {
+  width: 44px;
+  height: 14px;
+  margin: 0 auto;
+  cursor: grab;
+  position: relative;
+}
+.palette-grip::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 4px;
+  width: 36px;
+  height: 5px;
+  border-radius: 3px;
+  transform: translateX(-50%);
+  background: var(--muted);
+  opacity: 0.45;
+}
+.palette-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+}
+.palette-button {
+  width: 40px;
+  height: 40px;
+  margin-bottom: 8px;
+  border-radius: 50%;
+  background: none;
+  border: none;
+  font-size: 22px;
+  color: var(--text);
+  padding: 0;
+}
+.pen-tray {
+  display: flex;
+  align-items: flex-end;
+  height: 62px;
+  overflow: hidden;
+  padding: 0 6px;
+  gap: 2px;
+}
+.pen {
+  width: 34px;
+  height: 70px;
+  padding: 0;
+  background: none;
+  border: none;
+  transform: translateY(18px);
+  transition: transform 0.18s cubic-bezier(0.2, 0.9, 0.3, 1.2);
+}
+.pen svg {
+  width: 100%;
+  height: 100%;
+  filter: drop-shadow(0 1px 1.5px rgba(0, 0, 0, 0.25));
+}
+.pen.active {
+  transform: translateY(0);
+}
+.palette-color {
+  width: 34px;
+  height: 34px;
+  margin: 0 4px 11px;
+  border-radius: 50%;
+  padding: 0;
+  border: 3px solid var(--surface);
+  box-shadow: 0 0 0 1.5px var(--border);
+}
+.tool-palette.minimized {
+  padding: 6px;
+  border-radius: 50%;
+}
+.palette-mini {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  padding: 0;
+  background: none;
+  border: none;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+}
+.mini-pen {
+  width: 24px;
+  height: 56px;
+  transform: translateY(10px) rotate(-30deg);
+}
+.mini-pen svg {
+  width: 100%;
+  height: 100%;
+}
+.palette-popover {
+  position: absolute;
+  bottom: calc(100% + 12px);
+  left: 50%;
+  transform: translateX(-50%);
+  width: 300px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.28);
+  padding: 14px;
+  display: grid;
+  gap: 12px;
+}
+.tool-palette.placed .palette-popover {
+  bottom: auto;
+  top: calc(100% + 12px);
+}
+.popover-title {
+  font-weight: 700;
+}
+.popover-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+.slider-row {
+  display: grid;
+  grid-template-columns: auto 1fr 36px;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+}
+.slider-row input {
+  width: 100%;
+  accent-color: var(--accent);
+}
+.slider-value {
+  text-align: right;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.thickness-preview {
+  height: 34px;
+  display: grid;
+  align-items: center;
+  background: #fff;
+  border-radius: 10px;
+  padding: 0 16px;
+}
+.thickness-preview span {
+  display: block;
+  border-radius: 99px;
+}
+.segmented {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  background: var(--surface-2);
+  border-radius: 10px;
+  padding: 3px;
+  gap: 3px;
+}
+.segmented button {
+  border: none;
+  background: none;
+  padding: 8px;
+  font-size: 13px;
+  border-radius: 8px;
+}
+.segmented button.on {
+  background: var(--surface);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
+  font-weight: 600;
+}
+.color-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: none;
+  border: none;
+  text-align: left;
+  padding: 4px 0;
+}
+.toggle-row small {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+}
+.switch {
+  width: 46px;
+  height: 28px;
+  border-radius: 14px;
+  background: var(--border);
+  position: relative;
+  flex-shrink: 0;
+  transition: background 0.15s;
+}
+.switch::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  transition: transform 0.15s;
+}
+.switch.on {
+  background: #34c759;
+}
+.switch.on::after {
+  transform: translateX(18px);
+}
+.zoom-controls {
+  display: flex;
+  align-items: center;
+}
+/* Room below the last page so the palette never covers where you write. */
+.pages {
+  padding-bottom: calc(140px + env(safe-area-inset-bottom)) !important;
+}
+
+/* ---- Selection: resize handles and colours ---- */
+.selection-handle {
+  position: absolute;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #fff;
+  border: 2px solid var(--accent);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+  pointer-events: auto;
+  touch-action: none;
+}
+.selection-handle.nw { left: -11px; top: -11px; cursor: nwse-resize; }
+.selection-handle.ne { right: -11px; top: -11px; cursor: nesw-resize; }
+.selection-handle.se { right: -11px; bottom: -11px; cursor: nwse-resize; }
+.selection-handle.sw { left: -11px; bottom: -11px; cursor: nesw-resize; }
+.selection-menu .selection-color {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border-radius: 50%;
+  border: 2px solid var(--surface);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.2);
+}
+.selection-menu {
+  align-items: center;
+  background: var(--surface);
+  border-radius: 14px;
+  padding: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+  top: -54px !important;
+}
+.selection-menu button:not(.selection-color) {
+  box-shadow: none !important;
+}
+@media (prefers-color-scheme: dark) {
+  .selection-menu .selection-color,
+  .palette-color {
+    box-shadow: 0 0 0 1.5px rgba(255, 255, 255, 0.45);
+  }
+}

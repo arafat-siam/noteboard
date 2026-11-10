@@ -14,6 +14,8 @@ import { sync } from '../sync/instance';
 import { Modal, PromptDialog } from './Dialogs';
 import { SyncBadge } from './SyncBadge';
 import { QuickPalette } from './QuickPalette';
+import { ToolPalette } from './ToolPalette';
+import { HIGHLIGHTER_COLORS, PEN_COLORS } from '../ink/palette';
 
 interface Op {
   pageId: string;
@@ -21,19 +23,16 @@ interface Op {
   removed: Stroke[];
 }
 
-const PEN_COLORS = ['#1c1c1e', '#2f6fde', '#d93025', '#1e8e3e', '#f29900', '#9334e6'];
-const HIGHLIGHTER_COLORS = ['#ffe14d', '#7cf29c', '#7cd4ff', '#ff9ad5', '#ffb86b'];
-const PEN_SIZES = [1.5, 2.5, 4, 7];
-const HIGHLIGHTER_SIZES = [12, 20, 30];
-const ERASER_SIZES = [8, 18, 36];
 
 const DEFAULT_SETTINGS: ToolSettings = {
   tool: 'pen',
   color: PEN_COLORS[0]!,
   highlighterColor: HIGHLIGHTER_COLORS[0]!,
-  penSize: PEN_SIZES[1]!,
-  highlighterSize: HIGHLIGHTER_SIZES[1]!,
-  eraserSize: ERASER_SIZES[1]!,
+  penSize: 2.5,
+  highlighterSize: 20,
+  eraserSize: 18,
+  penBrush: 'fountain',
+  eraserMode: 'stroke',
   shapeSnap: true,
   fingerDraws: false,
   hoverPalette: true,
@@ -396,12 +395,6 @@ export function NotebookEditor({ notebookId, onClose }: { notebookId: string; on
     if (page) await shareOrDownload(await exportPagePng(page), `${safeFilename(notebook.name)} p${index + 1}.png`);
   };
 
-  const sizes = settings.tool === 'highlighter' ? HIGHLIGHTER_SIZES : settings.tool === 'eraser' ? ERASER_SIZES : PEN_SIZES;
-  const currentSize =
-    settings.tool === 'highlighter' ? settings.highlighterSize : settings.tool === 'eraser' ? settings.eraserSize : settings.penSize;
-  const colors = settings.tool === 'highlighter' ? HIGHLIGHTER_COLORS : PEN_COLORS;
-  const currentColor = settings.tool === 'highlighter' ? settings.highlighterColor : settings.color;
-
   return (
     <div className="editor">
       <header className="toolbar editor-top">
@@ -413,99 +406,7 @@ export function NotebookEditor({ notebookId, onClose }: { notebookId: string; on
         </button>
         <span className="muted">{pages.length} page{pages.length === 1 ? '' : 's'}</span>
         <div className="spacer" />
-        <SyncBadge compact />
-        <button className="text-button" onClick={() => setExportOpen(true)}>
-          Export ⋯
-        </button>
-      </header>
-
-      <div className="toolbar tools">
-        <div className="tool-group">
-          {(
-            [
-              ['pen', '✒️', 'Pen (P)'],
-              ['highlighter', '🖍️', 'Highlighter (H)'],
-              ['eraser', '🩹', 'Eraser (E)'],
-              ['lasso', '➰', 'Lasso (L)'],
-            ] as const
-          ).map(([tool, icon, label]) => (
-            <button
-              key={tool}
-              className={`tool ${settings.tool === tool ? 'active' : ''}`}
-              aria-label={label}
-              title={label}
-              onClick={() => selectTool(tool)}
-            >
-              {icon}
-            </button>
-          ))}
-        </div>
-
-        {(settings.tool === 'pen' || settings.tool === 'highlighter') && (
-          <div className="tool-group">
-            {colors.map((c) => (
-              <button
-                key={c}
-                className={`color-dot small ${c === currentColor ? 'selected' : ''}`}
-                style={{ background: c }}
-                aria-label={`Color ${c}`}
-                onClick={() => update(settings.tool === 'highlighter' ? { highlighterColor: c } : { color: c })}
-              />
-            ))}
-            <label className="color-dot small custom" aria-label="Custom color">
-              <input
-                type="color"
-                value={currentColor}
-                onChange={(e) => update(settings.tool === 'highlighter' ? { highlighterColor: e.target.value } : { color: e.target.value })}
-              />
-            </label>
-          </div>
-        )}
-
-        {settings.tool !== 'lasso' && (
-          <div className="tool-group">
-            {sizes.map((size) => (
-              <button
-                key={size}
-                className={`size ${size === currentSize ? 'active' : ''}`}
-                aria-label={`Size ${size}`}
-                onClick={() =>
-                  update(settings.tool === 'highlighter' ? { highlighterSize: size } : settings.tool === 'eraser' ? { eraserSize: size } : { penSize: size })
-                }
-              >
-                <span style={{ width: Math.min(22, 3 + size * (settings.tool === 'pen' ? 2.2 : 0.6)), height: Math.min(22, 3 + size * (settings.tool === 'pen' ? 2.2 : 0.6)) }} />
-              </button>
-            ))}
-          </div>
-        )}
-
-        <div className="tool-group">
-          <button
-            className={`tool text ${settings.shapeSnap ? 'active' : ''}`}
-            title="Hold the Pencil still at the end of a stroke to turn it into a perfect shape"
-            onClick={() => update({ shapeSnap: !settings.shapeSnap })}
-          >
-            △ Shapes
-          </button>
-          <button
-            className={`tool text ${settings.fingerDraws ? 'active' : ''}`}
-            title="Draw with your finger (otherwise fingers scroll and only the Pencil draws)"
-            onClick={() => update({ fingerDraws: !settings.fingerDraws })}
-          >
-            ☝️ Finger
-          </button>
-        </div>
-
-        <div className="tool-group">
-          <button className="tool" aria-label="Undo" title="Undo (two-finger tap)" disabled={!undoStack.length} onClick={undo}>
-            ↶
-          </button>
-          <button className="tool" aria-label="Redo" title="Redo (three-finger tap)" disabled={!redoStack.length} onClick={redo}>
-            ↷
-          </button>
-        </div>
-
-        <div className="tool-group">
+        <div className="zoom-controls">
           <button className="tool" aria-label="Zoom out" onClick={() => setZoom((z) => Math.max(0.5, z / 1.25))}>
             −
           </button>
@@ -516,7 +417,21 @@ export function NotebookEditor({ notebookId, onClose }: { notebookId: string; on
             +
           </button>
         </div>
-      </div>
+        <SyncBadge compact />
+        <button className="text-button" onClick={() => setExportOpen(true)}>
+          Export ⋯
+        </button>
+      </header>
+
+      <ToolPalette
+        settings={settings}
+        update={update}
+        selectTool={selectTool}
+        undo={undo}
+        redo={redo}
+        canUndo={undoStack.length > 0}
+        canRedo={redoStack.length > 0}
+      />
 
       <div className="pages-scroll" ref={attachScroll}>
         <div className="pages" ref={pagesWrapRef}>

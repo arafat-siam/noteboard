@@ -1,41 +1,82 @@
 import { getStroke } from 'perfect-freehand';
 import type { Stroke } from '../model/types';
 import { smoothInput } from './smoothing';
+import { BRUSHES } from './brushes';
+
+export function brushOf(stroke: Pick<Stroke, 'tool' | 'brush'>) {
+  return stroke.tool === 'highlighter' ? null : BRUSHES[stroke.brush ?? 'fountain'];
+}
 
 /**
  * Input is pre-smoothed (smoothing.ts) so curves are fluid and line width changes gradually;
  * streamline stays low so the ink still sits right under the Pencil tip.
  */
-export function strokeOutline(stroke: Pick<Stroke, 'points' | 'size' | 'tool' | 'hasPressure'>, complete: boolean) {
+export function strokeOutline(
+  stroke: Pick<Stroke, 'points' | 'size' | 'tool' | 'hasPressure' | 'brush'>,
+  complete: boolean,
+) {
   const input = smoothInput(stroke.points);
-  const highlighter = stroke.tool === 'highlighter';
+  const brush = brushOf(stroke);
+  const taper = brush?.taper ?? 0;
   return getStroke(input, {
     size: stroke.size,
-    thinning: highlighter ? 0 : 0.6,
+    thinning: brush ? brush.thinning : 0,
     smoothing: 0.62,
     streamline: 0.18,
-    simulatePressure: !stroke.hasPressure && !highlighter,
+    simulatePressure: !stroke.hasPressure && !!brush,
     last: complete,
-    start: { taper: 0, cap: true },
-    end: { taper: 0, cap: true },
+    start: { taper, cap: taper === 0 },
+    // The live stroke's end is the pen tip: never taper it while still drawing.
+    end: { taper: complete ? taper : 0, cap: taper === 0 || !complete },
   });
 }
 
-/** SVG path data for a perfect-freehand outline (quadratic curves through midpoints). */
+/**
+ * SVG path data for a closed perfect-freehand outline: quadratic curves through the outline
+ * midpoints. Uses only explicit M/Q/Z commands — PDF libraries mis-read the T shorthand,
+ * which turned every exported stroke into spikes.
+ */
 export function outlineToSvgPath(outline: number[][]): string {
-  if (outline.length < 2) return '';
-  const avg = (a: number, b: number) => ((a + b) / 2).toFixed(2);
-  const [first, second] = [outline[0]!, outline[1]!];
-  let d = `M${first[0]!.toFixed(2)},${first[1]!.toFixed(2)} Q${second[0]!.toFixed(2)},${second[1]!.toFixed(2)} ${avg(
-    second[0]!,
-    outline[2]?.[0] ?? second[0]!,
-  )},${avg(second[1]!, outline[2]?.[1] ?? second[1]!)} T`;
-  for (let i = 2; i < outline.length - 1; i++) {
-    const a = outline[i]!;
-    const b = outline[i + 1]!;
-    d += `${avg(a[0]!, b[0]!)},${avg(a[1]!, b[1]!)} `;
+  const n = outline.length;
+  if (n < 3) return '';
+  const f = (v: number) => (Math.round(v * 100) / 100).toString();
+  const mid = (i: number) => {
+    const a = outline[i % n]!;
+    const b = outline[(i + 1) % n]!;
+    return `${f((a[0]! + b[0]!) / 2)},${f((a[1]! + b[1]!) / 2)}`;
+  };
+  let d = `M${mid(0)}`;
+  for (let i = 1; i <= n; i++) {
+    const p = outline[i % n]!;
+    d += ` Q${f(p[0]!)},${f(p[1]!)} ${mid(i)}`;
   }
-  return `${d}Z`;
+  return `${d} Z`;
+}
+
+/** Grainy graphite pattern for the pencil, one per colour. */
+const pencilPatterns = new Map<string, CanvasPattern | null>();
+
+function pencilPattern(ctx: CanvasRenderingContext2D, color: string): CanvasPattern | null {
+  if (pencilPatterns.has(color)) return pencilPatterns.get(color)!;
+  let pattern: CanvasPattern | null = null;
+  try {
+    const tile = document.createElement('canvas');
+    tile.width = tile.height = 48;
+    const t = tile.getContext('2d')!;
+    t.fillStyle = color;
+    let seed = 7;
+    const rand = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+    for (let i = 0; i < 1500; i++) {
+      t.globalAlpha = 0.35 + rand() * 0.65;
+      t.fillRect(rand() * 48, rand() * 48, 0.6 + rand() * 0.9, 0.6 + rand() * 0.9);
+    }
+    pattern = ctx.createPattern(tile, 'repeat');
+    pattern?.setTransform(new DOMMatrix().scale(0.25));
+  } catch {
+    pattern = null;
+  }
+  pencilPatterns.set(color, pattern);
+  return pattern;
 }
 
 const pathCache = new Map<string, Path2D>();
@@ -54,11 +95,14 @@ function cachedPath(stroke: Stroke): Path2D {
 export function drawStroke(ctx: CanvasRenderingContext2D, stroke: Stroke, live = false): void {
   const path = live ? new Path2D(outlineToSvgPath(strokeOutline(stroke, false))) : cachedPath(stroke);
   ctx.save();
-  if (stroke.tool === 'highlighter') {
+  const brush = brushOf(stroke);
+  if (!brush) {
     ctx.globalAlpha = 0.35;
     ctx.globalCompositeOperation = 'multiply';
+  } else {
+    ctx.globalAlpha = brush.opacity;
   }
-  ctx.fillStyle = stroke.color;
+  ctx.fillStyle = (brush?.textured && pencilPattern(ctx, stroke.color)) || stroke.color;
   ctx.fill(path);
   ctx.restore();
 }

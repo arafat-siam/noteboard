@@ -109,3 +109,18 @@ export function translateStroke(stroke: Stroke, dx: number, dy: number, id: stri
   }
   return { ...stroke, id, points, createdAt: Date.now() };
 }
+
+/** Scales a stroke about `anchor` (line width scales too, like resizing a drawing). */
+export function scaleStroke(stroke: Stroke, anchor: Point, factor: number, id: string): Stroke {
+  const points = stroke.points.slice();
+  for (let i = 0; i + 1 < points.length; i += 3) {
+    points[i] = anchor.x + (points[i]! - anchor.x) * factor;
+    points[i + 1] = anchor.y + (points[i + 1]! - anchor.y) * factor;
+  }
+  return { ...stroke, id, points, size: Math.max(0.3, stroke.size * factor) };
+}
+
+/** Same stroke in a new colour (keeps its stacking order). */
+export function recolorStroke(stroke: Stroke, color: string, id: string): Stroke {
+  return { ...stroke, id, color };
+}

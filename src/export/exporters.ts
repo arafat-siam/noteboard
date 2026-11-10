@@ -1,7 +1,7 @@
 import type { PDFPage, RGB } from 'pdf-lib';
 import type { NoteboardDB } from '../db/db';
 import type { LibraryItem, Notebook, Page, PaperTemplate } from '../model/types';
-import { drawPage, outlineToSvgPath, strokeOutline } from '../ink/render';
+import { brushOf, drawPage, outlineToSvgPath, strokeOutline } from '../ink/render';
 import { TEMPLATE_METRICS } from '../ink/templates';
 import { mergeLibrary, mergePage } from '../sync/merge';
 import { markLibraryChanged } from '../db/library';
@@ -59,7 +59,7 @@ export async function exportNotebookPdf(notebook: Notebook, pages: Page[]): Prom
         y: page.height * PT,
         scale: PT,
         color: hexToRgb(stroke.color),
-        opacity: stroke.tool === 'highlighter' ? 0.35 : 1,
+        opacity: stroke.tool === 'highlighter' ? 0.35 : (brushOf(stroke)?.opacity ?? 1),
         borderWidth: 0,
       });
     }

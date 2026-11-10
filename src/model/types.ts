@@ -17,6 +17,8 @@ export interface Stroke {
   points: number[];
   /** False for mouse/finger input, where pressure is simulated from speed. */
   hasPressure: boolean;
+  /** Pen type (pens only). Missing on older strokes = fountain pen. */
+  brush?: 'fountain' | 'ballpoint' | 'pencil' | 'brush';
   createdAt: number;
 }
 
