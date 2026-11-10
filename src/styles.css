@@ -740,3 +740,103 @@ button.link.muted {
   color: var(--text);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 }
+
+/* ---- App lock ---- */
+.app-root {
+  height: 100%;
+}
+.lock-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  background: var(--bg);
+  padding: env(safe-area-inset-top) 16px env(safe-area-inset-bottom);
+}
+.lock-card {
+  width: min(340px, 100%);
+  display: grid;
+  justify-items: center;
+  text-align: center;
+  gap: 10px;
+}
+.lock-icon {
+  font-size: 40px;
+}
+.lock-card h1 {
+  font-size: 22px;
+  margin: 0;
+}
+.lock-hint {
+  color: var(--muted);
+  font-size: 13px;
+  margin: 0;
+}
+.pin-dots {
+  display: flex;
+  gap: 14px;
+  margin: 14px 0 4px;
+  min-height: 16px;
+}
+.pin-dots span {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid var(--text);
+}
+.pin-dots span.filled {
+  background: var(--text);
+}
+.pin-dots.shake {
+  animation: shake 0.35s;
+}
+@keyframes shake {
+  20%, 60% { transform: translateX(-8px); }
+  40%, 80% { transform: translateX(8px); }
+}
+.lock-message {
+  min-height: 20px;
+  color: var(--danger);
+  font-size: 14px;
+}
+.keypad {
+  display: grid;
+  grid-template-columns: repeat(3, 76px);
+  gap: 16px;
+  margin-top: 6px;
+}
+.keypad button {
+  height: 76px;
+  border-radius: 50%;
+  font-size: 28px;
+  background: var(--surface-2);
+}
+.keypad .keypad-aux {
+  background: none;
+  border: none;
+  font-size: 22px;
+}
+.keypad .keypad-aux.ok {
+  color: var(--accent);
+  font-weight: 700;
+  font-size: 18px;
+}
+.lock-forgot {
+  margin-top: 10px;
+}
+.dialog-subtitle {
+  font-size: 15px;
+  margin: 18px 0 4px;
+}
+.select.full {
+  width: 100%;
+}
+.form-error {
+  color: var(--danger);
+  font-size: 14px;
+}
+.form-ok {
+  color: var(--ok);
+  font-size: 14px;
+}

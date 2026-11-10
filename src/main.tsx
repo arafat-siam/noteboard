@@ -1,6 +1,7 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './App';
+import { AppLock } from './security/AppLock';
 import { getToken, handleRedirect, isConfigured, signIn, wasConnected } from './sync/auth';
 import './pencil/bridge';
 import './styles.css';
@@ -24,7 +25,9 @@ if (shouldRenew) {
 } else {
   createRoot(document.getElementById('root')!).render(
     <StrictMode>
-      <App />
+      <AppLock>
+        <App />
+      </AppLock>
     </StrictMode>,
   );
 }

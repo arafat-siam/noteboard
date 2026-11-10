@@ -40,6 +40,8 @@ Verify UI changes in the browser pane (launch config `noteboard-dev`). Synthetic
 - Never run side effects inside React state updater functions (StrictMode runs them twice — this already caused a double-undo bug).
 - iPad Safari canvas memory is tight: only pages near the viewport keep canvases (see InkPage).
 - Pencil must never scroll the page (touchstart with `touchType === 'stylus'` is prevented in NotebookEditor); fingers scroll.
+- App lock (`src/security/`): the user sets the PIN on first launch; only a salted PBKDF2 hash is stored on the device. Never hard-code a PIN or any secret — the repo and the deployed JS are public. It's a lock screen, not disk encryption; say so honestly.
+- Data privacy model: the site is public but holds no data. Each visitor's notes live in their own browser (IndexedDB) and their own Google Drive.
 - Google scope is `drive.file` only. No secrets in the repo (the OAuth client ID is public by design).
 - CI annotations (`scripts/ci-run.sh`) are how build errors are read without GitHub login — keep using it for new CI steps.
 

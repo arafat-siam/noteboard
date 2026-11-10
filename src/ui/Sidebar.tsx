@@ -8,12 +8,15 @@ import { act, useLibrary } from './useLibrary';
 import { FolderGlyph } from './Dialogs';
 import { SyncBadge } from './SyncBadge';
 import { readDragIds } from './dnd';
+import { SecurityDialog } from '../security/SecurityDialog';
+import { lockNow } from '../security/AppLock';
 
 export function Sidebar({ route, onNavigate }: { route: Route; onNavigate: (r: Route) => void }) {
   const library = useLibrary();
   const [expanded, setExpanded] = useState<Set<ID>>(new Set());
   const [dropTarget, setDropTarget] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
+  const [securityOpen, setSecurityOpen] = useState(false);
 
   const dropProps = (key: string, folderId: ID | null) => ({
     onDragOver: (e: React.DragEvent) => {
@@ -102,6 +105,14 @@ export function Sidebar({ route, onNavigate }: { route: Route; onNavigate: (r: R
       <div className="sidebar-footer">
         <SyncBadge />
         <div className="backup-row">
+          <button className="link" onClick={() => setSecurityOpen(true)}>
+            Security & PIN
+          </button>
+          <button className="link" onClick={lockNow}>
+            🔒 Lock
+          </button>
+        </div>
+        <div className="backup-row">
           <button className="link" onClick={() => void exportBackup(db).then((b) => shareOrDownload(b, `Noteboard backup ${new Date().toISOString().slice(0, 10)}.json`))}>
             Export backup
           </button>
@@ -121,6 +132,7 @@ export function Sidebar({ route, onNavigate }: { route: Route; onNavigate: (r: R
           />
         </div>
       </div>
+      {securityOpen && <SecurityDialog onClose={() => setSecurityOpen(false)} />}
     </aside>
   );
 }
