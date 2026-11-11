@@ -4,7 +4,8 @@ import { db } from '../db/db';
 import { renameItem } from '../db/library';
 import { addPage, applyStrokeChange, deletePage, notebookPages, setPageTemplate } from '../db/pages';
 import { exportNotebookPdf, exportPagePng, safeFilename, shareOrDownload } from '../export/exporters';
-import { InkPage, type ToolKind, type ToolSettings } from '../ink/InkPage';
+import type { ToolKind, ToolSettings } from '../ink/InkPage';
+import { PageSlot } from './PageSlot';
 import { TEMPLATE_LABELS } from '../ink/templates';
 import { PAGE_WIDTH, newId, type Page, type PaperTemplate, type Stroke } from '../model/types';
 import { onPencilGesture } from '../pencil/bridge';
@@ -69,9 +70,9 @@ function loadSettings(): ToolSettings {
 
 export function NotebookEditor({ notebookId, onClose }: { notebookId: string; onClose: () => void }) {
   const notebook = useLiveQuery(() => db.items.get(notebookId), [notebookId]);
-  const pages = useLiveQuery(() => notebookPages(db, notebookId), [notebookId]);
-  const pagesRef = useRef<Page[]>([]);
-  pagesRef.current = pages ?? [];
+  // Only the notebook's page list is watched here; each page loads itself (see PageSlot).
+  const pageIds = notebook?.kind === 'notebook' ? notebook.pageIds : [];
+  const pagesById = useRef(new Map<string, Page>()).current;
 
   const [settings, setSettings] = useState<ToolSettings>(loadSettings);
   const settingsRef = useRef(settings);
@@ -88,6 +89,7 @@ export function NotebookEditor({ notebookId, onClose }: { notebookId: string; on
   const [palette, setPalette] = useState<{ x: number; y: number } | null>(null);
   const openPalette = useCallback((x: number, y: number) => setPalette({ x, y }), []);
   const closePalette = useCallback(() => setPalette(null), []);
+  const requestSelect = useCallback(() => setSettings((s) => (s.tool === 'lasso' ? s : { ...s, tool: 'lasso' })), []);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   // The scroll area only exists after the notebook has loaded, so effects must re-run when it
   // appears (a plain ref read on mount would be null and gestures would never attach).
@@ -174,7 +176,7 @@ export function NotebookEditor({ notebookId, onClose }: { notebookId: string; on
 
   const onChange = useCallback(
     (pageId: string, added: Stroke[], removedIds: string[]) => {
-      const page = pagesRef.current.find((p) => p.id === pageId);
+      const page = pagesById.get(pageId);
       const removed = page ? page.strokes.filter((s) => removedIds.includes(s.id)) : [];
       busy.current = busy.current.then(async () => {
         const inverse = await apply({ pageId, added, removed });
@@ -426,7 +428,7 @@ export function NotebookEditor({ notebookId, onClose }: { notebookId: string; on
     };
   }, [undo, redo, scrollEl]);
 
-  if (notebook === undefined || pages === undefined) return <div className="loading">Loading…</div>;
+  if (notebook === undefined) return <div className="loading">Loading…</div>;
   if (!notebook || notebook.kind !== 'notebook' || notebook.deleted) {
     return (
       <div className="empty">
@@ -443,8 +445,9 @@ export function NotebookEditor({ notebookId, onClose }: { notebookId: string; on
   const exportVisiblePagePng = async () => {
     setExportOpen(false);
     const el = scrollRef.current;
-    const index = el ? Math.min(pages.length - 1, Math.floor(el.scrollTop / (notebookPageHeight(scale) + 24))) : 0;
-    const page = pages[Math.max(0, index)];
+    const index = el ? Math.min(pageIds.length - 1, Math.floor(el.scrollTop / (notebookPageHeight(scale) + 24))) : 0;
+    const pageId = pageIds[Math.max(0, index)];
+    const page = pageId ? await db.pages.get(pageId) : undefined;
     if (page) await shareOrDownload(await exportPagePng(page), `${safeFilename(notebook.name)} p${index + 1}.png`);
   };
 
@@ -457,7 +460,7 @@ export function NotebookEditor({ notebookId, onClose }: { notebookId: string; on
         <button className="editor-title" onClick={() => setRenaming(true)}>
           {notebook.name}
         </button>
-        <span className="muted">{pages.length} page{pages.length === 1 ? '' : 's'}</span>
+        <span className="muted">{pageIds.length} page{pageIds.length === 1 ? '' : 's'}</span>
         <div className="spacer" />
         <div className="zoom-controls">
           <button className="tool" aria-label="Zoom out" onClick={() => setZoom((z) => Math.max(0.5, z / 1.25))}>
@@ -492,26 +495,21 @@ export function NotebookEditor({ notebookId, onClose }: { notebookId: string; on
 
       <div className="pages-scroll" ref={attachScroll}>
         <div className="pages" ref={pagesWrapRef}>
-          {pages.map((page, index) => (
-            <div key={page.id} className="page-slot">
-              <InkPage
-                page={page}
-                scale={scale}
-                settings={settings}
-                scroller={scrollEl}
-                onChange={onChange}
-                onHoverHold={openPalette}
-                onRequestSelect={() => selectTool('lasso')}
-              />
-              <div className="page-footer">
-                <span>
-                  Page {index + 1} of {pages.length}
-                </span>
-                <button className="link" onClick={() => setPageMenu(page)}>
-                  Page options
-                </button>
-              </div>
-            </div>
+          {pageIds.map((pageId, index) => (
+            <PageSlot
+              key={pageId}
+              pageId={pageId}
+              index={index}
+              total={pageIds.length}
+              scale={scale}
+              settings={settings}
+              scroller={scrollEl}
+              onChange={onChange}
+              onHoverHold={openPalette}
+              onRequestSelect={requestSelect}
+              onPageMenu={setPageMenu}
+              registry={pagesById}
+            />
           ))}
           <button
             className="add-page"
@@ -605,7 +603,7 @@ export function NotebookEditor({ notebookId, onClose }: { notebookId: string; on
             </button>
             <button
               className="danger-text"
-              disabled={pages.length <= 1}
+              disabled={pageIds.length <= 1}
               onClick={() => {
                 if (confirm('Delete this page?')) void deletePage(db, notebook.id, pageMenu.id).then(() => sync.syncSoon());
                 setPageMenu(null);

@@ -20,6 +20,8 @@ export type SyncStatus =
   | { state: 'signed-out' }
   | { state: 'needs-sign-in' }
   | { state: 'idle'; lastSyncedAt: number | null }
+  /** The user paused automatic syncing ("Sync now" still works). */
+  | { state: 'paused'; lastSyncedAt: number | null }
   | { state: 'syncing' }
   | { state: 'offline'; lastSyncedAt: number | null }
   | { state: 'error'; message: string; lastSyncedAt: number | null };
@@ -30,6 +32,15 @@ interface LibraryFile {
 }
 
 const LIBRARY_FILE = 'library.json';
+const PAUSED_KEY = 'noteboard.syncPaused';
+
+function readPaused(): boolean {
+  try {
+    return localStorage.getItem(PAUSED_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
 const PAGE_PREFIX = 'page_';
 const FILE_PREFIX = 'file_';
 const AUTO_SYNC_DELAY_MS = 4_000;
@@ -44,6 +55,8 @@ export class SyncEngine {
   private lastSyncedAt: number | null = null;
   /** While this returns true (e.g. the user is writing), syncing waits so it never steals frames. */
   private busy: () => boolean = () => false;
+  /** Automatic syncing switched off by the user (kept across launches). */
+  private paused = readPaused();
 
   constructor(private readonly db: NoteboardDB) {
     this.status = this.restingStatus();
@@ -67,6 +80,7 @@ export class SyncEngine {
   private restingStatus(): SyncStatus {
     if (!isConfigured()) return { state: 'not-configured' };
     if (!getToken()) return wasConnected() ? { state: 'needs-sign-in' } : { state: 'signed-out' };
+    if (this.paused) return { state: 'paused', lastSyncedAt: this.lastSyncedAt };
     if (!navigator.onLine) return { state: 'offline', lastSyncedAt: this.lastSyncedAt };
     return { state: 'idle', lastSyncedAt: this.lastSyncedAt };
   }
@@ -75,7 +89,7 @@ export class SyncEngine {
   start(): () => void {
     const onOnline = () => this.syncSoon(0);
     const onVisible = () => document.visibilityState === 'visible' && this.syncSoon(0);
-    const onHidden = () => document.visibilityState === 'hidden' && void this.syncNow();
+    const onHidden = () => document.visibilityState === 'hidden' && !this.paused && void this.syncNow();
     window.addEventListener('online', onOnline);
     document.addEventListener('visibilitychange', onVisible);
     document.addEventListener('visibilitychange', onHidden);
@@ -89,12 +103,34 @@ export class SyncEngine {
     };
   }
 
+  get isPaused(): boolean {
+    return this.paused;
+  }
+
+  /** Pause or resume automatic syncing. Notes stay safe on this device while paused. */
+  setPaused(paused: boolean): void {
+    this.paused = paused;
+    try {
+      localStorage.setItem(PAUSED_KEY, paused ? '1' : '0');
+    } catch {
+      /* private mode */
+    }
+    if (paused && this.timer) {
+      clearTimeout(this.timer);
+      this.timer = null;
+    }
+    // Always notify, so the pause button updates even while a sync is still finishing.
+    this.set(this.running ? { ...this.status } : this.restingStatus());
+    if (!paused) this.syncSoon(0);
+  }
+
   deferWhile(busy: () => boolean): void {
     this.busy = busy;
   }
 
   /** Call after any local edit; batches rapid edits into one sync. */
   syncSoon(delay = AUTO_SYNC_DELAY_MS): void {
+    if (this.paused) return;
     if (this.timer) clearTimeout(this.timer);
     this.timer = setTimeout(() => {
       this.timer = null;
@@ -106,7 +142,12 @@ export class SyncEngine {
     }, delay);
   }
 
-  async syncNow(): Promise<void> {
+  /** Syncs right away. `manual` (the Sync now button) works even while syncing is paused. */
+  async syncNow(manual = false): Promise<void> {
+    if (this.paused && !manual) {
+      this.set(this.restingStatus());
+      return;
+    }
     if (this.running) {
       this.again = true;
       return this.running;
@@ -124,7 +165,7 @@ export class SyncEngine {
     this.running = this.run(new DriveClient(token))
       .then(() => {
         this.lastSyncedAt = Date.now();
-        this.set({ state: 'idle', lastSyncedAt: this.lastSyncedAt });
+        this.set(this.restingStatus());
       })
       .catch((error: unknown) => {
         if (error instanceof DriveAuthError) {

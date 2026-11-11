@@ -6,6 +6,9 @@ import { applyStrokeChange } from '../db/pages';
 import { SyncEngine } from './engine';
 import { DriveClient } from './drive';
 import { setLocalOnly } from './localOnly';
+
+// Pretend Google sign-in is set up for this app (the real ID only exists in the deployed build).
+vi.mock('../config', () => ({ GOOGLE_CLIENT_ID: 'test-client-id' }));
 import type { Stroke } from '../model/types';
 
 /** A tiny in-memory Google Drive that speaks just enough of the v3 REST API. */
@@ -88,9 +91,11 @@ const stroke = (id: string): Stroke => ({
   points: [10.123456789, 20.987654321, 0.512345, 30.5555555, 40.4444444, 0.6],
 });
 
-beforeEach(() => {
+beforeEach(async () => {
   files = new Map();
   vi.stubGlobal('fetch', fakeFetch);
+  (await import('./auth.testing')).setToken();
+  vi.stubGlobal('navigator', { onLine: true });
 });
 
 describe('sync engine with Google Drive', () => {
@@ -141,5 +146,50 @@ describe('sync engine with Google Drive', () => {
     const b = new NoteboardDB(`b-${crypto.randomUUID()}`);
     await syncDevice(b);
     expect((await b.items.toArray()).map((i) => i.name)).toContain('From old version');
+  });
+});
+
+describe('pausing sync', () => {
+  it('a paused engine never contacts Drive on its own, but "Sync now" still works', async () => {
+    const { setToken } = await import('./auth.testing');
+    setToken();
+    vi.stubGlobal('navigator', { onLine: true });
+    const db = new NoteboardDB(`p-${crypto.randomUUID()}`);
+    await createNotebook(db, 'Paused notes', null);
+    const engine = new SyncEngine(db);
+    const calls = vi.fn(fakeFetch);
+    vi.stubGlobal('fetch', calls);
+
+    engine.setPaused(true);
+    await engine.syncNow();
+    expect(calls).not.toHaveBeenCalled();
+    expect(engine.current.state).toBe('paused');
+
+    await engine.syncNow(true);
+    expect(calls).toHaveBeenCalled();
+    expect(engine.current.state).toBe('paused'); // still paused afterwards
+    engine.setPaused(false);
+  });
+});
+
+describe('page loading', () => {
+  it('watching one page is not woken up by writes to other pages', async () => {
+    const { liveQuery } = await import('dexie');
+    const { addPage } = await import('../db/pages');
+    const db = new NoteboardDB(`l-${crypto.randomUUID()}`);
+    const nb = await createNotebook(db, 'Big', null);
+    await addPage(db, nb.id);
+    const [first, second] = (await db.items.get(nb.id))!.kind === 'notebook' ? ((await db.items.get(nb.id)) as { pageIds: string[] }).pageIds : [];
+    let reads = 0;
+    const sub = liveQuery(() => db.pages.get(first!)).subscribe(() => reads++);
+    await new Promise((r) => setTimeout(r, 50));
+    const before = reads;
+    await applyStrokeChange(db, second!, [stroke('other-page')], []);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(reads).toBe(before);
+    await applyStrokeChange(db, first!, [stroke('this-page')], []);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(reads).toBe(before + 1);
+    sub.unsubscribe();
   });
 });
