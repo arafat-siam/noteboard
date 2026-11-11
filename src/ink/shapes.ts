@@ -92,7 +92,7 @@ function sampleSegment(a: Point, b: Point, step: number): Point[] {
   return out;
 }
 
-function polylinePoints(vertices: Point[], closed: boolean, step = 3): Point[] {
+export function polylinePoints(vertices: Point[], closed: boolean, step = 3): Point[] {
   const out: Point[] = [];
   const count = closed ? vertices.length : vertices.length - 1;
   for (let i = 0; i < count; i++) out.push(...sampleSegment(vertices[i]!, vertices[(i + 1) % vertices.length]!, step));

@@ -42,6 +42,9 @@ Verify UI changes in the browser pane (launch config `noteboard-dev`). Synthetic
 - iPad Safari canvas memory is tight: only pages near the viewport keep canvases (see InkPage).
 - iPadOS Scribble delays Pencil touches in web pages; the editor `preventDefault`s stylus touchstart/touchmove (except on buttons/inputs) to opt out. Don't remove it.
 - Pencil hover (`pointermove` with `buttons === 0`) drives the hover cursor and hover-hold quick palette; hovering must never count as pen contact for palm rejection.
+- Selecting: a finger tap (or long-press) on ink selects it; Pencil taps draw dots. Snapped lines snap to ends/midpoints/perpendicular/parallel/15° angles of straight ink (`src/ink/snapping.ts`, + tests).
+- Apple Pencil Pro haptics: `src/pencil/haptics.ts` posts to the shell's `noteboardHaptic` handler (`PencilHaptics.swift`, UICanvasFeedbackGenerator, iPadOS 17.5+). Safari/Home Screen can't vibrate the Pencil.
+- Laser pointer tool: live layer only, never saved.
 - Web pages can't receive Pencil double-tap, squeeze or barrel roll; those need the native wrapper (see `src/pencil/bridge.ts`).
 - Pencil must never scroll the page (touchstart with `touchType === 'stylus'` is prevented in NotebookEditor); fingers scroll.
 - App lock (`src/security/`): the user sets the PIN on first launch; only a salted PBKDF2 hash is stored on the device. Never hard-code a PIN or any secret — the repo and the deployed JS are public. It's a lock screen, not disk encryption; say so honestly.

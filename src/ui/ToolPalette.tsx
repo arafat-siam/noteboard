@@ -19,7 +19,7 @@ interface Props {
   updateSlot: (patch: Partial<PenSlot>) => void;
   addSlot: () => void;
   removeSlot: (id: string) => void;
-  selectTool: (tool: 'eraser' | 'lasso') => void;
+  selectTool: (tool: 'eraser' | 'lasso' | 'laser') => void;
   undo: () => void;
   redo: () => void;
   canUndo: boolean;
@@ -358,14 +358,16 @@ export function ToolPalette(props: Props) {
             );
           })}
           <span className="tray-divider" />
-          {(['eraser', 'lasso'] as const).map((tool) => (
+          {(['eraser', 'lasso', 'laser'] as const).map((tool) => (
             <button
               key={tool}
               className={`pen ${settings.tool === tool ? 'active' : ''}`}
-              aria-label={tool === 'eraser' ? 'Eraser' : 'Lasso'}
+              aria-label={tool === 'eraser' ? 'Eraser' : tool === 'lasso' ? 'Lasso' : 'Laser pointer'}
               aria-pressed={settings.tool === tool}
               onClick={() => {
-                if (settings.tool === tool) toggle(tool);
+                if (settings.tool === tool) {
+                  if (tool !== 'laser') toggle(tool);
+                }
                 else {
                   setPopover(null);
                   props.selectTool(tool);

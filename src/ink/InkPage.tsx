@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { newId, type Page, type Stroke } from '../model/types';
 import { applyRegion, DEFAULT_FILL_OPACITY, drawPage, drawStroke, type CanvasRegion } from './render';
-import { adjustShape, recognizeShape, type ShapeKind } from './shapes';
+import { adjustShape, polylinePoints, recognizeShape, type ShapeKind } from './shapes';
+import { buildGuides, sameSnap, snapLineEnd, snapToPoint, type SnapGuides, type SnapResult } from './snapping';
+import { pencilHaptic } from '../pencil/haptics';
 import {
   boundsOf,
   rectContains,
@@ -30,7 +32,7 @@ import { noteHover, notePen, penActiveWithin } from './penState';
 import { diagnostics, recordEvent, recordFrame } from './diagnostics';
 import { hideHoverCursor, showHoverCursor } from './hoverCursor';
 
-export type ToolKind = 'pen' | 'highlighter' | 'eraser' | 'lasso';
+export type ToolKind = 'pen' | 'highlighter' | 'eraser' | 'lasso' | 'laser';
 
 export interface ToolSettings {
   tool: ToolKind;
@@ -70,7 +72,7 @@ interface Props {
 
 interface Gesture {
   pointerId: number;
-  kind: 'ink' | 'erase' | 'lasso' | 'move' | 'scale' | 'rotate';
+  kind: 'ink' | 'erase' | 'lasso' | 'move' | 'scale' | 'rotate' | 'laser';
   /** Page position on screen at gesture start; reading layout on every sample would stall the pen. */
   origin: { left: number; top: number };
   points: number[];
@@ -98,6 +100,12 @@ interface Gesture {
   angle: number;
   /** Snapped shape that keeps following the Pencil until it lifts (Drawboard-style). */
   shape: { kind: ShapeKind; base: Point[]; from: Point; pressure: number } | null;
+  /** When the gesture started (performance.now), to tell a tap from a stroke. */
+  startedAt: number;
+  /** Straight ink on the page a snapped line can snap to (built once, when the line snaps). */
+  guides: SnapGuides | null;
+  /** What the snapped line is currently snapped to, shown as a guide. */
+  snap: SnapResult | null;
 }
 
 interface Selection {
@@ -106,11 +114,15 @@ interface Selection {
 }
 
 const HOLD_TO_SNAP_MS = 500;
+/** A finger touch shorter than this (that didn't move) is a tap: on ink it selects it, like Drawboard. */
+const TAP_MS = 300;
 type Corner = 'nw' | 'ne' | 'se' | 'sw';
 type Handle = Corner | 'rotate';
 const LONG_PRESS_MS = 480;
 
 const HOVER_HOLD_MS = 900;
+/** Laser pointer trail: how long each bit stays visible (ms). Never saved. */
+const LASER_LIFE_MS = 900;
 /** Extra area rendered around the visible part, so small scrolls need no redraw. */
 const VIEW_MARGIN = 0.3;
 /** iPad Safari refuses canvases above ~16.7M pixels; stay well under per canvas. */
@@ -133,10 +145,12 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
   const inkRef = useRef<HTMLCanvasElement>(null);
   const liveRef = useRef<HTMLCanvasElement>(null);
   const gestureRef = useRef<Gesture | null>(null);
+  /** Laser pointer trails (page units + time), fading out; one array per touch. */
+  const laserRef = useRef<{ x: number; y: number; t: number }[][]>([]);
   const hiddenRef = useRef<Set<string>>(new Set());
   const frameRef = useRef<number | null>(null);
   const hoverRef = useRef<{ x: number; y: number; timer: number | null } | null>(null);
-  const pressRef = useRef<{ id: number; x: number; y: number; timer: number } | null>(null);
+  const pressRef = useRef<{ id: number; x: number; y: number; at: Point; t: number; timer: number } | null>(null);
   const selectionBoxRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   // Imported PDF page under the ink.
@@ -357,6 +371,118 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
 
   const pressureOf = (e: PointerEvent) => (e.pointerType === 'pen' ? Math.max(0.05, e.pressure || 0.5) : 0.5);
 
+  /** Draws the fading laser trails; returns true while anything is still visible. */
+  const drawLaser = (ctx: CanvasRenderingContext2D, region: CanvasRegion): boolean => {
+    const now = performance.now();
+    const drawing = gestureRef.current?.kind === 'laser';
+    // Drop faded points (the trail being drawn keeps at least its tip).
+    laserRef.current = laserRef.current
+      .map((trail, i, all) => {
+        const live = drawing && i === all.length - 1;
+        const kept = trail.filter((q) => now - q.t < LASER_LIFE_MS);
+        return live && !kept.length && trail.length ? [trail[trail.length - 1]!] : kept;
+      })
+      .filter((trail) => trail.length);
+    clearLive(ctx, null);
+    if (!laserRef.current.length) return false;
+    applyRegion(ctx, region);
+    const px = 1 / scale;
+    ctx.save();
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    for (const trail of laserRef.current) {
+      for (let i = 1; i < trail.length; i++) {
+        const a = trail[i - 1]!;
+        const b = trail[i]!;
+        const fade = Math.max(0, 1 - (now - b.t) / LASER_LIFE_MS);
+        // Soft red glow, then a bright core.
+        ctx.globalAlpha = 0.25 * fade;
+        ctx.strokeStyle = '#ff3b30';
+        ctx.lineWidth = 12 * px;
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(b.x, b.y);
+        ctx.stroke();
+        ctx.globalAlpha = fade;
+        ctx.strokeStyle = '#ff6b5e';
+        ctx.lineWidth = 4 * px;
+        ctx.stroke();
+      }
+      const tip = trail[trail.length - 1]!;
+      const fade = Math.max(0, 1 - (now - tip.t) / LASER_LIFE_MS);
+      ctx.globalAlpha = drawing ? 1 : fade;
+      ctx.fillStyle = '#ff3b30';
+      ctx.beginPath();
+      ctx.arc(tip.x, tip.y, 5 * px, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+    return true;
+  };
+
+  /** How close (page units) the Pencil must come to a point for it to snap: ~12 screen px. */
+  const snapRadius = () => Math.max(4, 12 / scale);
+
+  /** Makes the live stroke a straight line a→b. */
+  const setLine = (g: Gesture, a: Point, b: Point) => {
+    const pr = g.shape?.pressure ?? 0.5;
+    const pts = polylinePoints([a, b], false);
+    g.points = pts.flatMap((q) => [q.x, q.y, pr]);
+    for (const q of pts) growDirty(g, q.x, q.y);
+    g.needsDraw = true;
+  };
+
+  /** Shows what a snapped line is aligned to (Drawboard-style guide). */
+  const drawSnapGuide = (ctx: CanvasRenderingContext2D, g: Gesture) => {
+    const snap = g.snap;
+    if (!snap) return;
+    const px = 1 / scale;
+    ctx.save();
+    ctx.strokeStyle = '#2f6fde';
+    ctx.fillStyle = '#2f6fde';
+    ctx.lineWidth = 1.5 * px;
+    if (snap.kind === 'end' || snap.kind === 'mid') {
+      ctx.beginPath();
+      ctx.arc(snap.point.x, snap.point.y, 6 * px, 0, Math.PI * 2);
+      ctx.stroke();
+      if (snap.kind === 'mid') {
+        ctx.font = `${11 * px}px -apple-system, system-ui, sans-serif`;
+        ctx.fillText('midpoint', snap.point.x + 9 * px, snap.point.y - 9 * px);
+      }
+    } else {
+      const a = g.shape?.base[0];
+      if (a) {
+        // Dashed guide along the snapped direction, across the page.
+        const dx = snap.point.x - a.x;
+        const dy = snap.point.y - a.y;
+        const len = Math.hypot(dx, dy) || 1;
+        const far = 2000;
+        ctx.setLineDash([6 * px, 5 * px]);
+        ctx.globalAlpha = 0.7;
+        ctx.beginPath();
+        ctx.moveTo(a.x - (dx / len) * far, a.y - (dy / len) * far);
+        ctx.lineTo(a.x + (dx / len) * far, a.y + (dy / len) * far);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.globalAlpha = 1;
+      }
+      if (snap.segment) {
+        ctx.lineWidth = 3 * px;
+        ctx.globalAlpha = 0.45;
+        ctx.beginPath();
+        ctx.moveTo(snap.segment.a.x, snap.segment.a.y);
+        ctx.lineTo(snap.segment.b.x, snap.segment.b.y);
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+      }
+      const label =
+        snap.kind === 'perpendicular' ? '⊥ 90°' : snap.kind === 'parallel' ? '∥ parallel' : `${Math.round(((snap.degrees ?? 0) % 180 + 180) % 180)}°`;
+      ctx.font = `${11 * px}px -apple-system, system-ui, sans-serif`;
+      ctx.fillText(label, snap.point.x + 9 * px, snap.point.y - 9 * px);
+    }
+    ctx.restore();
+  };
+
   const liveStroke = (g: Gesture, withPrediction: boolean): Stroke => {
     const highlighter = settings.tool === 'highlighter';
     return {
@@ -404,6 +530,10 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
     const region = regionRef.current;
     const ctx = getLiveContext(liveRef.current);
     if (!ctx || !region) return;
+    if (laserRef.current.length) {
+      if (drawLaser(ctx, region)) requestRender();
+      if (!g || g.kind === 'laser') return;
+    }
     if (!g) {
       clearLive(ctx, null);
       return;
@@ -424,6 +554,16 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
           for (const p of shape.points) growDirty(g, p.x, p.y);
           g.snapped = true;
           g.shape = { kind: shape.kind, base: shape.points, from: pts[pts.length - 1]!, pressure: avg };
+          if (shape.kind === 'line') {
+            g.guides = buildGuides(page.strokes);
+            // Start the line exactly on a nearby end / midpoint, so lines connect.
+            const start = snapToPoint(shape.points[0]!, g.guides, snapRadius());
+            const a = start?.point ?? shape.points[0]!;
+            const end = shape.points[shape.points.length - 1]!;
+            g.shape.base = [a, end];
+            setLine(g, a, end);
+          }
+          pencilHaptic('pathCompleted', g.origin.left + pts[pts.length - 1]!.x * scale, g.origin.top + pts[pts.length - 1]!.y * scale);
           g.needsDraw = true;
         } else {
           g.holdSince = Infinity; // don't retry on every frame
@@ -431,8 +571,9 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
       }
       if (g.needsDraw) {
         const start = performance.now();
-        clearLive(ctx, g.dirty);
+        clearLive(ctx, g.guides ? null : g.dirty);
         applyRegion(ctx, region);
+        if (g.snap) drawSnapGuide(ctx, g);
         drawStroke(ctx, liveStroke(g, true), true);
         g.needsDraw = false;
         if (diagnostics.enabled) recordFrame(performance.now() - start, performance.now() - g.lastSampleAt);
@@ -590,7 +731,9 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
     const tool = settings.tool;
     // Preview exactly where (and how big) ink will land.
     const size =
-      tool === 'eraser'
+      tool === 'laser'
+        ? 10
+        : tool === 'eraser'
         ? settings.eraserSize * scale
         : tool === 'highlighter'
           ? settings.highlighterSize * scale
@@ -642,13 +785,15 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
     // Fingers scroll/zoom (handled by the editor) unless finger drawing is on — but a finger
     // may always move or resize a selection.
     if (e.pointerType === 'touch' && !settings.fingerDraws && !onSelection) {
-      // Long-press ink with a finger to select it (any tool), like in Apple Notes.
+      // Tap ink with a finger to select it (like Drawboard), or long-press it (like Apple Notes).
       cancelPress();
       if (!onRequestSelect) return;
       pressRef.current = {
         id: e.pointerId,
         x: e.clientX,
         y: e.clientY,
+        at,
+        t: performance.now(),
         timer: window.setTimeout(() => {
           pressRef.current = null;
           const hit = strokeAt(at);
@@ -697,6 +842,9 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
       factor: 1,
       startAngle: 0,
       angle: 0,
+      startedAt: performance.now(),
+      guides: null,
+      snap: null,
     };
     growDirty(g, p.x, p.y);
 
@@ -725,6 +873,9 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
       g.kind = 'move';
       for (const id of selection.ids) hiddenRef.current.add(id);
       paintInk(true);
+    } else if (settings.tool === 'laser') {
+      g.kind = 'laser';
+      laserRef.current.push([{ ...p, t: performance.now() }]);
     } else if (settings.tool === 'lasso') {
       setSelection(null);
       g.kind = 'lasso';
@@ -775,7 +926,15 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
       switch (g.kind) {
         case 'ink':
           if (g.snapped) {
-            if (g.shape) {
+            if (g.shape?.kind === 'line') {
+              const a = g.shape.base[0]!;
+              const snap = g.guides ? snapLineEnd(a, p, g.guides, snapRadius()) : null;
+              if (snap && !sameSnap(snap, g.snap)) {
+                pencilHaptic('alignment', g.origin.left + snap.point.x * scale, g.origin.top + snap.point.y * scale);
+              }
+              g.snap = snap;
+              setLine(g, a, snap?.point ?? p);
+            } else if (g.shape) {
               const pts = adjustShape(g.shape.kind, g.shape.base, g.shape.from, p);
               const pr = g.shape.pressure;
               g.points = pts.flatMap((q) => [q.x, q.y, pr]);
@@ -796,6 +955,9 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
           break;
         case 'lasso':
           g.lasso.push(p);
+          break;
+        case 'laser':
+          laserRef.current[laserRef.current.length - 1]?.push({ ...p, t: performance.now() });
           break;
         case 'move':
           g.offset = { x: p.x - g.moveStart.x, y: p.y - g.moveStart.y };
@@ -834,7 +996,15 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
   };
 
   const finish = (e: React.PointerEvent<HTMLDivElement>, cancelled: boolean) => {
-    if (pressRef.current?.id === e.pointerId) cancelPress();
+    const press = pressRef.current;
+    if (press?.id === e.pointerId) {
+      cancelPress();
+      // A quick finger tap that didn't move (moving cancels the press): select the ink under it.
+      if (!cancelled && performance.now() - press.t < TAP_MS) {
+        const hit = strokeAt(press.at);
+        if (hit) selectStroke(hit);
+      }
+    }
     if (e.pointerType === 'pen') notePen(false);
     const g = gestureRef.current;
     if (!g || g.pointerId !== e.pointerId) return;
@@ -965,6 +1135,17 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
   };
   const selectedFill = selection ? page.strokes.find((s) => selection.ids.has(s.id) && s.fill) : undefined;
   const [fillOpacity, setFillOpacity] = useState(DEFAULT_FILL_OPACITY);
+  /** Which pop-up of the selection menu is open. */
+  const [menuPanel, setMenuPanel] = useState<'color' | 'fill' | null>(null);
+  const selectedColor = (selection && page.strokes.find((s) => selection.ids.has(s.id))?.color) || settings.color;
+  // A new selection starts with the pop-ups closed and the slider showing its current fill.
+  const selectionKey = selection ? [...selection.ids].join() : '';
+  useEffect(() => {
+    if (!selectionKey) setMenuPanel(null);
+  }, [selectionKey]);
+  useEffect(() => {
+    if (selectedFill?.fillOpacity != null) setFillOpacity(selectedFill.fillOpacity);
+  }, [selectedFill?.fillOpacity]);
 
   useEffect(() => {
     if (!selection) return;
@@ -1042,47 +1223,87 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
             height: selection.bounds.height * scale,
           }}
         >
-          <div ref={menuRef} className="selection-menu">
-            {PEN_COLORS.map((c) => (
-              <button
-                key={c}
-                className="selection-color"
-                style={{ background: c }}
-                aria-label={`Recolor ${c}`}
-                onClick={() => recolorSelection(c)}
+          <div ref={menuRef} className="selection-menu" role="toolbar" aria-label="Selection">
+            <button
+              className={`sel-btn${menuPanel === 'color' ? ' open' : ''}`}
+              aria-label="Colour"
+              aria-expanded={menuPanel === 'color'}
+              onClick={() => setMenuPanel((p) => (p === 'color' ? null : 'color'))}
+            >
+              <span className="sel-swatch" style={{ background: selectedColor }} />
+              <span className="sel-label">Colour</span>
+            </button>
+            <button
+              className={`sel-btn${menuPanel === 'fill' ? ' open' : ''}`}
+              aria-label="Fill"
+              aria-expanded={menuPanel === 'fill'}
+              onClick={() => setMenuPanel((p) => (p === 'fill' ? null : 'fill'))}
+            >
+              <span
+                className={`sel-swatch fill${selectedFill?.fill ? '' : ' none'}`}
+                style={selectedFill?.fill ? { background: selectedFill.fill, opacity: Math.max(0.35, selectedFill.fillOpacity ?? DEFAULT_FILL_OPACITY) } : undefined}
               />
-            ))}
-            <div className="selection-fill">
-              <span className="selection-fill-label">Fill</span>
-              <button
-                className="selection-color no-fill"
-                aria-label="No fill"
-                onClick={() => fillSelection(null, fillOpacity)}
-              />
-              {PEN_COLORS.map((c) => (
-                <button
-                  key={c}
-                  className="selection-color"
-                  style={{ background: c, opacity: Math.max(0.35, fillOpacity) }}
-                  aria-label={`Fill ${c}`}
-                  onClick={() => fillSelection(c, fillOpacity)}
-                />
-              ))}
-              <input
-                type="range"
-                min={0.05}
-                max={1}
-                step={0.05}
-                value={fillOpacity}
-                aria-label="Fill opacity"
-                onChange={(e) => setFillOpacity(Number(e.target.value))}
-                onPointerUp={() => selectedFill?.fill && fillSelection(selectedFill.fill, fillOpacity)}
-                onKeyUp={() => selectedFill?.fill && fillSelection(selectedFill.fill, fillOpacity)}
-              />
-              <span className="selection-fill-label">{Math.round(fillOpacity * 100)}%</span>
-            </div>
-            <button onClick={duplicateSelection}>Duplicate</button>
-            <button onClick={deleteSelection}>Delete</button>
+              <span className="sel-label">Fill</span>
+            </button>
+            <span className="sel-divider" />
+            <button className="sel-btn" aria-label="Duplicate" onClick={duplicateSelection}>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2.5" /><path d="M16 8V6.5A2.5 2.5 0 0 0 13.5 4h-7A2.5 2.5 0 0 0 4 6.5v7A2.5 2.5 0 0 0 6.5 16H8" /></svg>
+              <span className="sel-label">Duplicate</span>
+            </button>
+            <button className="sel-btn danger" aria-label="Delete" onClick={deleteSelection}>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4.5h6V7M6.5 7l1 13h9l1-13M10 11v5.5M14 11v5.5" /></svg>
+              <span className="sel-label">Delete</span>
+            </button>
+            {menuPanel === 'color' && (
+              <div className="sel-panel" role="group" aria-label="Colours">
+                <div className="sel-swatches">
+                  {PEN_COLORS.map((c) => (
+                    <button
+                      key={c}
+                      className={`sel-color${c === selectedColor ? ' current' : ''}`}
+                      style={{ background: c }}
+                      aria-label={`Colour ${c}`}
+                      onClick={() => recolorSelection(c)}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+            {menuPanel === 'fill' && (
+              <div className="sel-panel" role="group" aria-label="Fill">
+                <div className="sel-swatches">
+                  <button
+                    className={`sel-color no-fill${selectedFill ? '' : ' current'}`}
+                    aria-label="No fill"
+                    onClick={() => fillSelection(null, fillOpacity)}
+                  />
+                  {PEN_COLORS.map((c) => (
+                    <button
+                      key={c}
+                      className={`sel-color${c === selectedFill?.fill ? ' current' : ''}`}
+                      style={{ background: c }}
+                      aria-label={`Fill ${c}`}
+                      onClick={() => fillSelection(c, fillOpacity)}
+                    />
+                  ))}
+                </div>
+                <label className="sel-opacity">
+                  <span>Opacity</span>
+                  <input
+                    type="range"
+                    min={0.05}
+                    max={1}
+                    step={0.05}
+                    value={fillOpacity}
+                    aria-label="Fill opacity"
+                    onChange={(e) => setFillOpacity(Number(e.target.value))}
+                    onPointerUp={() => selectedFill?.fill && fillSelection(selectedFill.fill, fillOpacity)}
+                    onKeyUp={() => selectedFill?.fill && fillSelection(selectedFill.fill, fillOpacity)}
+                  />
+                  <span className="sel-value">{Math.round(fillOpacity * 100)}%</span>
+                </label>
+              </div>
+            )}
           </div>
           {(['nw', 'ne', 'se', 'sw'] as const).map((corner) => (
             <div key={corner} className={`selection-handle ${corner}`} data-handle={corner} aria-label="Resize" />

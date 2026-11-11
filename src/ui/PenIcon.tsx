@@ -1,5 +1,5 @@
 /** Pen illustrations, standing upright with the tip showing the ink colour (Apple Notes style). */
-export type PenIconKind = 'fountain' | 'ballpoint' | 'pencil' | 'brush' | 'highlighter' | 'eraser' | 'lasso';
+export type PenIconKind = 'fountain' | 'ballpoint' | 'pencil' | 'brush' | 'highlighter' | 'eraser' | 'lasso' | 'laser';
 
 export function PenIcon({ kind, color }: { kind: PenIconKind; color: string }) {
   const body = '#f6f6f8';
@@ -53,6 +53,15 @@ export function PenIcon({ kind, color }: { kind: PenIconKind; color: string }) {
         <svg viewBox="0 0 30 76" aria-hidden="true">
           <rect x="5" y="30" width="20" height="46" rx="4" fill={body} stroke={edge} />
           <rect x="5" y="8" width="20" height="24" rx="5" fill="#f4a3b4" stroke={edge} />
+        </svg>
+      );
+    case 'laser':
+      return (
+        <svg viewBox="0 0 30 76" aria-hidden="true">
+          <rect x="8" y="22" width="14" height="54" rx="7" fill="#2b2b30" />
+          <rect x="12" y="40" width="6" height="9" rx="2" fill="#ff3b30" />
+          <circle cx="15" cy="12" r="7" fill="#ff3b30" opacity="0.25" />
+          <circle cx="15" cy="12" r="3.6" fill="#ff3b30" />
         </svg>
       );
     case 'lasso':

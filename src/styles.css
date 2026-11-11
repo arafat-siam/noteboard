@@ -755,21 +755,6 @@ button.link.muted {
   background: rgba(47, 111, 222, 0.06);
   pointer-events: none;
 }
-.selection-menu {
-  position: absolute;
-  top: -44px;
-  left: 0;
-  display: flex;
-  gap: 6px;
-  pointer-events: auto;
-}
-.selection-menu button {
-  padding: 6px 10px;
-  font-size: 13px;
-  background: var(--surface);
-  color: var(--text);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-}
 
 /* ---- App lock ---- */
 .app-root {
@@ -926,25 +911,6 @@ button.link.muted {
 .selection-handle.ne { right: -11px; top: -11px; cursor: nesw-resize; }
 .selection-handle.se { right: -11px; bottom: -11px; cursor: nwse-resize; }
 .selection-handle.sw { left: -11px; bottom: -11px; cursor: nesw-resize; }
-.selection-menu .selection-color {
-  width: 26px;
-  height: 26px;
-  padding: 0;
-  border-radius: 50%;
-  border: 2px solid var(--surface);
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.2);
-}
-.selection-menu {
-  align-items: center;
-  background: var(--surface);
-  border-radius: 14px;
-  padding: 6px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
-  top: -54px !important;
-}
-.selection-menu button:not(.selection-color) {
-  box-shadow: none !important;
-}
 
 .page-placeholder {
   background: #fff;
@@ -975,21 +941,53 @@ button.link.muted {
   opacity: 0.4;
 }
 
-/* Shape fill row in the selection menu. */
-.selection-menu .selection-fill {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-basis: 100%;
+
+/* Copy page dialog / Add PDF */
+.search-input {
+  width: 100%;
+  margin-bottom: 10px;
+  padding: 9px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 15px;
 }
-.selection-menu .selection-fill-label {
+.cover-dot {
+  display: inline-block;
+  flex: none;
+  width: 12px;
+  height: 16px;
+  border-radius: 3px;
+  margin-right: 8px;
+}
+.tree-path {
   font-size: 12px;
-  opacity: 0.8;
-  min-width: 2.2em;
 }
-.selection-menu .selection-fill input[type='range'] {
-  width: 90px;
+.menu-file {
+  display: block;
+  cursor: pointer;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-2);
+  color: var(--text);
 }
-.selection-menu .selection-color.no-fill {
-  background: linear-gradient(135deg, transparent 45%, #d93025 45%, #d93025 55%, transparent 55%), #fff;
+.menu-file.busy {
+  opacity: 0.6;
+  pointer-events: none;
+}
+.toast {
+  position: fixed;
+  z-index: 60;
+  left: 50%;
+  bottom: calc(96px + env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  padding: 10px 16px;
+  border-radius: 12px;
+  background: #1c1c1e;
+  color: #fff;
+  font-size: 14px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+  pointer-events: none;
 }

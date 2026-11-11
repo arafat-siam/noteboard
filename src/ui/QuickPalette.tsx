@@ -9,7 +9,7 @@ interface Props {
   y: number;
   settings: ToolSettings;
   selectSlot: (id: string) => void;
-  selectTool: (tool: 'eraser' | 'lasso') => void;
+  selectTool: (tool: 'eraser' | 'lasso' | 'laser') => void;
   undo: () => void;
   redo: () => void;
   onClose: () => void;
@@ -63,6 +63,7 @@ export function QuickPalette({ x, y, settings, selectSlot, selectTool, undo, red
     })),
     { key: 'eraser', label: 'Eraser', icon: { kind: 'eraser', color: '#888' }, active: settings.tool === 'eraser', choose: () => selectTool('eraser') },
     { key: 'lasso', label: 'Lasso', icon: { kind: 'lasso', color: '#888' }, active: settings.tool === 'lasso', choose: () => selectTool('lasso') },
+    { key: 'laser', label: 'Laser pointer', icon: { kind: 'laser', color: '#ff3b30' }, active: settings.tool === 'laser', choose: () => selectTool('laser') },
   ];
 
   const pick = (choose: () => void) => {

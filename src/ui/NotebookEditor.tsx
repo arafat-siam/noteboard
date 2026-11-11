@@ -2,7 +2,9 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { db } from '../db/db';
 import { renameItem } from '../db/library';
-import { addPage, applyStrokeChange, deletePage, loadPage, notebookPages, setPageTemplate } from '../db/pages';
+import { addPage, applyStrokeChange, copyPagesTo, deletePage, loadPage, notebookPages, setPageTemplate } from '../db/pages';
+import { appendPdf } from '../pdf/pdf';
+import { CopyPageDialog } from './CopyPageDialog';
 import { exportNotebookPdf, exportPagePng, safeFilename, shareOrDownload } from '../export/exporters';
 import type { ToolKind, ToolSettings } from '../ink/InkPage';
 import { PageSlot } from './PageSlot';
@@ -60,7 +62,7 @@ function loadSettings(): ToolSettings {
     const merged = { ...DEFAULT_SETTINGS, ...saved };
     if (!Array.isArray(saved.slots) || !saved.slots.length) merged.slots = DEFAULT_SLOTS;
     // Keep using the eraser/lasso if that was in hand; otherwise restore the pen in hand.
-    return merged.tool === 'eraser' || merged.tool === 'lasso'
+    return merged.tool === 'eraser' || merged.tool === 'lasso' || merged.tool === 'laser'
       ? { ...withSlot(merged, merged.activeSlot), tool: merged.tool }
       : withSlot(merged, merged.activeSlot);
   } catch {
@@ -84,6 +86,15 @@ export function NotebookEditor({ notebookId, onClose }: { notebookId: string; on
   const [containerWidth, setContainerWidth] = useState(800);
   const [renaming, setRenaming] = useState(false);
   const [pageMenu, setPageMenu] = useState<Page | null>(null);
+  /** Page being copied to another notebook (the picker is open). */
+  const [copyingPage, setCopyingPage] = useState<Page | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [addingPdf, setAddingPdf] = useState(false);
+  useEffect(() => {
+    if (!notice) return;
+    const timer = window.setTimeout(() => setNotice(null), 2600);
+    return () => clearTimeout(timer);
+  }, [notice]);
   const [exportOpen, setExportOpen] = useState(false);
   const [showDiagnostics, setShowDiagnostics] = useState(diagnostics.enabled);
   const [palette, setPalette] = useState<{ x: number; y: number } | null>(null);
@@ -214,7 +225,7 @@ export function NotebookEditor({ notebookId, onClose }: { notebookId: string; on
         if (e.shiftKey) redo();
         else undo();
       } else if (!mod) {
-        const map: Record<string, ToolKind> = { p: 'pen', h: 'highlighter', e: 'eraser', l: 'lasso' };
+        const map: Record<string, ToolKind> = { p: 'pen', h: 'highlighter', e: 'eraser', l: 'lasso', k: 'laser' };
         const tool = map[e.key.toLowerCase()];
         if (tool) selectTool(tool);
       }
@@ -539,6 +550,36 @@ export function NotebookEditor({ notebookId, onClose }: { notebookId: string; on
             <button onClick={() => void exportPdf()}>Whole notebook as PDF</button>
             <button onClick={() => void exportVisiblePagePng()}>Current page as image (PNG)</button>
           </div>
+          <label className="field-label">PDF</label>
+          <div className="menu-list">
+            <label className={`menu-file${addingPdf ? ' busy' : ''}`}>
+              {addingPdf ? 'Adding PDF…' : 'Add another PDF at the end of this notebook'}
+              <input
+                type="file"
+                accept="application/pdf,.pdf"
+                hidden
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  e.target.value = '';
+                  if (!file) return;
+                  setAddingPdf(true);
+                  void appendPdf(db, notebook.id, file)
+                    .then((count) => {
+                      sync.syncSoon();
+                      setExportOpen(false);
+                      setNotice(`Added ${count} page${count === 1 ? '' : 's'} from ${file.name}`);
+                      // Show the first new page.
+                      requestAnimationFrame(() => {
+                        const el = scrollRef.current;
+                        if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+                      });
+                    })
+                    .catch(() => alert('This PDF could not be opened.'))
+                    .finally(() => setAddingPdf(false));
+                }}
+              />
+            </label>
+          </div>
           <label className="field-label">Troubleshooting</label>
           <div className="menu-list">
             <button
@@ -575,6 +616,25 @@ export function NotebookEditor({ notebookId, onClose }: { notebookId: string; on
         />
       )}
 
+      {copyingPage && (
+        <CopyPageDialog
+          currentNotebookId={notebook.id}
+          onClose={() => setCopyingPage(null)}
+          onCopy={(target) => {
+            void copyPagesTo(db, [copyingPage.id], target).then((ids) => {
+              sync.syncSoon();
+              setNotice(ids.length ? (target === notebook.id ? 'Page copied to the end of this notebook' : 'Page copied') : 'Could not copy the page');
+            });
+          }}
+        />
+      )}
+
+      {notice && (
+        <div className="toast" role="status">
+          {notice}
+        </div>
+      )}
+
       {pageMenu && (
         <Modal title="Page options" onClose={() => setPageMenu(null)}>
           <label className="field-label">Paper</label>
@@ -600,6 +660,14 @@ export function NotebookEditor({ notebookId, onClose }: { notebookId: string; on
               }}
             >
               Insert page after
+            </button>
+            <button
+              onClick={() => {
+                setCopyingPage(pageMenu);
+                setPageMenu(null);
+              }}
+            >
+              Copy page to another notebook…
             </button>
             <button
               className="danger-text"

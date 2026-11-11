@@ -200,3 +200,57 @@ export async function notebookPages(db: NoteboardDB, notebookId: ID): Promise<Pa
   const pages = await loadPages(db, notebook.pageIds);
   return pages.filter((p): p is Page => !!p);
 }
+
+/**
+ * Copies pages (ink, paper and any PDF page underneath) to the end of another notebook, or the
+ * same one. Copies get new page and stroke ids: strokes are stored by id, so sharing ids would
+ * tie the copy to the original. Returns the new page ids.
+ */
+export async function copyPagesTo(db: NoteboardDB, pageIds: ID[], targetNotebookId: ID): Promise<ID[]> {
+  return db.transaction('rw', [db.items, db.pages, db.strokes, db.meta], async () => {
+    const target = await db.items.get(targetNotebookId);
+    if (!target || target.kind !== 'notebook' || target.deleted) return [];
+    const sources = (await loadPages(db, pageIds)).filter((p): p is Page => !!p);
+    const now = Date.now();
+    const copies: Page[] = sources.map((src) => ({
+      ...src,
+      id: crypto.randomUUID(),
+      notebookId: targetNotebookId,
+      strokes: src.strokes.map((s) => ({ ...s, id: crypto.randomUUID() })),
+      deletedStrokeIds: [],
+      updatedAt: now,
+      dirty: 1,
+    }));
+    await insertPages(db, copies);
+    target.pageIds = [...target.pageIds, ...copies.map((p) => p.id)];
+    target.updatedAt = now;
+    await db.items.put(target);
+    await markLibraryChanged(db);
+    return copies.map((p) => p.id);
+  });
+}
+
+/** Adds blank pages (or pages over a PDF) to the end of a notebook. Returns the new page ids. */
+export async function appendPages(
+  db: NoteboardDB,
+  notebookId: ID,
+  specs: { width: number; height: number; background?: Page['background'] }[],
+): Promise<ID[]> {
+  return db.transaction('rw', [db.items, db.pages, db.strokes, db.meta], async () => {
+    const notebook = await db.items.get(notebookId);
+    if (!notebook || notebook.kind !== 'notebook' || notebook.deleted) return [];
+    const now = Date.now();
+    const pages: Page[] = specs.map((spec) => ({
+      ...blankPage(notebookId, 'blank', now),
+      width: spec.width,
+      height: spec.height,
+      ...(spec.background ? { background: spec.background } : {}),
+    }));
+    await insertPages(db, pages);
+    notebook.pageIds = [...notebook.pageIds, ...pages.map((p) => p.id)];
+    notebook.updatedAt = now;
+    await db.items.put(notebook);
+    await markLibraryChanged(db);
+    return pages.map((p) => p.id);
+  });
+}

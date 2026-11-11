@@ -20,6 +20,7 @@ final class ShellViewController: UIViewController, WKNavigationDelegate, WKUIDel
     private let appURL: URL
     private var webView: WKWebView!
     private var pencil: PencilBridge?
+    private var haptics: PencilHaptics?
     private var authSession: ASWebAuthenticationSession?
     private var downloads: [ObjectIdentifier: URL] = [:]
 
@@ -61,6 +62,8 @@ final class ShellViewController: UIViewController, WKNavigationDelegate, WKUIDel
         let bridge = PencilBridge(webView: webView)
         bridge.install()
         pencil = bridge
+        // Apple Pencil Pro buzz when a line or shape snaps.
+        haptics = PencilHaptics.install(on: webView, config: config)
 
         self.webView = webView
         view = webView

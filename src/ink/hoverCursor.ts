@@ -7,7 +7,7 @@
  * - eraser: a ring showing what it will erase
  */
 export interface HoverCursorStyle {
-  tool: 'pen' | 'highlighter' | 'eraser' | 'lasso';
+  tool: 'pen' | 'highlighter' | 'eraser' | 'lasso' | 'laser';
   /** Diameter in CSS pixels. */
   size: number;
   color: string;
@@ -38,7 +38,7 @@ export function showHoverCursor(clientX: number, clientY: number, style: HoverCu
   cursor.style.width = `${size}px`;
   cursor.style.height = `${size}px`;
   cursor.style.background =
-    style.tool === 'pen' ? style.color : style.tool === 'highlighter' ? `${style.color}80` : 'transparent';
+    style.tool === 'pen' ? style.color : style.tool === 'laser' ? '#ff3b30' : style.tool === 'highlighter' ? `${style.color}80` : 'transparent';
   cursor.style.transform = `translate(${clientX - size / 2}px, ${clientY - size / 2}px)`;
 
   // Safety net only: hide if hover events stop entirely (e.g. no "leave" event when the Pencil

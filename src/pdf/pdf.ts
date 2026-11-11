@@ -1,6 +1,7 @@
 import type { PDFDocumentProxy, RenderTask } from 'pdfjs-dist';
 import type { NoteboardDB } from '../db/db';
-import { createNotebookFromPages } from '../db/library';
+import { createNotebookFromPages, type PageSpec } from '../db/library';
+import { appendPages } from '../db/pages';
 import { newId, type ID, type Notebook } from '../model/types';
 import type { CanvasRegion } from '../ink/render';
 
@@ -42,15 +43,15 @@ export function getPdf(db: NoteboardDB, fileId: ID): Promise<PDFDocumentProxy | 
   return doc;
 }
 
-/** Imports a PDF as a new notebook: one page per PDF page, sized like the original. */
-export async function importPdf(db: NoteboardDB, file: File, parentId: ID | null): Promise<Notebook> {
+/** Reads a PDF, stores it (for sync) and returns one page spec per PDF page, sized like the original. */
+async function storePdf(db: NoteboardDB, file: File): Promise<PageSpec[]> {
   const lib = await loadPdfJs();
   const bytes = new Uint8Array(await file.arrayBuffer());
   // pdf.js takes ownership of the buffer it's given, so hand it a copy.
   const doc = await lib.getDocument({ data: bytes.slice() }).promise;
   try {
     const fileId = newId();
-    const specs = [];
+    const specs: PageSpec[] = [];
     for (let i = 0; i < doc.numPages; i++) {
       const page = await doc.getPage(i + 1);
       const viewport = page.getViewport({ scale: 1 });
@@ -69,11 +70,23 @@ export async function importPdf(db: NoteboardDB, file: File, parentId: ID | null
       createdAt: Date.now(),
       uploaded: 0,
     });
-    const name = file.name.replace(/\.pdf$/i, '') || 'Imported PDF';
-    return await createNotebookFromPages(db, name, parentId, specs);
+    return specs;
   } finally {
     void doc.destroy();
   }
+}
+
+/** Imports a PDF as a new notebook: one page per PDF page, sized like the original. */
+export async function importPdf(db: NoteboardDB, file: File, parentId: ID | null): Promise<Notebook> {
+  const specs = await storePdf(db, file);
+  const name = file.name.replace(/\.pdf$/i, '') || 'Imported PDF';
+  return createNotebookFromPages(db, name, parentId, specs);
+}
+
+/** Adds every page of another PDF to the end of an existing notebook. Returns the page count. */
+export async function appendPdf(db: NoteboardDB, notebookId: ID, file: File): Promise<number> {
+  const specs = await storePdf(db, file);
+  return (await appendPages(db, notebookId, specs)).length;
 }
 
 /**

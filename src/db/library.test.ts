@@ -184,3 +184,39 @@ describe('pages', () => {
     expect(order[2]).toBe(added?.id);
   });
 });
+
+describe('copying pages and adding PDFs', () => {
+  it('copies a page with its ink to another notebook, leaving the original untouched', async () => {
+    const { copyPagesTo } = await import('./pages');
+    const from = await createNotebook(db, 'From', null);
+    const to = await createNotebook(db, 'To', null);
+    const pageId = from.pageIds[0]!;
+    await applyStrokeChange(db, pageId, [stroke('c1'), { ...stroke('c2'), fill: '#d93025', fillOpacity: 0.4 }], []);
+    const [copyId] = await copyPagesTo(db, [pageId], to.id);
+
+    const target = (await db.items.get(to.id)) as { pageIds: string[] };
+    expect(target.pageIds).toEqual([to.pageIds[0], copyId]);
+    const copy = (await loadPage(db, copyId!))!;
+    expect(copy.notebookId).toBe(to.id);
+    expect(copy.dirty).toBe(1);
+    expect(copy.strokes).toHaveLength(2);
+    expect(copy.strokes.map((s) => s.id)).not.toContain('c1'); // own stroke ids
+    expect(copy.strokes.find((s) => s.fill)).toMatchObject({ fill: '#d93025', fillOpacity: 0.4 });
+
+    // Erasing on the copy doesn't touch the original.
+    await applyStrokeChange(db, copyId!, [], copy.strokes.map((s) => s.id));
+    expect((await loadPage(db, pageId))!.strokes.map((s) => s.id)).toEqual(['c1', 'c2']);
+  });
+
+  it('adds pages (e.g. another PDF) to the end of a notebook', async () => {
+    const { appendPages } = await import('./pages');
+    const nb = await createNotebook(db, 'Doc', null);
+    const ids = await appendPages(db, nb.id, [
+      { width: 600, height: 800, background: { kind: 'pdf', fileId: 'f2', pageIndex: 0 } },
+      { width: 600, height: 800, background: { kind: 'pdf', fileId: 'f2', pageIndex: 1 } },
+    ]);
+    const pages = await notebookPages(db, nb.id);
+    expect(pages.map((p) => p.id)).toEqual([nb.pageIds[0], ...ids]);
+    expect(pages[2]!.background).toEqual({ kind: 'pdf', fileId: 'f2', pageIndex: 1 });
+  });
+});
