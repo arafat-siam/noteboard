@@ -25,7 +25,9 @@ export default defineConfig(({ command }) => ({
         ],
       },
       workbox: {
-        globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
+        globPatterns: ['**/*.{js,mjs,css,html,svg,png,woff2}'],
+        // The PDF engine's worker is ~1.4 MB; keep it cached so PDFs open offline.
+        maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
         navigateFallback: 'index.html',
         // Opening the shell app download must fetch the zip, not the app page.
         navigateFallbackDenylist: [/\.zip$/],
