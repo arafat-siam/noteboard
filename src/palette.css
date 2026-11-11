@@ -7,9 +7,9 @@
   margin: 0 auto;
   width: fit-content;
   max-width: calc(100vw - 24px);
-  background: color-mix(in srgb, var(--surface) 78%, transparent);
-  -webkit-backdrop-filter: blur(24px) saturate(1.8);
-  backdrop-filter: blur(24px) saturate(1.8);
+  /* No backdrop blur: on iPad Safari it forces costly redraws whenever anything moves (e.g. the
+     Pencil hover pointer), which made moving things show a ghost copy. Nearly opaque instead. */
+  background: color-mix(in srgb, var(--surface) 96%, transparent);
   border: 0.5px solid color-mix(in srgb, var(--text) 14%, transparent);
   border-radius: 26px;
   box-shadow: 0 18px 50px rgba(0, 0, 0, 0.22), 0 3px 10px rgba(0, 0, 0, 0.1);
@@ -349,9 +349,7 @@
   position: fixed;
   transform: translate(-50%, -50%);
   border-radius: 50%;
-  background: color-mix(in srgb, var(--surface) 80%, transparent);
-  -webkit-backdrop-filter: blur(24px) saturate(1.8);
-  backdrop-filter: blur(24px) saturate(1.8);
+  background: color-mix(in srgb, var(--surface) 97%, transparent);
   border: 0.5px solid color-mix(in srgb, var(--text) 14%, transparent);
   box-shadow: 0 18px 50px rgba(0, 0, 0, 0.28);
   animation: disc-in 0.18s cubic-bezier(0.2, 0.9, 0.3, 1.2);
