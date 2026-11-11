@@ -38,7 +38,7 @@ export interface SnapResult {
 export function buildGuides(strokes: Stroke[], ignore?: ReadonlySet<string>): SnapGuides {
   const segments: Segment[] = [];
   for (const s of strokes) {
-    if (ignore?.has(s.id) || s.points.length < 6) continue;
+    if (ignore?.has(s.id) || s.points.length < 6 || s.tool === 'image') continue;
     const pts = strokePoints(s);
     let minX = Infinity;
     let minY = Infinity;

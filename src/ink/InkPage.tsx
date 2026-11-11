@@ -4,6 +4,9 @@ import { applyRegion, DEFAULT_FILL_OPACITY, drawPage, drawStroke, type CanvasReg
 import { adjustShape, polylinePoints, recognizeShape, type ShapeKind } from './shapes';
 import { buildGuides, sameSnap, snapLineEnd, snapToPoint, type SnapGuides, type SnapResult } from './snapping';
 import { pencilHaptic } from '../pencil/haptics';
+import { makeImageStroke, onImageLoaded, storeImage } from './images';
+import { arrange, type ArrangeAction } from './layers';
+import { getClip, inkForPaste, onClipChange, setClip } from './clipboard';
 import {
   boundsOf,
   rectContains,
@@ -127,6 +130,20 @@ const LASER_LIFE_MS = 900;
 const VIEW_MARGIN = 0.3;
 /** iPad Safari refuses canvases above ~16.7M pixels; stay well under per canvas. */
 const MAX_CANVAS_PIXELS = 10_000_000;
+
+/** Swaps replaced items' ids in a selection (recolour / fill make new strokes). */
+function replaceIds(ids: Set<string>, before: Stroke[], after: Stroke[]): Set<string> {
+  const next = new Set(ids);
+  before.forEach((s, i) => {
+    next.delete(s.id);
+    next.add(after[i]!.id);
+  });
+  return next;
+}
+
+/** Editor → page requests (the page currently on screen handles them). */
+export const PAGE_ACTION = 'noteboard-page-action';
+export type PageAction = { pageId: string; action: 'insertPictures' | 'paste'; files: Blob[] };
 
 function getLiveContext(canvas: HTMLCanvasElement | null): CanvasRenderingContext2D | null {
   // Plain context on purpose: the low-latency 'desynchronized' mode changes how Safari composites
@@ -669,6 +686,7 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
     let changed = false;
     if (settings.eraserMode === 'partial') {
       for (const s of page.strokes) {
+        if (s.tool === 'image') continue;
         const current = g.pieces.get(s.id) ?? (g.erased.has(s.id) ? [] : [s]);
         let touched = false;
         const next: Stroke[] = [];
@@ -690,6 +708,7 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
       return;
     }
     for (const s of page.strokes) {
+      if (s.tool === 'image') continue;
       if (!g.erased.has(s.id) && strokeHit(s, p, radius)) {
         g.erased.add(s.id);
         hiddenRef.current.add(s.id);
@@ -797,7 +816,10 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
         timer: window.setTimeout(() => {
           pressRef.current = null;
           const hit = strokeAt(at);
-          if (!hit) return;
+          if (!hit) {
+            setCanvasMenu(at);
+            return;
+          }
           selectStroke(hit);
           onRequestSelect();
           navigator.vibrate?.(10);
@@ -1119,24 +1141,29 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
 
   const recolorSelection = (color: string) => {
     if (!selection) return;
-    const recolored = page.strokes.filter((s) => selection.ids.has(s.id)).map((s) => recolorStroke(s, color, newId()));
+    const targets = page.strokes.filter((s) => selection.ids.has(s.id) && s.tool !== 'image');
+    if (!targets.length) return;
+    const recolored = targets.map((s) => recolorStroke(s, color, newId()));
     paintNow(recolored);
-    onChange(page.id, recolored, [...selection.ids]);
-    setSelection({ ...selection, ids: new Set(recolored.map((s) => s.id)) });
+    onChange(page.id, recolored, targets.map((s) => s.id));
+    setSelection({ ...selection, ids: replaceIds(selection.ids, targets, recolored) });
   };
 
   /** Fills the selected strokes (null = remove fill). */
   const fillSelection = (fill: string | null, opacity: number) => {
     if (!selection) return;
-    const filled = page.strokes.filter((s) => selection.ids.has(s.id)).map((s) => fillStroke(s, fill, opacity, newId()));
+    const targets = page.strokes.filter((s) => selection.ids.has(s.id) && s.tool !== 'image');
+    if (!targets.length) return;
+    const filled = targets.map((s) => fillStroke(s, fill, opacity, newId()));
     paintNow(filled);
-    onChange(page.id, filled, [...selection.ids]);
-    setSelection({ ...selection, ids: new Set(filled.map((s) => s.id)) });
+    onChange(page.id, filled, targets.map((s) => s.id));
+    setSelection({ ...selection, ids: replaceIds(selection.ids, targets, filled) });
   };
   const selectedFill = selection ? page.strokes.find((s) => selection.ids.has(s.id) && s.fill) : undefined;
   const [fillOpacity, setFillOpacity] = useState(DEFAULT_FILL_OPACITY);
   /** Which pop-up of the selection menu is open. */
-  const [menuPanel, setMenuPanel] = useState<'color' | 'fill' | null>(null);
+  const [menuPanel, setMenuPanel] = useState<'color' | 'fill' | 'arrange' | null>(null);
+  const onlyPictures = !!selection && page.strokes.every((s) => !selection.ids.has(s.id) || s.tool === 'image');
   const selectedColor = (selection && page.strokes.find((s) => selection.ids.has(s.id))?.color) || settings.color;
   // A new selection starts with the pop-ups closed and the slider showing its current fill.
   const selectionKey = selection ? [...selection.ids].join() : '';
@@ -1177,6 +1204,139 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
     };
   }, [selection]);
 
+  // ---- Copy / cut / paste, layering, pictures ------------------------------------------------
+  const [canvasMenu, setCanvasMenu] = useState<Point | null>(null);
+  const [clipKind, setClipKind] = useState(() => getClip()?.kind ?? null);
+  useEffect(() => onClipChange(() => setClipKind(getClip()?.kind ?? null)), []);
+  const imageInputRef = useRef<HTMLInputElement>(null);
+  /** Where "Insert picture…" from the canvas menu puts the picture. */
+  const insertAtRef = useRef<Point | null>(null);
+
+  // Pictures decode in the background; repaint when one arrives.
+  useEffect(() => onImageLoaded(() => paintInk(true)), [paintInk]);
+
+  const selectedStrokes = () => (selection ? page.strokes.filter((s) => selection.ids.has(s.id)) : []);
+
+  const selectAll = (strokes: Stroke[]) => {
+    const bounds = unionRects(strokes.map(strokeBounds));
+    if (strokes.length && bounds) setSelection({ ids: new Set(strokes.map((s) => s.id)), bounds });
+  };
+
+  const copySelection = () => {
+    const strokes = selectedStrokes();
+    if (strokes.length) setClip({ kind: 'ink', strokes });
+    setMenuPanel(null);
+  };
+
+  const cutSelection = () => {
+    copySelection();
+    deleteSelection();
+  };
+
+  /** Pastes Noteboard's clipboard ink at a point (page units), or next to where it was copied. */
+  const pasteInk = (at: Point | null) => {
+    const clip = getClip();
+    if (clip?.kind !== 'ink') return false;
+    const copies = inkForPaste(clip.strokes, at);
+    if (!copies.length) return false;
+    paintNow(copies);
+    onChange(page.id, copies, []);
+    selectAll(copies);
+    return true;
+  };
+
+  /** The middle of the part of this page that's on screen. */
+  const visibleCenter = (): Point => {
+    const box = containerRef.current?.getBoundingClientRect();
+    const view = (scroller ?? document.documentElement).getBoundingClientRect();
+    if (!box) return { x: page.width / 2, y: page.height / 2 };
+    const top = Math.max(box.top, view.top);
+    const bottom = Math.min(box.bottom, view.bottom);
+    const left = Math.max(box.left, view.left);
+    const right = Math.min(box.right, view.right);
+    return {
+      x: Math.min(page.width, Math.max(0, ((left + right) / 2 - box.left) / scale)),
+      y: Math.min(page.height, Math.max(0, ((top + bottom) / 2 - box.top) / scale)),
+    };
+  };
+
+  /** Places pictures on the page (stored on this device and synced like PDFs). */
+  const insertPictures = async (files: Blob[], at: Point | null) => {
+    const center = at ?? visibleCenter();
+    const added: Stroke[] = [];
+    for (const [i, file] of files.entries()) {
+      try {
+        const { fileId, width, height } = await storeImage(file, (file as File).name || 'Picture');
+        const pos = { x: center.x + i * 24, y: center.y + i * 24 };
+        added.push({ ...makeImageStroke(fileId, width, height, pos, page.width * 0.7, page.height * 0.5), createdAt: Date.now() + i });
+      } catch {
+        alert('This picture could not be added.');
+      }
+    }
+    if (!added.length) return;
+    paintNow(added);
+    onChange(page.id, added, []);
+    selectAll(added);
+  };
+
+  /** Paste from the system clipboard (pictures copied in Photos, Safari…). */
+  const pasteFromSystem = async (at: Point | null) => {
+    try {
+      const items = await navigator.clipboard.read();
+      const blobs: Blob[] = [];
+      for (const item of items) {
+        const type = item.types.find((ty) => ty.startsWith('image/'));
+        if (type) blobs.push(await item.getType(type));
+      }
+      if (blobs.length) {
+        await insertPictures(blobs, at);
+        return true;
+      }
+    } catch {
+      // Not allowed or nothing there.
+    }
+    return false;
+  };
+
+  const paste = async (at: Point | null) => {
+    setCanvasMenu(null);
+    if (pasteInk(at)) return;
+    if (!(await pasteFromSystem(at))) alert('There is nothing to paste. Copy some ink or a picture first.');
+  };
+
+  const arrangeSelection = (action: ArrangeAction) => {
+    if (!selection) return;
+    const result = arrange(page.strokes, selection.ids, action);
+    if (!result) return;
+    onChange(page.id, result.added, result.removedIds);
+    setSelection({ ...selection, ids: new Set(result.added.map((s) => s.id)) });
+  };
+
+  // Requests from the editor (toolbar "Picture" button, keyboard paste) for the page on screen.
+  useEffect(() => {
+    const onAction = (e: Event) => {
+      const detail = (e as CustomEvent<PageAction>).detail;
+      if (detail.pageId !== page.id) return;
+      if (detail.action === 'insertPictures') void insertPictures(detail.files, null);
+      else if (detail.action === 'paste') {
+        if (detail.files.length) void insertPictures(detail.files, null);
+        else if (!pasteInk(visibleCenter())) void pasteFromSystem(visibleCenter());
+      }
+    };
+    window.addEventListener(PAGE_ACTION, onAction);
+    return () => window.removeEventListener(PAGE_ACTION, onAction);
+  });
+
+  // The canvas menu closes on any touch elsewhere.
+  useEffect(() => {
+    if (!canvasMenu) return;
+    const close = (e: PointerEvent) => {
+      if (!(e.target as Element | null)?.closest?.('.canvas-menu')) setCanvasMenu(null);
+    };
+    window.addEventListener('pointerdown', close, true);
+    return () => window.removeEventListener('pointerdown', close, true);
+  }, [canvasMenu]);
+
   const deleteSelection = () => {
     if (!selection) return;
     onChange(page.id, [], [...selection.ids]);
@@ -1187,7 +1347,7 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
     if (!selection) return;
     const copies = page.strokes
       .filter((s) => selection.ids.has(s.id))
-      .map((s) => translateStroke(s, 20, 20, newId()));
+      .map((s, i) => ({ ...translateStroke(s, 20, 20, newId()), createdAt: Date.now() + i / 1000 }));
     onChange(page.id, copies, []);
     const b = boundsOf(copies.flatMap(strokePoints));
     setSelection({
@@ -1207,7 +1367,53 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
       onPointerCancel={(e) => finish(e, true)}
       onPointerLeave={endHover}
       onContextMenu={(e) => e.preventDefault()}
+      onDragOver={(e) => {
+        if ([...e.dataTransfer.items].some((i) => i.kind === 'file')) {
+          e.preventDefault();
+          e.dataTransfer.dropEffect = 'copy';
+        }
+      }}
+      onDrop={(e) => {
+        const files = [...e.dataTransfer.files].filter((file) => file.type.startsWith('image/'));
+        if (!files.length) return;
+        e.preventDefault();
+        const box = containerRef.current!.getBoundingClientRect();
+        void insertPictures(files, { x: (e.clientX - box.left) / scale, y: (e.clientY - box.top) / scale });
+      }}
     >
+      <input
+        ref={imageInputRef}
+        type="file"
+        accept="image/*"
+        multiple
+        hidden
+        onChange={(e) => {
+          const files = [...(e.target.files ?? [])];
+          e.target.value = '';
+          if (files.length) void insertPictures(files, insertAtRef.current);
+        }}
+      />
+      {canvasMenu && (
+        <div
+          className="canvas-menu"
+          role="menu"
+          style={{ left: canvasMenu.x * scale, top: canvasMenu.y * scale }}
+        >
+          <button role="menuitem" onClick={() => void paste(canvasMenu)}>
+            Paste{clipKind === 'ink' ? '' : ' picture'}
+          </button>
+          <button
+            role="menuitem"
+            onClick={() => {
+              insertAtRef.current = canvasMenu;
+              setCanvasMenu(null);
+              imageInputRef.current?.click();
+            }}
+          >
+            Insert picture…
+          </button>
+        </div>
+      )}
       {background && <canvas ref={pdfCanvasRef} className="ink-layer pdf-layer" width={0} height={0} />}
       {background && pdfMissing && <div className="pdf-missing">PDF is still downloading from Google Drive…</div>}
       <canvas ref={inkRef} className="ink-layer" width={0} height={0} />
@@ -1224,6 +1430,7 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
           }}
         >
           <div ref={menuRef} className="selection-menu" role="toolbar" aria-label="Selection">
+            {!onlyPictures && (
             <button
               className={`sel-btn${menuPanel === 'color' ? ' open' : ''}`}
               aria-label="Colour"
@@ -1233,6 +1440,8 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
               <span className="sel-swatch" style={{ background: selectedColor }} />
               <span className="sel-label">Colour</span>
             </button>
+            )}
+            {!onlyPictures && (
             <button
               className={`sel-btn${menuPanel === 'fill' ? ' open' : ''}`}
               aria-label="Fill"
@@ -1245,15 +1454,41 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
               />
               <span className="sel-label">Fill</span>
             </button>
+            )}
+            <button
+              className={`sel-btn${menuPanel === 'arrange' ? ' open' : ''}`}
+              aria-label="Arrange"
+              aria-expanded={menuPanel === 'arrange'}
+              onClick={() => setMenuPanel((p) => (p === 'arrange' ? null : 'arrange'))}
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="3.5" width="11" height="11" rx="2" /><rect x="9.5" y="9.5" width="11" height="11" rx="2" fill="currentColor" fillOpacity="0.25" /></svg>
+              <span className="sel-label">Arrange</span>
+            </button>
             <span className="sel-divider" />
-            <button className="sel-btn" aria-label="Duplicate" onClick={duplicateSelection}>
+            <button className="sel-btn" aria-label="Copy" onClick={copySelection}>
               <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2.5" /><path d="M16 8V6.5A2.5 2.5 0 0 0 13.5 4h-7A2.5 2.5 0 0 0 4 6.5v7A2.5 2.5 0 0 0 6.5 16H8" /></svg>
+              <span className="sel-label">Copy</span>
+            </button>
+            <button className="sel-btn" aria-label="Cut" onClick={cutSelection}>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="6.5" cy="17.5" r="2.8" /><circle cx="17.5" cy="17.5" r="2.8" /><path d="M8.5 15.5 18 4M15.5 15.5 6 4" /></svg>
+              <span className="sel-label">Cut</span>
+            </button>
+            <button className="sel-btn" aria-label="Duplicate" onClick={duplicateSelection}>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="11" height="11" rx="2.5" /><rect x="9" y="9" width="11" height="11" rx="2.5" /><path d="M14.5 12.5v4M12.5 14.5h4" /></svg>
               <span className="sel-label">Duplicate</span>
             </button>
             <button className="sel-btn danger" aria-label="Delete" onClick={deleteSelection}>
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4.5h6V7M6.5 7l1 13h9l1-13M10 11v5.5M14 11v5.5" /></svg>
               <span className="sel-label">Delete</span>
             </button>
+            {menuPanel === 'arrange' && (
+              <div className="sel-panel sel-arrange" role="group" aria-label="Arrange">
+                <button onClick={() => arrangeSelection('front')}>Bring to Front</button>
+                <button onClick={() => arrangeSelection('forward')}>Bring Forward</button>
+                <button onClick={() => arrangeSelection('backward')}>Send Backward</button>
+                <button onClick={() => arrangeSelection('back')}>Send to Back</button>
+              </div>
+            )}
             {menuPanel === 'color' && (
               <div className="sel-panel" role="group" aria-label="Colours">
                 <div className="sel-swatches">

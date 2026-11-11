@@ -2,9 +2,12 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { db } from '../db/db';
 import { renameItem } from '../db/library';
-import { addPage, applyStrokeChange, copyPagesTo, deletePage, loadPage, notebookPages, setPageTemplate } from '../db/pages';
+import { addPage, applyStrokeChange, copyPagesTo, deletePage, loadPage, notebookPages, pastePages, setPageTemplate } from '../db/pages';
 import { appendPdf } from '../pdf/pdf';
 import { CopyPageDialog } from './CopyPageDialog';
+import { PageManager } from './PageManager';
+import { PAGE_ACTION, type PageAction } from '../ink/InkPage';
+import { getClip, setClip } from '../ink/clipboard';
 import { exportNotebookPdf, exportPagePng, safeFilename, shareOrDownload } from '../export/exporters';
 import type { ToolKind, ToolSettings } from '../ink/InkPage';
 import { PageSlot } from './PageSlot';
@@ -90,6 +93,8 @@ export function NotebookEditor({ notebookId, onClose }: { notebookId: string; on
   const [copyingPage, setCopyingPage] = useState<Page | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [addingPdf, setAddingPdf] = useState(false);
+  const [pagesOpen, setPagesOpen] = useState(false);
+  const pictureInputRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
     if (!notice) return;
     const timer = window.setTimeout(() => setNotice(null), 2600);
@@ -439,6 +444,49 @@ export function NotebookEditor({ notebookId, onClose }: { notebookId: string; on
     };
   }, [undo, redo, scrollEl]);
 
+  /** The page mostly on screen. */
+  const visiblePageId = () => {
+    const el = scrollRef.current;
+    const slots = el ? [...el.querySelectorAll<HTMLElement>('.page-slot')] : [];
+    if (!el || !slots.length) return pageIds[0];
+    const middle = el.getBoundingClientRect().top + el.clientHeight / 2;
+    let best = 0;
+    slots.forEach((slot, i) => {
+      if (slot.getBoundingClientRect().top <= middle) best = i;
+    });
+    return pageIds[Math.min(best, pageIds.length - 1)];
+  };
+  const pageAction = (detail: Omit<PageAction, 'pageId'>) => {
+    const pageId = visiblePageId();
+    if (pageId) window.dispatchEvent(new CustomEvent<PageAction>(PAGE_ACTION, { detail: { ...detail, pageId } }));
+  };
+  const pageActionRef = useRef(pageAction);
+  pageActionRef.current = pageAction;
+
+  // Paste from the keyboard (⌘V) or the iPad's paste menu: pictures from other apps, or
+  // Noteboard's own copied ink, onto the page on screen.
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target?.closest?.('input, textarea, [contenteditable="true"]')) return;
+      const files = [...(e.clipboardData?.files ?? [])].filter((file) => file.type.startsWith('image/'));
+      if (!files.length && getClip()?.kind !== 'ink') return;
+      e.preventDefault();
+      pageActionRef.current({ action: 'paste', files });
+    };
+    window.addEventListener('paste', onPaste);
+    return () => window.removeEventListener('paste', onPaste);
+  }, []);
+
+  const openPage = (pageId: string) => {
+    setPagesOpen(false);
+    requestAnimationFrame(() => {
+      const index = pageIds.indexOf(pageId);
+      const slot = scrollRef.current?.querySelectorAll<HTMLElement>('.page-slot')[index];
+      slot?.scrollIntoView({ block: 'start' });
+    });
+  };
+
   if (notebook === undefined) return <div className="loading">Loading…</div>;
   if (!notebook || notebook.kind !== 'notebook' || notebook.deleted) {
     return (
@@ -485,9 +533,27 @@ export function NotebookEditor({ notebookId, onClose }: { notebookId: string; on
           </button>
         </div>
         <SyncBadge compact />
+        <button className="tool icon-tool" aria-label="Insert picture" title="Insert picture" onClick={() => pictureInputRef.current?.click()}>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="14" rx="2.5" /><circle cx="9" cy="10" r="1.8" /><path d="m4 17 5-5 4 4 2.5-2.5L20 18" /></svg>
+        </button>
+        <button className="tool icon-tool" aria-label="Pages" title="Pages" onClick={() => setPagesOpen(true)}>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="3.5" width="7" height="8" rx="1.5" /><rect x="13.5" y="3.5" width="7" height="8" rx="1.5" /><rect x="3.5" y="13.5" width="7" height="8" rx="1.5" /><rect x="13.5" y="13.5" width="7" height="8" rx="1.5" /></svg>
+        </button>
         <button className="text-button" onClick={() => setExportOpen(true)}>
           Export ⋯
         </button>
+        <input
+          ref={pictureInputRef}
+          type="file"
+          accept="image/*"
+          multiple
+          hidden
+          onChange={(e) => {
+            const files = [...(e.target.files ?? [])];
+            e.target.value = '';
+            if (files.length) pageAction({ action: 'insertPictures', files });
+          }}
+        />
       </header>
 
       <ToolPalette
@@ -616,6 +682,10 @@ export function NotebookEditor({ notebookId, onClose }: { notebookId: string; on
         />
       )}
 
+      {pagesOpen && (
+        <PageManager notebookId={notebook.id} pageIds={pageIds} onOpenPage={openPage} onClose={() => setPagesOpen(false)} />
+      )}
+
       {copyingPage && (
         <CopyPageDialog
           currentNotebookId={notebook.id}
@@ -663,11 +733,51 @@ export function NotebookEditor({ notebookId, onClose }: { notebookId: string; on
             </button>
             <button
               onClick={() => {
+                const page = pageMenu;
+                setPageMenu(null);
+                void loadPage(db, page.id).then((full) => {
+                  if (full) setClip({ kind: 'pages', pages: [full] });
+                  setNotice('Page copied — paste it from Pages in any notebook');
+                });
+              }}
+            >
+              Copy page
+            </button>
+            {getClip()?.kind === 'pages' && (
+              <button
+                onClick={() => {
+                  const clip = getClip();
+                  const at = pageIds.indexOf(pageMenu.id) + 1;
+                  setPageMenu(null);
+                  if (clip?.kind === 'pages') {
+                    void pastePages(db, clip.pages, notebook.id, at).then((ids) => {
+                      sync.syncSoon();
+                      setNotice(`Pasted ${ids.length} page${ids.length === 1 ? '' : 's'}`);
+                    });
+                  }
+                }}
+              >
+                Paste page{(() => {
+                  const clip = getClip();
+                  return clip?.kind === 'pages' && clip.pages.length > 1 ? `s (${clip.pages.length})` : '';
+                })()} after this page
+              </button>
+            )}
+            <button
+              onClick={() => {
                 setCopyingPage(pageMenu);
                 setPageMenu(null);
               }}
             >
               Copy page to another notebook…
+            </button>
+            <button
+              onClick={() => {
+                setPageMenu(null);
+                setPagesOpen(true);
+              }}
+            >
+              All pages…
             </button>
             <button
               className="danger-text"

@@ -34,7 +34,7 @@ export function expandLocalOnly(items: LibraryItem[], roots: ReadonlySet<ID>): S
 }
 
 export async function setLocalOnly(db: NoteboardDB, id: ID, localOnly: boolean): Promise<void> {
-  await db.transaction('rw', [db.meta, db.items, db.pages, db.files, db.sync], async () => {
+  await db.transaction('rw', [db.meta, db.items, db.pages, db.strokes, db.files, db.sync], async () => {
     const roots = await getLocalOnlyRoots(db);
     if (localOnly) {
       roots.add(id);
@@ -51,7 +51,12 @@ export async function setLocalOnly(db: NoteboardDB, id: ID, localOnly: boolean):
       if (notebookIds.length) {
         const pages = await db.pages.where('notebookId').anyOf(notebookIds).toArray();
         await db.pages.where('notebookId').anyOf(notebookIds).modify({ dirty: 1 });
-        for (const fileId of new Set(pages.map((p) => p.background?.fileId).filter((f): f is ID => !!f))) {
+        const pictures = pages.length ? await db.strokes.where('pageId').anyOf(pages.map((p) => p.id)).toArray() : [];
+        const fileIds = [
+          ...pages.map((p) => p.background?.fileId),
+          ...pictures.map((s) => s.image?.fileId),
+        ].filter((f): f is ID => !!f);
+        for (const fileId of new Set(fileIds)) {
           if (!(await db.sync.get(`file_${fileId}`))) await db.files.update(fileId, { uploaded: 0 });
         }
       }

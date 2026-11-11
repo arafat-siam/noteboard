@@ -991,3 +991,122 @@ button.link.muted {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
   pointer-events: none;
 }
+
+/* Toolbar icon buttons (Insert picture, Pages) */
+.tool.icon-tool svg {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* ---- Page manager (Drawboard style) ---- */
+.page-manager {
+  position: fixed;
+  inset: 0;
+  z-index: 45;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  padding-top: env(safe-area-inset-top);
+}
+.page-manager-top {
+  gap: 12px;
+}
+.page-manager-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 16px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.page-manager-actions button {
+  padding: 8px 14px;
+}
+.page-manager-actions button:disabled {
+  opacity: 0.4;
+}
+.page-grid {
+  flex: 1;
+  overflow-y: auto;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 22px 16px;
+  padding: 20px 16px calc(40px + env(safe-area-inset-bottom));
+  align-content: start;
+  justify-items: center;
+  touch-action: pan-y;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+.page-thumb {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  padding: 6px;
+  border-radius: 10px;
+  border: 2px solid transparent;
+  cursor: pointer;
+  touch-action: pan-y;
+}
+.page-thumb.selected {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.page-thumb.dragging {
+  opacity: 0.45;
+}
+.page-thumb.drop-before::before,
+.page-thumb.drop-after::after {
+  content: '';
+  position: absolute;
+  top: 6px;
+  bottom: 26px;
+  width: 4px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+.page-thumb.drop-before::before {
+  left: -11px;
+}
+.page-thumb.drop-after::after {
+  right: -11px;
+}
+.page-thumb-paper {
+  position: relative;
+  border-radius: 3px;
+  overflow: hidden;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+  pointer-events: none;
+}
+.page-thumb-paper canvas {
+  position: absolute;
+  inset: 0;
+}
+.page-thumb-number {
+  font-size: 13px;
+  color: var(--muted);
+}
+.page-thumb-check {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 14px;
+  color: #fff;
+  background: var(--accent);
+  opacity: 0;
+  transform: translate(30%, -30%);
+}
+.page-thumb.selected .page-thumb-check {
+  opacity: 1;
+}

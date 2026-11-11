@@ -206,11 +206,21 @@ export async function notebookPages(db: NoteboardDB, notebookId: ID): Promise<Pa
  * same one. Copies get new page and stroke ids: strokes are stored by id, so sharing ids would
  * tie the copy to the original. Returns the new page ids.
  */
-export async function copyPagesTo(db: NoteboardDB, pageIds: ID[], targetNotebookId: ID): Promise<ID[]> {
+export async function copyPagesTo(db: NoteboardDB, pageIds: ID[], targetNotebookId: ID, atIndex?: number): Promise<ID[]> {
+  return db.transaction('rw', [db.items, db.pages, db.strokes, db.meta], async () => {
+    const sources = (await loadPages(db, pageIds)).filter((p): p is Page => !!p);
+    return pastePages(db, sources, targetNotebookId, atIndex);
+  });
+}
+
+/**
+ * Inserts copies of these pages (e.g. from the clipboard) into a notebook at `atIndex`
+ * (default: the end). Returns the new page ids.
+ */
+export async function pastePages(db: NoteboardDB, sources: Page[], targetNotebookId: ID, atIndex?: number): Promise<ID[]> {
   return db.transaction('rw', [db.items, db.pages, db.strokes, db.meta], async () => {
     const target = await db.items.get(targetNotebookId);
-    if (!target || target.kind !== 'notebook' || target.deleted) return [];
-    const sources = (await loadPages(db, pageIds)).filter((p): p is Page => !!p);
+    if (!target || target.kind !== 'notebook' || target.deleted || !sources.length) return [];
     const now = Date.now();
     const copies: Page[] = sources.map((src) => ({
       ...src,
@@ -222,11 +232,50 @@ export async function copyPagesTo(db: NoteboardDB, pageIds: ID[], targetNotebook
       dirty: 1,
     }));
     await insertPages(db, copies);
-    target.pageIds = [...target.pageIds, ...copies.map((p) => p.id)];
+    const index = Math.max(0, Math.min(atIndex ?? target.pageIds.length, target.pageIds.length));
+    target.pageIds = [...target.pageIds.slice(0, index), ...copies.map((p) => p.id), ...target.pageIds.slice(index)];
     target.updatedAt = now;
     await db.items.put(target);
     await markLibraryChanged(db);
     return copies.map((p) => p.id);
+  });
+}
+
+/** Moves pages (keeping their order) so they start at `toIndex` of the remaining pages. */
+export async function movePages(db: NoteboardDB, notebookId: ID, pageIds: ID[], toIndex: number): Promise<void> {
+  await db.transaction('rw', db.items, db.meta, async () => {
+    const notebook = await db.items.get(notebookId);
+    if (!notebook || notebook.kind !== 'notebook') return;
+    const moving = new Set(pageIds);
+    const moved = notebook.pageIds.filter((id) => moving.has(id));
+    const rest = notebook.pageIds.filter((id) => !moving.has(id));
+    const index = Math.max(0, Math.min(toIndex, rest.length));
+    const next = [...rest.slice(0, index), ...moved, ...rest.slice(index)];
+    if (next.every((id, i) => id === notebook.pageIds[i])) return;
+    notebook.pageIds = next;
+    notebook.updatedAt = Date.now();
+    await db.items.put(notebook);
+    await markLibraryChanged(db);
+  });
+}
+
+/** Deletes several pages (a notebook always keeps at least one). Returns how many were deleted. */
+export async function deletePages(db: NoteboardDB, notebookId: ID, pageIds: ID[]): Promise<number> {
+  return db.transaction('rw', db.items, db.meta, async () => {
+    const notebook = await db.items.get(notebookId);
+    if (!notebook || notebook.kind !== 'notebook') return 0;
+    const removing = new Set(pageIds.filter((id) => notebook.pageIds.includes(id)));
+    if (removing.size >= notebook.pageIds.length) {
+      // Keep the first page that isn't being deleted… or the very first page.
+      removing.delete(notebook.pageIds[0]!);
+    }
+    if (!removing.size) return 0;
+    notebook.pageIds = notebook.pageIds.filter((id) => !removing.has(id));
+    notebook.deletedPageIds = [...new Set([...notebook.deletedPageIds, ...removing])];
+    notebook.updatedAt = Date.now();
+    await db.items.put(notebook);
+    await markLibraryChanged(db);
+    return removing.size;
   });
 }
 

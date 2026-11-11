@@ -1,7 +1,13 @@
 export type ID = string;
 
 export type PaperTemplate = 'blank' | 'ruled' | 'grid' | 'dotted';
-export type InkTool = 'pen' | 'highlighter';
+/**
+ * 'image' items are pictures placed on the page. They are stored as strokes so they share
+ * everything strokes have: immutable ids, tombstones, sync merge, undo, select / move / resize /
+ * rotate, and layering. Their `points` are the 4 corners (top-left, top-right, bottom-right,
+ * bottom-left, pressure 0) and `image.fileId` points at the picture in the files table.
+ */
+export type InkTool = 'pen' | 'highlighter' | 'image';
 
 /** A4 at 96 dpi. All ink is stored in these page units, independent of screen size or zoom. */
 export const PAGE_WIDTH = 794;
@@ -24,6 +30,12 @@ export interface Stroke {
   fill?: string;
   /** Fill opacity 0–1 (default 0.3). */
   fillOpacity?: number;
+  /** Pictures only (tool 'image'). */
+  image?: { fileId: ID };
+  /**
+   * Stacking order: items are drawn oldest first, so a larger createdAt is in front.
+   * "Bring to front / send to back" give the item a new createdAt (fractions allowed).
+   */
   createdAt: number;
 }
 

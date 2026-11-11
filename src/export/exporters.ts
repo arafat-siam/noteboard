@@ -5,6 +5,7 @@ import { getPdf, renderPdfRegion } from '../pdf/pdf';
 import type { LibraryItem, Notebook, Page, PaperTemplate } from '../model/types';
 import { brushOf, DEFAULT_FILL_OPACITY, drawPage, fillSvgPath, outlineToSvgPath, strokeOutline } from '../ink/render';
 import { TEMPLATE_METRICS } from '../ink/templates';
+import { imageCorners, preloadImages } from '../ink/images';
 import { mergeLibrary, mergePage } from '../sync/merge';
 import { markLibraryChanged } from '../db/library';
 
@@ -51,6 +52,27 @@ export async function exportNotebookPdf(notebook: Notebook, pages: Page[], db: N
   pdf.setCreator('Noteboard');
   // Imported PDFs are embedded as real PDF pages (text stays selectable and vector-sharp).
   const sources = new Map<string, Promise<import('pdf-lib').PDFDocument | null>>();
+  // Pictures placed on pages, embedded once each (JPEG as-is; anything else as PNG).
+  const pictures = new Map<string, Promise<import('pdf-lib').PDFImage | null>>();
+  const pictureOf = (fileId: string) => {
+    let img = pictures.get(fileId);
+    if (!img) {
+      img = db.files.get(fileId).then(async (f) => {
+        if (!f) return null;
+        if (f.mime === 'image/jpeg') return pdf.embedJpg(await f.data.arrayBuffer());
+        if (f.mime === 'image/png') return pdf.embedPng(await f.data.arrayBuffer());
+        const bitmap = await createImageBitmap(f.data);
+        const c = document.createElement('canvas');
+        c.width = bitmap.width;
+        c.height = bitmap.height;
+        c.getContext('2d')!.drawImage(bitmap, 0, 0);
+        const png = await new Promise<Blob | null>((r) => c.toBlob(r, 'image/png'));
+        return png ? pdf.embedPng(await png.arrayBuffer()) : null;
+      }).catch(() => null);
+      pictures.set(fileId, img);
+    }
+    return img;
+  };
   const sourceOf = (fileId: string) => {
     let src = sources.get(fileId);
     if (!src) {
@@ -70,8 +92,27 @@ export async function exportNotebookPdf(notebook: Notebook, pages: Page[], db: N
     } else {
       drawTemplatePdf(pdfPage, page.template, page.width, page.height);
     }
-    const ordered = [...page.strokes.filter((s) => s.tool === 'highlighter'), ...page.strokes.filter((s) => s.tool !== 'highlighter')];
+    // Stacking order, like on screen (pictures and ink layered as arranged).
+    const ordered = [...page.strokes].sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id));
     for (const stroke of ordered) {
+      if (stroke.tool === 'image') {
+        const embedded = stroke.image ? await pictureOf(stroke.image.fileId) : null;
+        if (!embedded) continue;
+        const [tl, tr, , bl] = imageCorners(stroke) as [{ x: number; y: number }, { x: number; y: number }, unknown, { x: number; y: number }];
+        const width = Math.hypot(tr.x - tl.x, tr.y - tl.y) * PT;
+        const height = Math.hypot(bl.x - tl.x, bl.y - tl.y) * PT;
+        const angle = Math.atan2(tr.y - tl.y, tr.x - tl.x);
+        // pdf-lib places the image by its bottom-left corner and rotates counter-clockwise
+        // (PDF y points up, the page's y points down).
+        pdfPage.drawImage(embedded, {
+          x: bl.x * PT,
+          y: (page.height - bl.y) * PT,
+          width,
+          height,
+          rotate: lib.degrees((-angle * 180) / Math.PI),
+        });
+        continue;
+      }
       if (stroke.fill) {
         const area = fillSvgPath(stroke);
         if (area) {
@@ -138,6 +179,7 @@ export async function exportPagePng(page: Page, pixelScale = 2, db: NoteboardDB 
     }
   }
   ctx.stroke();
+  await preloadImages(page.strokes, db);
   const ink = document.createElement('canvas');
   ink.width = canvas.width;
   ink.height = canvas.height;

@@ -149,6 +149,36 @@ describe('sync engine with Google Drive', () => {
   });
 });
 
+describe('pictures on pages', () => {
+  it('syncs a picture to the other device, but never one in a local-only notebook', async () => {
+    const a = new NoteboardDB(`a-${crypto.randomUUID()}`);
+    const b = new NoteboardDB(`b-${crypto.randomUUID()}`);
+    const shared = await createNotebook(a, 'Trip', null);
+    const secret = await createNotebook(a, 'Private', null);
+    const picture = (id: string, fileId: string): Stroke => ({
+      id, tool: 'image', color: '#000000', size: 0, hasPressure: false, createdAt: 2,
+      points: [10, 10, 0, 110, 10, 0, 110, 60, 0, 10, 60, 0], image: { fileId },
+    });
+    const file = (id: string) => ({
+      id, name: `${id}.jpg`, mime: 'image/jpeg', size: 3, data: new Blob([new Uint8Array([1, 2, 3])], { type: 'image/jpeg' }),
+      createdAt: 1, uploaded: 0 as const,
+    });
+    await a.files.bulkPut([file('photo'), file('hidden')]);
+    await applyStrokeChange(a, shared.pageIds[0]!, [picture('img1', 'photo')], []);
+    await applyStrokeChange(a, secret.pageIds[0]!, [picture('img2', 'hidden')], []);
+    await setLocalOnly(a, secret.id, true);
+
+    await syncDevice(a);
+    await syncDevice(b);
+
+    const names = [...files.values()].filter((f) => !f.trashed).map((f) => f.name);
+    expect(names).toContain('file_photo.jpg');
+    expect(names.some((n) => n.includes('hidden'))).toBe(false);
+    expect(await b.files.get('photo')).toBeTruthy();
+    expect((await loadPage(b, shared.pageIds[0]!))?.strokes[0]).toMatchObject({ tool: 'image', image: { fileId: 'photo' } });
+  });
+});
+
 describe('two devices writing on the same page', () => {
   it('keeps every stroke from both and honours erasing', async () => {
     const a = new NoteboardDB(`a-${crypto.randomUUID()}`);

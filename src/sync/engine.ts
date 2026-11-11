@@ -44,6 +44,14 @@ function readPaused(): boolean {
 }
 const PAGE_PREFIX = 'page_';
 const FILE_PREFIX = 'file_';
+
+/** File name ending in Drive (imported PDFs and pictures placed on pages). */
+function extensionFor(mime: string): string {
+  if (mime === 'application/pdf') return '.pdf';
+  if (mime === 'image/jpeg') return '.jpg';
+  const sub = /^image\/([a-z0-9.+-]+)$/.exec(mime)?.[1];
+  return sub ? `.${sub.replace('svg+xml', 'svg')}` : '';
+}
 const AUTO_SYNC_DELAY_MS = 4_000;
 const PERIODIC_SYNC_MS = 60_000;
 
@@ -218,8 +226,14 @@ export class SyncEngine {
     const localOnlyNotebooks = [...localOnly];
     const localOnlyFiles = new Set<string>();
     if (localOnlyNotebooks.length) {
-      for (const p of await db.pages.where('notebookId').anyOf(localOnlyNotebooks).toArray()) {
+      const pages = await db.pages.where('notebookId').anyOf(localOnlyNotebooks).toArray();
+      for (const p of pages) {
         if (p.background) localOnlyFiles.add(p.background.fileId);
+      }
+      // Pictures placed on those pages stay on this iPad too.
+      if (pages.length) {
+        const ink = await db.strokes.where('pageId').anyOf(pages.map((p) => p.id)).toArray();
+        for (const s of ink) if (s.image) localOnlyFiles.add(s.image.fileId);
       }
     }
 
@@ -314,7 +328,7 @@ export class SyncEngine {
     const localFiles = new Set((await db.files.toCollection().primaryKeys()) as string[]);
     for (const file of await db.files.where('uploaded').equals(0).toArray()) {
       if (localOnlyFiles.has(file.id)) continue;
-      const saved = await drive.createBinary(rootId, `${FILE_PREFIX}${file.id}.pdf`, file.data, file.mime, {
+      const saved = await drive.createBinary(rootId, `${FILE_PREFIX}${file.id}${extensionFor(file.mime)}`, file.data, file.mime, {
         kind: 'file',
         fileId: file.id,
         name: file.name.slice(0, 100),

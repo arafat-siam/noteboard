@@ -220,3 +220,46 @@ describe('copying pages and adding PDFs', () => {
     expect(pages[2]!.background).toEqual({ kind: 'pdf', fileId: 'f2', pageIndex: 1 });
   });
 });
+
+describe('page manager operations', () => {
+  it('pastes pages at a position, moves and deletes several', async () => {
+    const { pastePages, movePages, deletePages, loadPages } = await import('./pages');
+    const nb = await createNotebook(db, 'Book', null);
+    await addPage(db, nb.id);
+    await addPage(db, nb.id);
+    const [a, b, c] = ((await db.items.get(nb.id)) as { pageIds: string[] }).pageIds as [string, string, string];
+    await applyStrokeChange(db, a, [stroke('ink-a')], []);
+
+    // Paste a copy of page a between b and c.
+    const sources = (await loadPages(db, [a])).filter((p): p is NonNullable<typeof p> => !!p);
+    const [pasted] = await pastePages(db, sources, nb.id, 2);
+    const ids = () => db.items.get(nb.id).then((n) => (n as { pageIds: string[] }).pageIds);
+    expect(await ids()).toEqual([a, b, pasted, c]);
+    expect((await loadPage(db, pasted!))!.strokes).toHaveLength(1);
+
+    // Move a and c (keeping their order) to the front... then to the end.
+    await movePages(db, nb.id, [c, a], 0);
+    expect(await ids()).toEqual([a, c, b, pasted]);
+    await movePages(db, nb.id, [a], 99);
+    expect(await ids()).toEqual([c, b, pasted, a]);
+
+    // Deleting every page keeps one.
+    expect(await deletePages(db, nb.id, [a, b, c, pasted!])).toBe(3);
+    expect(await ids()).toEqual([c]);
+    const book = (await db.items.get(nb.id)) as { deletedPageIds: string[] };
+    expect(book.deletedPageIds.sort()).toEqual([a, b, pasted].sort());
+  });
+
+  it('pasted ink lands centred where asked, on top, with new ids', async () => {
+    const { inkForPaste } = await import('../ink/clipboard');
+    const copied = [{ ...stroke('p1'), createdAt: 5 }, { ...stroke('p2'), createdAt: 9 }];
+    const pasted = inkForPaste(copied, { x: 500, y: 500 }, 1000);
+    expect(pasted.map((s) => s.id)).not.toContain('p1');
+    expect(pasted[0]!.createdAt).toBeLessThan(pasted[1]!.createdAt);
+    expect(pasted[0]!.createdAt).toBeGreaterThanOrEqual(1000);
+    const xs = pasted.flatMap((s) => s.points.filter((_, i) => i % 3 === 0));
+    const ys = pasted.flatMap((s) => s.points.filter((_, i) => i % 3 === 1));
+    expect((Math.min(...xs) + Math.max(...xs)) / 2).toBeCloseTo(500, 5);
+    expect((Math.min(...ys) + Math.max(...ys)) / 2).toBeCloseTo(500, 5);
+  });
+});

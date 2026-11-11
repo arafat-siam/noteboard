@@ -45,6 +45,9 @@ Verify UI changes in the browser pane (launch config `noteboard-dev`). Synthetic
 - Selecting: a finger tap (or long-press) on ink selects it; Pencil taps draw dots. Snapped lines snap to ends/midpoints/perpendicular/parallel/15° angles of straight ink (`src/ink/snapping.ts`, + tests).
 - Apple Pencil Pro haptics: `src/pencil/haptics.ts` posts to the shell's `noteboardHaptic` handler (`PencilHaptics.swift`, UICanvasFeedbackGenerator, iPadOS 17.5+). Safari/Home Screen can't vibrate the Pencil.
 - Laser pointer tool: live layer only, never saved.
+- Pictures are strokes with `tool: 'image'` (4 corner points + `image.fileId` in the files table, synced as file_<id>.<ext>), so select/move/rotate/undo/sync/merge work unchanged. The eraser skips them.
+- Layering = stacking by `createdAt` (fractions allowed); everything is drawn in that order (`src/ink/layers.ts`). Moving keeps createdAt; duplicates/pastes go on top.
+- Clipboard (`src/ink/clipboard.ts`): copied ink/pictures or pages, works across notebooks. Page manager: `src/ui/PageManager.tsx`.
 - Web pages can't receive Pencil double-tap, squeeze or barrel roll; those need the native wrapper (see `src/pencil/bridge.ts`).
 - Pencil must never scroll the page (touchstart with `touchType === 'stylus'` is prevented in NotebookEditor); fingers scroll.
 - App lock (`src/security/`): the user sets the PIN on first launch; only a salted PBKDF2 hash is stored on the device. Never hard-code a PIN or any secret — the repo and the deployed JS are public. It's a lock screen, not disk encryption; say so honestly.

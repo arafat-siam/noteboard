@@ -2,9 +2,10 @@ import { getStroke } from 'perfect-freehand';
 import type { Stroke } from '../model/types';
 import { smoothInput } from './smoothing';
 import { BRUSHES } from './brushes';
+import { drawImageStroke } from './images';
 
 export function brushOf(stroke: Pick<Stroke, 'tool' | 'brush'>) {
-  return stroke.tool === 'highlighter' ? null : BRUSHES[stroke.brush ?? 'fountain'];
+  return stroke.tool === 'highlighter' || stroke.tool === 'image' ? null : BRUSHES[stroke.brush ?? 'fountain'];
 }
 
 /**
@@ -105,6 +106,10 @@ export function fillSvgPath(stroke: Pick<Stroke, 'points'>): string {
 export const DEFAULT_FILL_OPACITY = 0.3;
 
 export function drawStroke(ctx: CanvasRenderingContext2D, stroke: Stroke, live = false): void {
+  if (stroke.tool === 'image') {
+    drawImageStroke(ctx, stroke);
+    return;
+  }
   const path = live ? new Path2D(outlineToSvgPath(strokeOutline(stroke, false))) : cachedPath(stroke);
   if (stroke.fill) {
     const area = fillSvgPath(stroke);
@@ -186,7 +191,7 @@ export function drawPage(
     const [x0, y0, x1, y1] = cachedBounds(s);
     return x1 >= region.x && x0 <= right && y1 >= region.y && y0 <= bottom;
   };
-  // Highlighter first so it sits behind ink, like a real highlighter.
-  for (const s of strokes) if (s.tool === 'highlighter' && visible(s)) drawStroke(ctx, s);
-  for (const s of strokes) if (s.tool !== 'highlighter' && visible(s)) drawStroke(ctx, s);
+  // In stacking order (oldest first; see Stroke.createdAt), so layering works for ink and
+  // pictures alike. The highlighter blends (multiply), so ink under it stays crisp.
+  for (const s of strokes) if (visible(s)) drawStroke(ctx, s);
 }

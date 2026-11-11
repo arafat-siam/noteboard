@@ -69,6 +69,12 @@ export function rectContains(r: Rect, p: Point): boolean {
 
 /** True if the eraser circle at `p` touches the stroke. */
 export function strokeHit(stroke: Stroke, p: Point, radius: number): boolean {
+  if (stroke.tool === 'image') {
+    // Anywhere on the picture (or within reach of its edge).
+    const c = strokePoints(stroke).slice(0, 4);
+    if (pointInPolygon(p, c)) return true;
+    return c.some((a, i) => distanceToSegment(p, a, c[(i + 1) % c.length]!) <= radius);
+  }
   const reach = radius + stroke.size / 2;
   const b = strokeBounds(stroke);
   if (p.x < b.x - reach || p.x > b.x + b.width + reach || p.y < b.y - reach || p.y > b.y + b.height + reach) {
@@ -101,13 +107,14 @@ export function strokeInLasso(stroke: Stroke, lasso: Point[]): boolean {
   return inside / pts.length >= 0.6;
 }
 
+/** Moves a stroke (keeps its place in the stacking order). */
 export function translateStroke(stroke: Stroke, dx: number, dy: number, id: string): Stroke {
   const points = stroke.points.slice();
   for (let i = 0; i + 1 < points.length; i += 3) {
     points[i] = points[i]! + dx;
     points[i + 1] = points[i + 1]! + dy;
   }
-  return { ...stroke, id, points, createdAt: Date.now() };
+  return { ...stroke, id, points };
 }
 
 /** Scales a stroke about `anchor` (line width scales too, like resizing a drawing). */

@@ -588,3 +588,52 @@
   font-size: 0.85em;
   margin-right: 4px;
 }
+
+/* Arrange pop-up: a short list of actions. */
+.selection-menu .sel-panel.sel-arrange {
+  gap: 2px;
+  padding: 6px;
+  min-width: 180px;
+}
+.selection-menu .sel-arrange button {
+  text-align: left;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  padding: 10px 12px;
+  font-size: 14px;
+}
+.selection-menu .sel-arrange button:active {
+  background: rgba(127, 127, 127, 0.16);
+}
+
+/* Long-press on empty paper: Paste / Insert picture (Apple Notes style callout). */
+.canvas-menu {
+  position: absolute;
+  z-index: 3;
+  transform: translate(-50%, calc(-100% - 12px));
+  display: flex;
+  padding: 3px;
+  gap: 2px;
+  background: #1c1c1e;
+  border-radius: 10px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+  pointer-events: auto;
+  white-space: nowrap;
+}
+.canvas-menu button {
+  border: 0;
+  background: transparent;
+  color: #fff;
+  padding: 9px 13px;
+  border-radius: 7px;
+  font-size: 14px;
+}
+.canvas-menu button + button {
+  border-left: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 0 7px 7px 0;
+}
+.canvas-menu button:active {
+  background: rgba(255, 255, 255, 0.15);
+}
