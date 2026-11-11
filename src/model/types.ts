@@ -19,8 +19,6 @@ export interface Stroke {
   hasPressure: boolean;
   /** Pen type (pens only). Missing on older strokes = fountain pen. */
   brush?: 'fountain' | 'ballpoint' | 'pencil' | 'brush';
-  /** Highlighter with a flat chisel tip; each point's third value is then the tip angle (radians). */
-  nib?: 'chisel';
   createdAt: number;
 }
 

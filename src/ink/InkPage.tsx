@@ -28,7 +28,6 @@ import { getPdf, renderPdfRegion } from '../pdf/pdf';
 import { notePen, penActiveWithin } from './penState';
 import { diagnostics, recordEvent, recordFrame } from './diagnostics';
 import { hideHoverCursor, showHoverCursor } from './hoverCursor';
-import { nibAngle } from './roll';
 
 export type ToolKind = 'pen' | 'highlighter' | 'eraser' | 'lasso';
 
@@ -354,9 +353,7 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
     });
   }, [page.strokes]);
 
-  // Pens record pressure; the chisel highlighter records its tip angle (barrel roll) instead.
-  const pressureOf = (e: PointerEvent) =>
-    settings.tool === 'highlighter' ? nibAngle(e) : e.pointerType === 'pen' ? Math.max(0.05, e.pressure || 0.5) : 0.5;
+  const pressureOf = (e: PointerEvent) => (e.pointerType === 'pen' ? Math.max(0.05, e.pressure || 0.5) : 0.5);
 
   const liveStroke = (g: Gesture, withPrediction: boolean): Stroke => {
     const highlighter = settings.tool === 'highlighter';
@@ -368,7 +365,7 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
       points: withPrediction && !g.snapped ? g.points.concat(g.predicted) : g.points,
       hasPressure: g.hasPressure,
       createdAt: Date.now(),
-      ...(highlighter ? { nib: 'chisel' as const } : { brush: settings.penBrush }),
+      ...(highlighter ? {} : { brush: settings.penBrush }),
     };
   };
 
@@ -596,11 +593,13 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
           ? settings.highlighterSize * scale
           : Math.max(5, settings.penSize * scale);
     if (tool === 'eraser' || settings.hoverPreview !== false) {
+      const n = e.nativeEvent as PointerEvent & { azimuthAngle?: number };
       showHoverCursor(e.clientX, e.clientY, {
         tool,
         size,
         color: tool === 'highlighter' ? settings.highlighterColor : settings.color,
-        angle: nibAngle(e.nativeEvent),
+        twist: e.twist || 0,
+        azimuth: n.azimuthAngle,
       });
     } else {
       hideHoverCursor();
