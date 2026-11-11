@@ -9,14 +9,14 @@
   max-width: calc(100vw - 24px);
   /* No backdrop blur: on iPad Safari it forces costly redraws whenever anything moves (e.g. the
      Pencil hover pointer), which made moving things show a ghost copy. Nearly opaque instead. */
-  background: color-mix(in srgb, var(--surface) 96%, transparent);
-  border: 0.5px solid color-mix(in srgb, var(--text) 14%, transparent);
+  /* Solid, thin border, no big soft shadow: tested on the iPad (test build D) — a see-through
+     background and large shadow here made the moving hover pointer show a ghost copy. */
+  background: var(--surface);
+  border: 1px solid var(--border);
   border-radius: 26px;
-  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.22), 0 3px 10px rgba(0, 0, 0, 0.1);
   padding: 0 8px;
   touch-action: none;
   cursor: grab;
-  will-change: transform;
 }
 .tool-palette.dock-bottom {
   bottom: calc(14px + env(safe-area-inset-bottom));
@@ -26,7 +26,6 @@
 }
 .tool-palette.dragging {
   cursor: grabbing;
-  box-shadow: 0 26px 70px rgba(0, 0, 0, 0.32), 0 4px 12px rgba(0, 0, 0, 0.12);
 }
 .palette-row {
   display: flex;
@@ -164,7 +163,6 @@
   background: var(--surface);
   border: 0.5px solid var(--border);
   border-radius: 20px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
   padding: 16px;
   display: grid;
   gap: 14px;
@@ -349,9 +347,8 @@
   position: fixed;
   transform: translate(-50%, -50%);
   border-radius: 50%;
-  background: color-mix(in srgb, var(--surface) 97%, transparent);
-  border: 0.5px solid color-mix(in srgb, var(--text) 14%, transparent);
-  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.28);
+  background: var(--surface);
+  border: 1px solid var(--border);
   animation: disc-in 0.18s cubic-bezier(0.2, 0.9, 0.3, 1.2);
 }
 @keyframes disc-in {
