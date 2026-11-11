@@ -2,6 +2,8 @@ import type { NoteboardDB } from '../db/db';
 import type { LibraryItem, Page } from '../model/types';
 import { DriveAuthError, DriveClient, type DriveFile } from './drive';
 import { mergeLibrary, mergePage, samePageContent } from './merge';
+import { compactPage } from './compact';
+import { clearRemovalQueue, expandLocalOnly, getLocalOnlyRoots, takeRemovalQueue } from './localOnly';
 import { forgetToken, getToken, isConfigured, wasConnected } from './auth';
 
 /**
@@ -153,6 +155,7 @@ export class SyncEngine {
     }
 
     let remoteFiles: DriveFile[];
+    let libraryForcePush = false;
     try {
       remoteFiles = await drive.listFolder(rootId);
     } catch (error) {
@@ -162,16 +165,46 @@ export class SyncEngine {
     }
     const remoteByName = new Map(remoteFiles.map((f) => [f.name, f]));
 
+    // "Keep on this iPad only": these items (and everything inside them) never leave this device.
+    const localOnly = expandLocalOnly(await db.items.toArray(), await getLocalOnlyRoots(db));
+    const shared = (i: LibraryItem) => !localOnly.has(i.id);
+    const localOnlyNotebooks = [...localOnly];
+    const localOnlyFiles = new Set<string>();
+    if (localOnlyNotebooks.length) {
+      for (const p of await db.pages.where('notebookId').anyOf(localOnlyNotebooks).toArray()) {
+        if (p.background) localOnlyFiles.add(p.background.fileId);
+      }
+    }
+
+    // Items just marked "this iPad only": take their pages and PDFs out of Google Drive.
+    const removal = await takeRemovalQueue(db);
+    if (removal.length) {
+      const inside = expandLocalOnly(await db.items.toArray(), new Set(removal));
+      for (const file of remoteFiles) {
+        const nb = file.appProperties?.notebookId;
+        const pdf = file.appProperties?.fileId;
+        const isPage = file.name.startsWith(PAGE_PREFIX) && nb && inside.has(nb);
+        const isPdf = file.name.startsWith(FILE_PREFIX) && pdf && localOnlyFiles.has(pdf);
+        if (!isPage && !isPdf) continue;
+        await drive.trash(file.id);
+        await db.sync.delete(isPdf ? `${FILE_PREFIX}${pdf}` : file.name);
+      }
+      await clearRemovalQueue(db, removal);
+      // The library list is re-uploaded below without them.
+      libraryForcePush = true;
+    }
+
     // 1. Library: pull + merge.
     const libraryRemote = remoteByName.get(LIBRARY_FILE);
-    let libraryNeedsPush = !libraryRemote;
+    let libraryNeedsPush = !libraryRemote || libraryForcePush;
     if (libraryRemote) {
       const seen = await db.sync.get(LIBRARY_FILE);
       if (seen?.remoteModified !== libraryRemote.modifiedTime) {
         const remote = await drive.downloadJson<LibraryFile>(libraryRemote.id);
         await db.transaction('rw', db.items, db.pages, async () => {
-          const local = await db.items.toArray();
-          const result = mergeLibrary(local, remote.items ?? []);
+          // Local-only items are neither sent nor overwritten by what's in Drive.
+          const local = (await db.items.toArray()).filter(shared);
+          const result = mergeLibrary(local, (remote.items ?? []).filter(shared));
           if (result.localChanged) {
             await db.items.bulkPut(result.merged);
             // Items purged on another device: drop their local pages too.
@@ -192,6 +225,7 @@ export class SyncEngine {
     for (const file of remoteFiles) {
       if (!file.name.startsWith(PAGE_PREFIX)) continue;
       const notebookId = file.appProperties?.notebookId;
+      if (notebookId && localOnly.has(notebookId)) continue;
       if (notebookId && deletedNotebooks.has(notebookId)) {
         await drive.trash(file.id);
         await db.sync.delete(file.name);
@@ -216,7 +250,7 @@ export class SyncEngine {
     const rev = (await db.getMeta<number>('libraryRev')) ?? 0;
     const pushedRev = await db.getMeta<number>('libraryPushedRev');
     if (libraryNeedsPush || rev !== pushedRev) {
-      const data: LibraryFile = { format: 1, items: await db.items.toArray() };
+      const data: LibraryFile = { format: 1, items: (await db.items.toArray()).filter(shared) };
       const known = await db.sync.get(LIBRARY_FILE);
       const saved = known
         ? await drive.updateJson(known.fileId, data)
@@ -228,6 +262,7 @@ export class SyncEngine {
     // 3b. Imported PDFs: upload new ones (before the pages that use them), download missing ones.
     const localFiles = new Set((await db.files.toCollection().primaryKeys()) as string[]);
     for (const file of await db.files.where('uploaded').equals(0).toArray()) {
+      if (localOnlyFiles.has(file.id)) continue;
       const saved = await drive.createBinary(rootId, `${FILE_PREFIX}${file.id}.pdf`, file.data, file.mime, {
         kind: 'file',
         fileId: file.id,
@@ -255,10 +290,11 @@ export class SyncEngine {
     // 4. Push dirty pages.
     const dirty = await db.pages.where('dirty').equals(1).toArray();
     for (const page of dirty) {
-      if (deletedNotebooks.has(page.notebookId)) continue;
+      if (deletedNotebooks.has(page.notebookId) || localOnly.has(page.notebookId)) continue;
       const name = `${PAGE_PREFIX}${page.id}.json`;
       const known = await db.sync.get(name);
-      const upload: Page = { ...page, dirty: 0 };
+      // Older pages get compacted on their next upload.
+      const upload: Page = { ...compactPage(page), dirty: 0 };
       const saved = known
         ? await drive.updateJson(known.fileId, upload)
         : await drive.createJson(rootId, name, upload, { kind: 'page', notebookId: page.notebookId });

@@ -1,4 +1,5 @@
 /** Minimal Google Drive v3 REST client (fetch only, no Google SDK). */
+import { gzipJson, readJson } from './compact';
 
 export interface DriveFile {
   id: string;
@@ -79,30 +80,22 @@ export class DriveClient {
     return files;
   }
 
+  /** Reads a Noteboard data file (gzip-compressed, or plain JSON for files from older versions). */
   async downloadJson<T>(fileId: string): Promise<T> {
     const res = await this.request(`${API}/files/${fileId}?alt=media`);
-    return (await res.json()) as T;
+    return readJson<T>(await res.arrayBuffer());
   }
 
+  /** Data files are stored gzip-compressed (several times smaller than plain JSON). */
   async createJson(folderId: string, name: string, data: unknown, appProperties: Record<string, string>): Promise<DriveFile> {
-    const boundary = `noteboard-${crypto.randomUUID()}`;
-    const metadata = { name, parents: [folderId], mimeType: 'application/json', appProperties };
-    const body =
-      `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n` +
-      `--${boundary}\r\nContent-Type: application/json\r\n\r\n${JSON.stringify(data)}\r\n--${boundary}--`;
-    const res = await this.request(`${UPLOAD}/files?uploadType=multipart&fields=${FILE_FIELDS}`, {
-      method: 'POST',
-      headers: { 'Content-Type': `multipart/related; boundary=${boundary}` },
-      body,
-    });
-    return (await res.json()) as DriveFile;
+    return this.createBinary(folderId, name, await gzipJson(data), 'application/gzip', { ...appProperties, enc: 'gzip' });
   }
 
   async updateJson(fileId: string, data: unknown): Promise<DriveFile> {
     const res = await this.request(`${UPLOAD}/files/${fileId}?uploadType=media&fields=${FILE_FIELDS}`, {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
+      headers: { 'Content-Type': 'application/gzip' },
+      body: await gzipJson(data),
     });
     return (await res.json()) as DriveFile;
   }

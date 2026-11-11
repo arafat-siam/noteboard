@@ -22,6 +22,7 @@ import { COVER_COLORS, FOLDER_COLORS, type ID, type LibraryItem } from '../model
 import { ColorRow, FolderGlyph, Modal, MoveDialog, NewNotebookDialog, PromptDialog } from './Dialogs';
 import { act, pathOf, useLibrary, type LibraryState } from './useLibrary';
 import { importPdf } from '../pdf/pdf';
+import { setLocalOnly } from '../sync/localOnly';
 import { readDragIds, writeDragIds } from './dnd';
 
 interface Props {
@@ -318,6 +319,8 @@ export function LibraryView({ route, onNavigate, onOpenNotebook, onToggleSidebar
           onOpen={() => open(library.byId.get(menuFor)!)}
           onDialog={setDialog}
           onExportPdf={exportPdf}
+          localOnly={library.localOnly.has(menuFor)}
+          localOnlyRoot={library.localOnlyRoots.has(menuFor)}
         />
       )}
 
@@ -417,7 +420,14 @@ function Tile(props: {
           {item.favorite && <span className="fav">★</span>}
         </div>
         <div className="tile-text">
-          <div className="tile-name">{item.name}</div>
+          <div className="tile-name">
+            {props.library.localOnly.has(item.id) && (
+              <span className="local-badge" title="Kept on this iPad only — not synced" aria-label="Not synced">
+                📱
+              </span>
+            )}
+            {item.name}
+          </div>
           <div className="tile-sub">
             {props.showPath ? pathOf(props.library.byId, item) : item.kind === 'folder' ? `${childCount} item${childCount === 1 ? '' : 's'}` : date}
           </div>
@@ -439,8 +449,13 @@ function ItemMenu(props: {
   onOpen: () => void;
   onDialog: (d: Dialog) => void;
   onExportPdf: (item: LibraryItem) => Promise<void>;
+  /** Kept on this iPad only (itself or via a folder it's in). */
+  localOnly: boolean;
+  /** Marked itself (so it can be switched back here). */
+  localOnlyRoot: boolean;
 }) {
   const { item, onClose } = props;
+  const what = item.kind === 'folder' ? 'this folder and everything in it' : 'this notebook';
   const run = (fn: () => void) => () => {
     onClose();
     fn();
@@ -471,6 +486,28 @@ function ItemMenu(props: {
             {item.kind === 'notebook' && <button onClick={run(() => props.onDialog({ kind: 'tags', item }))}>Tags…</button>}
             <button onClick={run(() => props.onDialog({ kind: 'move', ids: [item.id] }))}>Move to…</button>
             {item.kind === 'notebook' && <button onClick={run(() => void props.onExportPdf(item))}>Export as PDF</button>}
+            {props.localOnlyRoot ? (
+              <button
+                onClick={run(() => {
+                  if (confirm(`Sync “${item.name}” to Google Drive again?`)) void act(() => setLocalOnly(db, item.id, false));
+                })}
+              >
+                ☁️ Sync to Google Drive again
+              </button>
+            ) : props.localOnly ? (
+              <button disabled>📱 On this iPad only (set on its folder)</button>
+            ) : (
+              <button
+                onClick={run(() => {
+                  const ok = confirm(
+                    `Keep ${what} on this iPad only?\n\n• It won't be uploaded to Google Drive, and any copy already there is removed.\n• It won't appear on your other devices.\n• If this iPad is lost or reset, these notes are gone — export a PDF or backup if they matter.`,
+                  );
+                  if (ok) void act(() => setLocalOnly(db, item.id, true));
+                })}
+              >
+                📱 Keep on this iPad only (don't sync)
+              </button>
+            )}
             <button className="danger-text" onClick={run(() => void act(() => trashItems(db, [item.id])))}>
               Move to Trash
             </button>

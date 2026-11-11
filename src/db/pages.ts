@@ -1,6 +1,7 @@
 import type { NoteboardDB } from './db';
 import { markLibraryChanged, blankPage } from './library';
 import type { ID, Page, PaperTemplate, Stroke } from '../model/types';
+import { compactStroke } from '../sync/compact';
 
 /** Applies an edit to a page: adds strokes and erases strokes by id (recording tombstones). */
 export async function applyStrokeChange(
@@ -14,7 +15,8 @@ export async function applyStrokeChange(
     if (!page) return;
     const removed = new Set(removedIds);
     const strokes = page.strokes.filter((s) => !removed.has(s.id));
-    strokes.push(...added);
+    // Stored compactly (0.01 page units): new, moved, scaled and rotated ink alike.
+    strokes.push(...added.map(compactStroke));
     page.strokes = strokes;
     if (removedIds.length) page.deletedStrokeIds = [...new Set([...page.deletedStrokeIds, ...removedIds])];
     page.updatedAt = Date.now();

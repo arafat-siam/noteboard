@@ -4,6 +4,7 @@ import { db } from '../db/db';
 import { isVisible } from '../db/library';
 import type { Folder, ID, LibraryItem } from '../model/types';
 import { sync } from '../sync/instance';
+import { expandLocalOnly } from '../sync/localOnly';
 
 export interface LibraryState {
   all: LibraryItem[];
@@ -12,10 +13,15 @@ export interface LibraryState {
   folders: Folder[];
   tags: string[];
   trashed: LibraryItem[];
+  /** Items kept on this iPad only (marked ones and everything inside them). */
+  localOnly: Set<ID>;
+  /** The items the user marked themselves. */
+  localOnlyRoots: Set<ID>;
 }
 
 export function useLibrary(): LibraryState | undefined {
   const items = useLiveQuery(() => db.items.toArray(), []);
+  const roots = useLiveQuery(async () => new Set((await db.getMeta<ID[]>('localOnlyIds')) ?? []), []);
   return useMemo(() => {
     if (!items) return undefined;
     const byId = new Map(items.map((i) => [i.id, i]));
@@ -28,8 +34,10 @@ export function useLibrary(): LibraryState | undefined {
     const trashed = items
       .filter((i) => !i.deleted && i.trashedAt)
       .sort((a, b) => (b.trashedAt ?? 0) - (a.trashedAt ?? 0));
-    return { all: items, byId, visible, folders, tags, trashed };
-  }, [items]);
+    const localOnlyRoots = roots ?? new Set<ID>();
+    const localOnly = expandLocalOnly(items, localOnlyRoots);
+    return { all: items, byId, visible, folders, tags, trashed, localOnly, localOnlyRoots };
+  }, [items, roots]);
 }
 
 /** Runs a library action, reports failures, and schedules a Drive sync. */

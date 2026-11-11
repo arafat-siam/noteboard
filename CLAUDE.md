@@ -47,6 +47,8 @@ Verify UI changes in the browser pane (launch config `noteboard-dev`). Synthetic
 - App lock (`src/security/`): the user sets the PIN on first launch; only a salted PBKDF2 hash is stored on the device. Never hard-code a PIN or any secret — the repo and the deployed JS are public. It's a lock screen, not disk encryption; say so honestly.
 - Data privacy model: the site is public but holds no data. Each visitor's notes live in their own browser (IndexedDB) and their own Google Drive.
 - Imported PDFs live in the Dexie `files` table (immutable blobs) and sync to Drive as `file_<id>.pdf`; pages reference them via `page.background`. Export embeds the original PDF pages (pdf-lib embedPdf) under the ink.
+- Storage: ink is stored at 0.01 page units / 0.001 pressure (`src/sync/compact.ts`, applied in `applyStrokeChange` and before upload); Drive data files are gzip JSON, and `readJson` still reads old plain-JSON files.
+- "Keep on this iPad only" (`src/sync/localOnly.ts`) is per device (meta `localOnlyIds`, covers folder contents): never pushed, excluded from library.json, existing Drive copies trashed via a removal queue. `src/sync/engine.test.ts` runs the real engine against a fake Drive with two devices — extend it for sync changes.
 - Google scope is `drive.file` only. No secrets in the repo (the OAuth client ID is public by design).
 - CI annotations (`scripts/ci-run.sh`) are how build errors are read without GitHub login — keep using it for new CI steps.
 

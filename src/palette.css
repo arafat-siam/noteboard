@@ -474,3 +474,7 @@
   opacity: 0.6;
   pointer-events: none;
 }
+.local-badge {
+  font-size: 0.85em;
+  margin-right: 4px;
+}
