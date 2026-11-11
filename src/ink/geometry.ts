@@ -125,6 +125,12 @@ export function recolorStroke(stroke: Stroke, color: string, id: string): Stroke
   return { ...stroke, id, color };
 }
 
+/** Same stroke with a fill (or none); keeps its stacking order. */
+export function fillStroke(stroke: Stroke, fill: string | null, opacity: number, id: string): Stroke {
+  const { fill: _f, fillOpacity: _o, ...rest } = stroke;
+  return fill ? { ...rest, id, fill, fillOpacity: opacity } : { ...rest, id };
+}
+
 /** Rotates a stroke about `center` by `angle` radians. */
 export function rotateStroke(stroke: Stroke, center: Point, angle: number, id: string): Stroke {
   const cos = Math.cos(angle);

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { newId, type Page, type Stroke } from '../model/types';
-import { applyRegion, drawPage, drawStroke, type CanvasRegion } from './render';
+import { applyRegion, DEFAULT_FILL_OPACITY, drawPage, drawStroke, type CanvasRegion } from './render';
 import { adjustShape, recognizeShape, type ShapeKind } from './shapes';
 import {
   boundsOf,
@@ -12,6 +12,7 @@ import {
   translateStroke,
   scaleStroke,
   recolorStroke,
+  fillStroke,
   rotateStroke,
   unionRects,
   type Point,
@@ -954,6 +955,17 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
     setSelection({ ...selection, ids: new Set(recolored.map((s) => s.id)) });
   };
 
+  /** Fills the selected strokes (null = remove fill). */
+  const fillSelection = (fill: string | null, opacity: number) => {
+    if (!selection) return;
+    const filled = page.strokes.filter((s) => selection.ids.has(s.id)).map((s) => fillStroke(s, fill, opacity, newId()));
+    paintNow(filled);
+    onChange(page.id, filled, [...selection.ids]);
+    setSelection({ ...selection, ids: new Set(filled.map((s) => s.id)) });
+  };
+  const selectedFill = selection ? page.strokes.find((s) => selection.ids.has(s.id) && s.fill) : undefined;
+  const [fillOpacity, setFillOpacity] = useState(DEFAULT_FILL_OPACITY);
+
   useEffect(() => {
     if (!selection) return;
     let tap: { id: number; x: number; y: number; t: number } | null = null;
@@ -1040,6 +1052,35 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
                 onClick={() => recolorSelection(c)}
               />
             ))}
+            <div className="selection-fill">
+              <span className="selection-fill-label">Fill</span>
+              <button
+                className="selection-color no-fill"
+                aria-label="No fill"
+                onClick={() => fillSelection(null, fillOpacity)}
+              />
+              {PEN_COLORS.map((c) => (
+                <button
+                  key={c}
+                  className="selection-color"
+                  style={{ background: c, opacity: Math.max(0.35, fillOpacity) }}
+                  aria-label={`Fill ${c}`}
+                  onClick={() => fillSelection(c, fillOpacity)}
+                />
+              ))}
+              <input
+                type="range"
+                min={0.05}
+                max={1}
+                step={0.05}
+                value={fillOpacity}
+                aria-label="Fill opacity"
+                onChange={(e) => setFillOpacity(Number(e.target.value))}
+                onPointerUp={() => selectedFill?.fill && fillSelection(selectedFill.fill, fillOpacity)}
+                onKeyUp={() => selectedFill?.fill && fillSelection(selectedFill.fill, fillOpacity)}
+              />
+              <span className="selection-fill-label">{Math.round(fillOpacity * 100)}%</span>
+            </div>
             <button onClick={duplicateSelection}>Duplicate</button>
             <button onClick={deleteSelection}>Delete</button>
           </div>

@@ -92,8 +92,30 @@ function cachedPath(stroke: Stroke): Path2D {
   return path;
 }
 
+/** SVG path of the area inside a stroke (its centre line, closed). */
+export function fillSvgPath(stroke: Pick<Stroke, 'points'>): string {
+  const p = stroke.points;
+  if (p.length < 9) return '';
+  const f = (v: number) => (Math.round(v * 100) / 100).toString();
+  let d = `M${f(p[0]!)},${f(p[1]!)}`;
+  for (let i = 3; i + 1 < p.length; i += 3) d += ` L${f(p[i]!)},${f(p[i + 1]!)}`;
+  return `${d} Z`;
+}
+
+export const DEFAULT_FILL_OPACITY = 0.3;
+
 export function drawStroke(ctx: CanvasRenderingContext2D, stroke: Stroke, live = false): void {
   const path = live ? new Path2D(outlineToSvgPath(strokeOutline(stroke, false))) : cachedPath(stroke);
+  if (stroke.fill) {
+    const area = fillSvgPath(stroke);
+    if (area) {
+      ctx.save();
+      ctx.globalAlpha = stroke.fillOpacity ?? DEFAULT_FILL_OPACITY;
+      ctx.fillStyle = stroke.fill;
+      ctx.fill(new Path2D(area));
+      ctx.restore();
+    }
+  }
   ctx.save();
   const brush = brushOf(stroke);
   if (!brush) {

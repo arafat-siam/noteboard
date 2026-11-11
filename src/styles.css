@@ -974,3 +974,22 @@ button.link.muted {
 .sync-control:disabled {
   opacity: 0.4;
 }
+
+/* Shape fill row in the selection menu. */
+.selection-menu .selection-fill {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-basis: 100%;
+}
+.selection-menu .selection-fill-label {
+  font-size: 12px;
+  opacity: 0.8;
+  min-width: 2.2em;
+}
+.selection-menu .selection-fill input[type='range'] {
+  width: 90px;
+}
+.selection-menu .selection-color.no-fill {
+  background: linear-gradient(135deg, transparent 45%, #d93025 45%, #d93025 55%, transparent 55%), #fff;
+}

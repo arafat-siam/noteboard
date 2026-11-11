@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { compactPage, compactPoints, gzipJson, readJson } from './compact';
+import { compactPage, compactPoints, compactStroke, gzipJson, readJson } from './compact';
 import type { Page } from '../model/types';
 
 const page = (): Page => ({
@@ -48,5 +48,17 @@ describe('compact storage', () => {
   it('still reads old uncompressed files', async () => {
     const bytes = new TextEncoder().encode(JSON.stringify({ hello: 'world' })).buffer;
     expect(await readJson(bytes)).toEqual({ hello: 'world' });
+  });
+});
+
+describe('shape fill', () => {
+  it('keeps fill colour and opacity through compacting and merging', async () => {
+    const { mergePage } = await import('./merge');
+    const s = { id: 'f', tool: 'pen' as const, color: '#000', size: 2, hasPressure: true, createdAt: 1, points: [0, 0, 0.5, 10, 0, 0.5, 10, 10, 0.5], fill: '#d93025', fillOpacity: 0.45 };
+    const c = compactStroke(s);
+    expect([c.fill, c.fillOpacity]).toEqual(['#d93025', 0.45]);
+    const page = { id: 'p', notebookId: 'n', template: 'blank' as const, width: 1, height: 1, strokes: [c], deletedStrokeIds: [], updatedAt: 1, dirty: 0 as const };
+    const merged = mergePage(page, { ...page, strokes: [] });
+    expect(merged.strokes[0]).toMatchObject({ fill: '#d93025', fillOpacity: 0.45 });
   });
 });

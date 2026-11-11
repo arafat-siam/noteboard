@@ -3,7 +3,7 @@ import { db as defaultDb, type NoteboardDB } from '../db/db';
 import { loadPage, withStrokes, writePage } from '../db/pages';
 import { getPdf, renderPdfRegion } from '../pdf/pdf';
 import type { LibraryItem, Notebook, Page, PaperTemplate } from '../model/types';
-import { brushOf, drawPage, outlineToSvgPath, strokeOutline } from '../ink/render';
+import { brushOf, DEFAULT_FILL_OPACITY, drawPage, fillSvgPath, outlineToSvgPath, strokeOutline } from '../ink/render';
 import { TEMPLATE_METRICS } from '../ink/templates';
 import { mergeLibrary, mergePage } from '../sync/merge';
 import { markLibraryChanged } from '../db/library';
@@ -72,6 +72,19 @@ export async function exportNotebookPdf(notebook: Notebook, pages: Page[], db: N
     }
     const ordered = [...page.strokes.filter((s) => s.tool === 'highlighter'), ...page.strokes.filter((s) => s.tool !== 'highlighter')];
     for (const stroke of ordered) {
+      if (stroke.fill) {
+        const area = fillSvgPath(stroke);
+        if (area) {
+          pdfPage.drawSvgPath(area, {
+            x: 0,
+            y: page.height * PT,
+            scale: PT,
+            color: hexToRgb(stroke.fill),
+            opacity: stroke.fillOpacity ?? DEFAULT_FILL_OPACITY,
+            borderWidth: 0,
+          });
+        }
+      }
       const path = outlineToSvgPath(strokeOutline(stroke, true));
       if (!path) continue;
       pdfPage.drawSvgPath(path, {

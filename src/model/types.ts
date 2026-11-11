@@ -19,6 +19,11 @@ export interface Stroke {
   hasPressure: boolean;
   /** Pen type (pens only). Missing on older strokes = fountain pen. */
   brush?: 'fountain' | 'ballpoint' | 'pencil' | 'brush';
+  /** Fill inside the shape (closed along its points). Missing = no fill. Strokes are
+   *  immutable, so changing the fill makes a new stroke (new id) like recolouring. */
+  fill?: string;
+  /** Fill opacity 0–1 (default 0.3). */
+  fillOpacity?: number;
   createdAt: number;
 }
 
