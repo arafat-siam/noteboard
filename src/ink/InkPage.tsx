@@ -116,8 +116,9 @@ const VIEW_MARGIN = 0.3;
 const MAX_CANVAS_PIXELS = 10_000_000;
 
 function getLiveContext(canvas: HTMLCanvasElement | null): CanvasRenderingContext2D | null {
-  // `desynchronized` lets browsers that support it skip the compositor for lower latency.
-  return canvas?.getContext('2d', { desynchronized: true }) as CanvasRenderingContext2D | null;
+  // Plain context on purpose: the low-latency 'desynchronized' mode changes how Safari composites
+  // the page and is a suspect for the hover pointer's ghost copy.
+  return canvas?.getContext('2d') ?? null;
 }
 
 const contains = (outer: Rect, inner: Rect) =>
