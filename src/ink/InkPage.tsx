@@ -479,14 +479,20 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
   }, [selection, page.strokes]);
 
   /** Moves the point handles during a drag (no React re-render per frame). */
-  const placeVertexHandles = (vertices: Point[]) => {
+  const placeVertexHandles = (vertices: Point[], stroke?: Stroke, closed = false) => {
     const box = selectionBoxRef.current;
     if (!box || !selection) return;
+    // The frame (and the menu on it) follows the shape while a point is dragged.
+    const b = stroke ? strokeBounds(strokeThrough(stroke, vertices, closed, stroke.id)) : selection.bounds;
+    box.style.left = `${b.x * scale}px`;
+    box.style.top = `${b.y * scale}px`;
+    box.style.width = `${b.width * scale}px`;
+    box.style.height = `${b.height * scale}px`;
     vertices.forEach((q, i) => {
       const el = box.querySelector<HTMLElement>(`[data-handle="v${i}"]`);
       if (!el) return;
-      el.style.left = `${(q.x - selection.bounds.x) * scale}px`;
-      el.style.top = `${(q.y - selection.bounds.y) * scale}px`;
+      el.style.left = `${(q.x - b.x) * scale}px`;
+      el.style.top = `${(q.y - b.y) * scale}px`;
     });
   };
 
@@ -715,7 +721,8 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
       showBadge(`${deg}°`);
     } else if (g.kind === 'vertex' && g.vertex) {
       const v = g.vertex;
-      drawStroke(ctx, strokeThrough(v.stroke, v.current, v.shape.closed, v.stroke.id));
+      // live = true: draw the new outline (the saved outline for this id is the old shape).
+      drawStroke(ctx, strokeThrough(v.stroke, v.current, v.shape.closed, v.stroke.id), true);
       if (g.snap) {
         g.shape = { kind: 'line', base: [v.shape.vertices[1 - v.index]!], from: { x: 0, y: 0 }, pressure: 0.5 };
         drawSnapGuide(ctx, g);
@@ -1141,7 +1148,7 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
             to = snap?.point ?? p;
           }
           v.current = dragVertex(v.shape, v.index, to);
-          placeVertexHandles(v.current);
+          placeVertexHandles(v.current, v.stroke, v.shape.closed);
           break;
         }
       }
