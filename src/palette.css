@@ -637,3 +637,43 @@
 .canvas-menu button:active {
   background: rgba(255, 255, 255, 0.15);
 }
+
+/* Slider that works with Pencil, finger and mouse (fill opacity). */
+.nb-slider {
+  position: relative;
+  flex: 1;
+  min-width: 150px;
+  height: 32px;
+  touch-action: none;
+  cursor: pointer;
+  outline: none;
+}
+.nb-slider-track {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 6px;
+  margin-top: -3px;
+  border-radius: 3px;
+  background: rgba(127, 127, 127, 0.3);
+  overflow: hidden;
+}
+.nb-slider-fill {
+  height: 100%;
+  background: var(--accent);
+}
+.nb-slider-thumb {
+  position: absolute;
+  top: 50%;
+  width: 24px;
+  height: 24px;
+  margin: -12px 0 0 -12px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+}
+.nb-slider:focus-visible .nb-slider-thumb {
+  box-shadow: 0 0 0 3px var(--accent);
+}

@@ -7,6 +7,7 @@ import { pencilHaptic } from '../pencil/haptics';
 import { makeImageStroke, onImageLoaded, readDropped, resolveDropped, storeImage } from './images';
 import { arrange, type ArrangeAction } from './layers';
 import { getClip, inkForPaste, onClipChange, setClip } from './clipboard';
+import { Slider } from './Slider';
 import {
   boundsOf,
   rectContains,
@@ -130,6 +131,11 @@ const LASER_LIFE_MS = 900;
 const VIEW_MARGIN = 0.3;
 /** iPad Safari refuses canvases above ~16.7M pixels; stay well under per canvas. */
 const MAX_CANVAS_PIXELS = 10_000_000;
+
+/** Menus, buttons and sliders on the page (the Pencil and fingers operate them, not write). */
+export function isControl(target: EventTarget | null): boolean {
+  return !!(target as Element | null)?.closest?.('button, input, select, textarea, label, [role="slider"], .selection-menu, .canvas-menu');
+}
 
 /** Swaps replaced items' ids in a selection (recolour / fill make new strokes). */
 function replaceIds(ids: Set<string>, before: Stroke[], after: Stroke[]): Set<string> {
@@ -788,7 +794,7 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
 
   // ---- Pointer input (on the page itself; canvases only display) --------------------------
   const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    if ((e.target as Element).closest('button')) return; // selection menu buttons
+    if (isControl(e.target)) return; // menus, buttons, sliders: not writing
     endHover();
     const native = e.nativeEvent;
     if (diagnostics.enabled) {
@@ -927,7 +933,9 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
       diagnostics.twist = e.twist;
     }
     if (!g && e.pointerType === 'pen' && e.buttons === 0) {
-      onHover(e);
+      // Over a menu the Pencil is pointing at controls: no ink cursor, no hover palette.
+      if (isControl(e.target)) endHover();
+      else onHover(e);
       return;
     }
     // Only contact counts for palm rejection; a hovering Pencil must not block finger scrolling.
@@ -1160,6 +1168,24 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
     setSelection({ ...selection, ids: replaceIds(selection.ids, targets, filled) });
   };
   const selectedFill = selection ? page.strokes.find((s) => selection.ids.has(s.id) && s.fill) : undefined;
+
+  /** Shows the selection with a different fill opacity while the slider moves (not saved yet). */
+  const previewFill = (opacity: number) => {
+    if (!selection || !selectedFill?.fill) return;
+    const targets = page.strokes.filter((s) => selection.ids.has(s.id) && s.tool !== 'image');
+    hiddenRef.current = new Set(targets.map((s) => s.id));
+    paintInk(true);
+    const ctx = inkRef.current?.getContext('2d');
+    const region = regionRef.current;
+    if (!ctx || !region) return;
+    applyRegion(ctx, region);
+    for (const s of targets) drawStroke(ctx, s.fill ? fillStroke(s, s.fill, opacity, s.id) : s);
+  };
+  const endPreview = () => {
+    if (!hiddenRef.current.size) return;
+    hiddenRef.current = new Set();
+    paintInk(true);
+  };
   const [fillOpacity, setFillOpacity] = useState(DEFAULT_FILL_OPACITY);
   /** Which pop-up of the selection menu is open. */
   const [menuPanel, setMenuPanel] = useState<'color' | 'fill' | 'arrange' | null>(null);
@@ -1529,16 +1555,21 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
                 </div>
                 <label className="sel-opacity">
                   <span>Opacity</span>
-                  <input
-                    type="range"
+                  <Slider
+                    value={fillOpacity}
                     min={0.05}
                     max={1}
                     step={0.05}
-                    value={fillOpacity}
-                    aria-label="Fill opacity"
-                    onChange={(e) => setFillOpacity(Number(e.target.value))}
-                    onPointerUp={() => selectedFill?.fill && fillSelection(selectedFill.fill, fillOpacity)}
-                    onKeyUp={() => selectedFill?.fill && fillSelection(selectedFill.fill, fillOpacity)}
+                    label="Fill opacity"
+                    onInput={(v) => {
+                      setFillOpacity(v);
+                      previewFill(v);
+                    }}
+                    onCommit={(v) => {
+                      const current = selectedFill?.fillOpacity ?? DEFAULT_FILL_OPACITY;
+                      if (selectedFill?.fill && Math.abs(v - current) > 0.001) fillSelection(selectedFill.fill, v);
+                      else endPreview();
+                    }}
                   />
                   <span className="sel-value">{Math.round(fillOpacity * 100)}%</span>
                 </label>

@@ -6,7 +6,7 @@ import { addPage, applyStrokeChange, copyPagesTo, deletePage, loadPage, notebook
 import { appendPdf } from '../pdf/pdf';
 import { CopyPageDialog } from './CopyPageDialog';
 import { PageManager } from './PageManager';
-import { PAGE_ACTION, type PageAction } from '../ink/InkPage';
+import { isControl, PAGE_ACTION, type PageAction } from '../ink/InkPage';
 import { getClip, setClip } from '../ink/clipboard';
 import { readDropped, resolveDropped } from '../ink/images';
 import { exportNotebookPdf, exportPagePng, safeFilename, shareOrDownload } from '../export/exporters';
@@ -321,6 +321,8 @@ export function NotebookEditor({ notebookId, onClose }: { notebookId: string; on
     };
 
     const onDown = (e: PointerEvent) => {
+      // Touching a menu or slider on the page is not a scroll or the palm.
+      if (isControl(e.target)) return;
       if (e.pointerType === 'pen') {
         // The Pencil wins. Any finger gesture still going (or that started moments ago) was
         // the palm resting on the screen: cancel it and put the view back.
