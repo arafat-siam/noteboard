@@ -594,13 +594,10 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
           ? settings.highlighterSize * scale
           : Math.max(5, settings.penSize * scale);
     if (tool === 'eraser' || settings.hoverPreview !== false) {
-      const n = e.nativeEvent as PointerEvent & { azimuthAngle?: number };
       showHoverCursor(e.clientX, e.clientY, {
         tool,
         size,
         color: tool === 'highlighter' ? settings.highlighterColor : settings.color,
-        twist: e.twist || 0,
-        azimuth: n.azimuthAngle,
       });
     } else {
       hideHoverCursor();

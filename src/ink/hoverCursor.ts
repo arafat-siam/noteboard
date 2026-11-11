@@ -3,7 +3,7 @@
  * page), so it can never double up between pages or flicker as pages re-render.
  *
  * - pens: a dot the size and colour of the ink
- * - highlighter: a chisel tip that turns with the Pencil's tilt direction and barrel roll
+ * - highlighter: a soft square the size and colour of the highlighter
  * - eraser: a ring showing what it will erase
  */
 export interface HoverCursorStyle {
@@ -11,10 +11,6 @@ export interface HoverCursorStyle {
   /** Diameter in CSS pixels. */
   size: number;
   color: string;
-  /** Pencil barrel roll in degrees (0 if the browser doesn't report it). */
-  twist: number;
-  /** Direction the Pencil leans, in radians (undefined if unknown). */
-  azimuth?: number;
 }
 
 let el: HTMLDivElement | null = null;
@@ -36,18 +32,14 @@ export function showHoverCursor(clientX: number, clientY: number, style: HoverCu
     cursor.style.display = 'none';
     return;
   }
-  const highlighter = style.tool === 'highlighter';
-  const width = highlighter ? Math.max(4, style.size * 0.35) : style.size;
-  const height = style.size;
-  // Highlighter chisel: barrel roll if reported, otherwise follow the lean direction.
-  const angle = highlighter ? (style.twist ? style.twist : style.azimuth !== undefined ? (style.azimuth * 180) / Math.PI : 0) : 0;
+  const size = style.size;
   cursor.className = `hover-cursor ${style.tool}`;
   cursor.style.display = 'block';
-  cursor.style.width = `${width}px`;
-  cursor.style.height = `${height}px`;
+  cursor.style.width = `${size}px`;
+  cursor.style.height = `${size}px`;
   cursor.style.background =
-    style.tool === 'pen' ? style.color : highlighter ? `${style.color}99` : 'transparent';
-  cursor.style.transform = `translate(${clientX - width / 2}px, ${clientY - height / 2}px) rotate(${angle}deg)`;
+    style.tool === 'pen' ? style.color : style.tool === 'highlighter' ? `${style.color}80` : 'transparent';
+  cursor.style.transform = `translate(${clientX - size / 2}px, ${clientY - size / 2}px)`;
 
   // Safety net only: hide if hover events stop entirely (e.g. no "leave" event when the Pencil
   // is lifted away). Long enough that holding the Pencil still never hides it.
