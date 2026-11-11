@@ -12,7 +12,7 @@ import {
   sortItems,
   trashItems,
 } from './library';
-import { addPage, applyStrokeChange, notebookPages } from './pages';
+import { addPage, applyEdit, applyStrokeChange, loadPage, notebookPages, onLocalEdit } from './pages';
 import type { Stroke } from '../model/types';
 
 let db: NoteboardDB;
@@ -81,6 +81,14 @@ describe('library', () => {
     expect(await db.pages.where('notebookId').equals(old.id).count()).toBe(0);
   });
 
+  it('purging a notebook also removes its ink', async () => {
+    const nb = await createNotebook(db, 'Gone', null);
+    await applyStrokeChange(db, nb.pageIds[0]!, [stroke('x1'), stroke('x2')], []);
+    expect(await db.strokes.count()).toBe(2);
+    await purgeItems(db, [nb.id]);
+    expect(await db.strokes.count()).toBe(0);
+  });
+
   it('sorts folders first, names naturally', async () => {
     await createNotebook(db, 'Note 10', null);
     await createNotebook(db, 'Note 2', null);
@@ -104,10 +112,66 @@ describe('pages', () => {
     await db.pages.update(page!.id, { dirty: 0 });
     await applyStrokeChange(db, page!.id, [stroke('s1'), stroke('s2')], []);
     await applyStrokeChange(db, page!.id, [], ['s1']);
-    const updated = await db.pages.get(page!.id);
+    const updated = await loadPage(db, page!.id);
     expect(updated?.strokes.map((s) => s.id)).toEqual(['s2']);
     expect(updated?.deletedStrokeIds).toEqual(['s1']);
     expect(updated?.dirty).toBe(1);
+  });
+
+  it('saving a stroke writes only that stroke, however full the page is', async () => {
+    const nb = await createNotebook(db, 'Full', null);
+    const pageId = nb.pageIds[0]!;
+    await applyStrokeChange(db, pageId, Array.from({ length: 300 }, (_, i) => stroke(`old${i}`)), []);
+    let written = 0;
+    const count = (_key: unknown, obj: unknown) => void (written += Array.isArray((obj as { strokes?: unknown }).strokes) ? 1000 : 1);
+    db.strokes.hook('creating', count);
+    db.pages.hook('creating', count);
+    const updating = () => void written++;
+    db.pages.hook('updating', updating);
+    await applyStrokeChange(db, pageId, [{ ...stroke('new'), createdAt: 2 }], []);
+    db.strokes.hook('creating').unsubscribe(count);
+    db.pages.hook('creating').unsubscribe(count);
+    db.pages.hook('updating').unsubscribe(updating);
+    expect(written).toBeLessThanOrEqual(2); // the new stroke + the small page record
+    const page = await loadPage(db, pageId);
+    expect(page?.strokes).toHaveLength(301);
+    expect(page?.strokes.at(-1)?.id).toBe('new');
+  });
+
+  it('an open page updated in memory matches the page saved in the database', async () => {
+    const nb = await createNotebook(db, 'Memory', null);
+    const pageId = nb.pageIds[0]!;
+    await applyStrokeChange(db, pageId, [stroke('a'), { ...stroke('b'), createdAt: 3 }], []);
+    let shown = (await loadPage(db, pageId))!;
+    const stop = onLocalEdit((edit) => { if (edit.pageId === pageId) shown = applyEdit(shown, edit); });
+    await applyStrokeChange(db, pageId, [{ ...stroke('c'), createdAt: 2 }, { ...stroke('d'), createdAt: 9 }], ['a']);
+    stop();
+    const saved = (await loadPage(db, pageId))!;
+    expect(shown.strokes).toEqual(saved.strokes);
+    expect(shown.strokes.map((s) => s.id)).toEqual(['c', 'b', 'd']);
+    expect(shown.deletedStrokeIds).toEqual(saved.deletedStrokeIds);
+    expect(shown.updatedAt).toBe(saved.updatedAt);
+  });
+
+  it('moves ink from notes saved by the previous version into the new layout', async () => {
+    const name = `m-${crypto.randomUUID()}`;
+    const Dexie = (await import('dexie')).default;
+    const old = new Dexie(name);
+    old.version(2).stores({ items: 'id, kind', pages: 'id, notebookId, dirty', meta: 'key', sync: 'key', files: 'id, uploaded' });
+    await old.table('pages').bulkPut([
+      { id: 'p1', notebookId: 'n', template: 'blank', strokes: [stroke('a'), stroke('b')], deletedStrokeIds: ['z'], updatedAt: 5, dirty: 0 },
+      { id: 'p2', notebookId: 'n', template: 'blank', strokes: [], deletedStrokeIds: [], updatedAt: 6, dirty: 1 },
+    ]);
+    old.close();
+
+    const upgraded = new NoteboardDB(name);
+    const p1 = await loadPage(upgraded, 'p1');
+    expect(p1?.strokes.map((s) => s.id)).toEqual(['a', 'b']);
+    expect(p1?.deletedStrokeIds).toEqual(['z']);
+    expect(p1?.dirty).toBe(0); // nothing re-uploaded just because of the move
+    expect((await upgraded.pages.get('p1')) as object).not.toHaveProperty('strokes');
+    expect((await loadPage(upgraded, 'p2'))?.strokes).toEqual([]);
+    upgraded.close();
   });
 
   it('inserts a page after a given page', async () => {

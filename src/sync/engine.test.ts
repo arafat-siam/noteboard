@@ -2,7 +2,7 @@ import 'fake-indexeddb/auto';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { NoteboardDB } from '../db/db';
 import { createNotebook } from '../db/library';
-import { applyStrokeChange } from '../db/pages';
+import { applyStrokeChange, loadPage } from '../db/pages';
 import { SyncEngine } from './engine';
 import { DriveClient } from './drive';
 import { setLocalOnly } from './localOnly';
@@ -113,7 +113,7 @@ describe('sync engine with Google Drive', () => {
 
     const names = (await b.items.toArray()).map((i) => i.name);
     expect(names).toEqual(['Physics']);
-    const page = await b.pages.get(shared.pageIds[0]!);
+    const page = await loadPage(b, shared.pageIds[0]!);
     expect(page?.strokes.map((s) => s.id)).toEqual(['s1']);
     expect(page?.strokes[0]!.points[0]).toBe(10.12); // stored compactly
 
@@ -149,6 +149,28 @@ describe('sync engine with Google Drive', () => {
   });
 });
 
+describe('two devices writing on the same page', () => {
+  it('keeps every stroke from both and honours erasing', async () => {
+    const a = new NoteboardDB(`a-${crypto.randomUUID()}`);
+    const b = new NoteboardDB(`b-${crypto.randomUUID()}`);
+    const nb = await createNotebook(a, 'Shared', null);
+    const pageId = nb.pageIds[0]!;
+    await applyStrokeChange(a, pageId, [stroke('a1'), stroke('a2')], []);
+    await syncDevice(a);
+    await syncDevice(b);
+    await applyStrokeChange(b, pageId, [stroke('b1')], ['a1']);
+    await applyStrokeChange(a, pageId, [stroke('a3')], []);
+    await syncDevice(b);
+    await syncDevice(a);
+    await syncDevice(b);
+    for (const db of [a, b]) {
+      const page = await loadPage(db, pageId);
+      expect(page?.strokes.map((s) => s.id).sort()).toEqual(['a2', 'a3', 'b1']);
+      expect(await db.strokes.where('pageId').equals(pageId).count()).toBe(3);
+    }
+  });
+});
+
 describe('pausing sync', () => {
   it('a paused engine never contacts Drive on its own, but "Sync now" still works', async () => {
     const { setToken } = await import('./auth.testing');
@@ -181,7 +203,7 @@ describe('page loading', () => {
     await addPage(db, nb.id);
     const [first, second] = (await db.items.get(nb.id))!.kind === 'notebook' ? ((await db.items.get(nb.id)) as { pageIds: string[] }).pageIds : [];
     let reads = 0;
-    const sub = liveQuery(() => db.pages.get(first!)).subscribe(() => reads++);
+    const sub = liveQuery(() => loadPage(db, first!)).subscribe(() => reads++);
     await new Promise((r) => setTimeout(r, 50));
     const before = reads;
     await applyStrokeChange(db, second!, [stroke('other-page')], []);

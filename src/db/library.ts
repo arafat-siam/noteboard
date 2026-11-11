@@ -1,3 +1,4 @@
+import { insertPages, removePages } from './pages';
 import type { NoteboardDB } from './db';
 import {
   COVER_COLORS,
@@ -91,9 +92,9 @@ export async function createNotebook(
     favorite: false,
     deleted: false,
   };
-  await db.transaction('rw', db.items, db.pages, db.meta, async () => {
+  await db.transaction('rw', db.items, db.pages, db.strokes, db.meta, async () => {
     await db.items.add(notebook);
-    await db.pages.add(page);
+    await insertPages(db, [page]);
     await markLibraryChanged(db);
   });
   return notebook;
@@ -212,7 +213,7 @@ export async function restoreItem(db: NoteboardDB, id: ID): Promise<void> {
 
 /** Permanently deletes an item and everything inside it. */
 export async function purgeItems(db: NoteboardDB, ids: ID[]): Promise<void> {
-  await db.transaction('rw', db.items, db.pages, db.meta, async () => {
+  await db.transaction('rw', db.items, db.pages, db.strokes, db.meta, async () => {
     const all = await db.items.toArray();
     const byId = new Map(all.map((i) => [i.id, i]));
     const now = Date.now();
@@ -221,7 +222,7 @@ export async function purgeItems(db: NoteboardDB, ids: ID[]): Promise<void> {
       item.deleted = true;
       item.updatedAt = now;
       if (item.kind === 'notebook') {
-        await db.pages.where('notebookId').equals(item.id).delete();
+        await removePages(db, (await db.pages.where('notebookId').equals(item.id).primaryKeys()) as ID[]);
         item.pageIds = [];
       }
       await db.items.put(item);
@@ -320,9 +321,9 @@ export async function createNotebookFromPages(
     favorite: false,
     deleted: false,
   };
-  await db.transaction('rw', db.items, db.pages, db.meta, async () => {
+  await db.transaction('rw', db.items, db.pages, db.strokes, db.meta, async () => {
     await db.items.add(notebook);
-    await db.pages.bulkAdd(pages);
+    await insertPages(db, pages);
     await markLibraryChanged(db);
   });
   return notebook;

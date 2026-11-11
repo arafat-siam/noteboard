@@ -3,6 +3,7 @@ import type { LibraryItem, Page } from '../model/types';
 import { DriveAuthError, DriveClient, type DriveFile } from './drive';
 import { mergeLibrary, mergePage, samePageContent } from './merge';
 import { compactPage } from './compact';
+import { loadPage, writePage, removePages } from '../db/pages';
 import { clearRemovalQueue, expandLocalOnly, getLocalOnlyRoots, takeRemovalQueue } from './localOnly';
 import { forgetToken, getToken, isConfigured, wasConnected } from './auth';
 
@@ -247,7 +248,7 @@ export class SyncEngine {
       const seen = await db.sync.get(LIBRARY_FILE);
       if (seen?.remoteModified !== libraryRemote.modifiedTime) {
         const remote = await drive.downloadJson<LibraryFile>(libraryRemote.id);
-        await db.transaction('rw', db.items, db.pages, async () => {
+        await db.transaction('rw', db.items, db.pages, db.strokes, async () => {
           // Local-only items are neither sent nor overwritten by what's in Drive.
           const local = (await db.items.toArray()).filter(shared);
           const result = mergeLibrary(local, (remote.items ?? []).filter(shared));
@@ -255,7 +256,9 @@ export class SyncEngine {
             await db.items.bulkPut(result.merged);
             // Items purged on another device: drop their local pages too.
             for (const item of result.merged) {
-              if (item.deleted && item.kind === 'notebook') await db.pages.where('notebookId').equals(item.id).delete();
+              if (item.deleted && item.kind === 'notebook') {
+                await removePages(db, (await db.pages.where('notebookId').equals(item.id).primaryKeys()) as string[]);
+              }
             }
           }
           if (result.remoteChanged) libraryNeedsPush = true;
@@ -281,14 +284,14 @@ export class SyncEngine {
       if (seen?.remoteModified === file.modifiedTime) continue;
       await this.pauseWhileBusy();
       const remote = await drive.downloadJson<Page>(file.id);
-      await db.transaction('rw', db.pages, async () => {
-        const local = await db.pages.get(remote.id);
+      await db.transaction('rw', db.pages, db.strokes, async () => {
+        const local = await loadPage(db, remote.id);
         if (!local) {
-          await db.pages.put({ ...remote, dirty: 0 });
+          await writePage(db, { ...remote, dirty: 0 });
           return;
         }
         const merged = mergePage(local, remote);
-        await db.pages.put({ ...merged, dirty: samePageContent(merged, remote) ? 0 : 1 });
+        await writePage(db, { ...merged, dirty: samePageContent(merged, remote) ? 0 : 1 });
       });
       await db.sync.put({ key: file.name, fileId: file.id, remoteModified: file.modifiedTime });
     }
@@ -337,9 +340,11 @@ export class SyncEngine {
 
     // 4. Push dirty pages.
     const dirty = await db.pages.where('dirty').equals(1).toArray();
-    for (const page of dirty) {
-      if (deletedNotebooks.has(page.notebookId) || localOnly.has(page.notebookId)) continue;
+    for (const record of dirty) {
+      if (deletedNotebooks.has(record.notebookId) || localOnly.has(record.notebookId)) continue;
       await this.pauseWhileBusy();
+      const page = await loadPage(db, record.id);
+      if (!page) continue;
       const name = `${PAGE_PREFIX}${page.id}.json`;
       const known = await db.sync.get(name);
       // Older pages get compacted on their next upload.

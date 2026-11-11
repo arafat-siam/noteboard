@@ -1,5 +1,6 @@
 import type { PDFPage, RGB } from 'pdf-lib';
 import { db as defaultDb, type NoteboardDB } from '../db/db';
+import { loadPage, withStrokes, writePage } from '../db/pages';
 import { getPdf, renderPdfRegion } from '../pdf/pdf';
 import type { LibraryItem, Notebook, Page, PaperTemplate } from '../model/types';
 import { brushOf, drawPage, outlineToSvgPath, strokeOutline } from '../ink/render';
@@ -148,7 +149,7 @@ export async function exportBackup(db: NoteboardDB): Promise<Blob> {
     format: 1,
     exportedAt: new Date().toISOString(),
     items: await db.items.toArray(),
-    pages: await db.pages.toArray(),
+    pages: await withStrokes(db, await db.pages.toArray()),
   };
   return new Blob([JSON.stringify(backup)], { type: 'application/json' });
 }
@@ -157,12 +158,12 @@ export async function exportBackup(db: NoteboardDB): Promise<Blob> {
 export async function importBackup(db: NoteboardDB, file: Blob): Promise<number> {
   const backup = JSON.parse(await file.text()) as Backup;
   if (backup.app !== 'noteboard' || !Array.isArray(backup.items)) throw new Error('This is not a Noteboard backup.');
-  await db.transaction('rw', db.items, db.pages, db.meta, async () => {
+  await db.transaction('rw', db.items, db.pages, db.strokes, db.meta, async () => {
     const { merged } = mergeLibrary(await db.items.toArray(), backup.items);
     await db.items.bulkPut(merged);
     for (const page of backup.pages) {
-      const local = await db.pages.get(page.id);
-      await db.pages.put({ ...(local ? mergePage(local, page) : page), dirty: 1 });
+      const local = await loadPage(db, page.id);
+      await writePage(db, { ...(local ? mergePage(local, page) : page), dirty: 1 });
     }
     await markLibraryChanged(db);
   });

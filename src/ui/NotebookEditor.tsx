@@ -2,7 +2,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { db } from '../db/db';
 import { renameItem } from '../db/library';
-import { addPage, applyStrokeChange, deletePage, notebookPages, setPageTemplate } from '../db/pages';
+import { addPage, applyStrokeChange, deletePage, loadPage, notebookPages, setPageTemplate } from '../db/pages';
 import { exportNotebookPdf, exportPagePng, safeFilename, shareOrDownload } from '../export/exporters';
 import type { ToolKind, ToolSettings } from '../ink/InkPage';
 import { PageSlot } from './PageSlot';
@@ -447,7 +447,7 @@ export function NotebookEditor({ notebookId, onClose }: { notebookId: string; on
     const el = scrollRef.current;
     const index = el ? Math.min(pageIds.length - 1, Math.floor(el.scrollTop / (notebookPageHeight(scale) + 24))) : 0;
     const pageId = pageIds[Math.max(0, index)];
-    const page = pageId ? await db.pages.get(pageId) : undefined;
+    const page = pageId ? await loadPage(db, pageId) : undefined;
     if (page) await shareOrDownload(await exportPagePng(page), `${safeFilename(notebook.name)} p${index + 1}.png`);
   };
 

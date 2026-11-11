@@ -1,6 +1,7 @@
-import { useLiveQuery } from 'dexie-react-hooks';
-import { memo, useEffect } from 'react';
+import { liveQuery } from 'dexie';
+import { memo, useEffect, useRef, useState } from 'react';
 import { db } from '../db/db';
+import { applyEdit, loadPage, onLocalEdit } from '../db/pages';
 import { InkPage, type ToolSettings } from '../ink/InkPage';
 import { PAGE_HEIGHT, PAGE_WIDTH, type Page, type Stroke } from '../model/types';
 
@@ -20,14 +21,72 @@ interface Props {
 }
 
 /**
- * One page of the editor. It watches only its own page in the database, so writing on a page
- * (or sync updating one) re-reads that page alone — never the whole notebook. Re-reading the
- * whole notebook on every change froze the app for a moment on large notebooks, which showed
- * up as lag and a stuttering, "doubled" hover pointer.
+ * One page of the editor.
+ *
+ * Writing on the page updates it in memory (via `onLocalEdit`), so finishing a line costs
+ * almost nothing no matter how full the page is. The page only re-reads its ink from the
+ * database when something else changed it: sync from another device, a template change, etc.
+ * (Re-reading every stroke after each line froze the app briefly on full pages, which showed
+ * up as lag and a stuttering, "doubled" hover pointer.)
  */
 export const PageSlot = memo(function PageSlot(props: Props) {
   const { pageId, registry } = props;
-  const page = useLiveQuery(() => db.pages.get(pageId), [pageId]);
+  const [page, setPage] = useState<Page | undefined>(undefined);
+  /** The page as currently shown, read outside React to decide whether a re-read is needed. */
+  const shownRef = useRef<Page | undefined>(undefined);
+
+  useEffect(() => {
+    let cancelled = false;
+    let loading = false;
+    let again = false;
+    const show = (next: Page | undefined) => {
+      if (cancelled) return;
+      shownRef.current = next;
+      setPage(next);
+    };
+    const reload = async () => {
+      if (loading) {
+        again = true;
+        return;
+      }
+      loading = true;
+      try {
+        do {
+          again = false;
+          show(await loadPage(db, pageId));
+        } while (again && !cancelled);
+      } finally {
+        loading = false;
+      }
+    };
+
+    // Own edits: applied in memory. They're announced before being saved, so this always
+    // runs before the database change below arrives.
+    const stopEdits = onLocalEdit((edit) => {
+      if (edit.db !== db || edit.pageId !== pageId) return;
+      const shown = shownRef.current;
+      if (edit.failed || !shown || loading) void reload();
+      else show(applyEdit(shown, edit));
+    });
+
+    // Changes to the small page record (it holds no ink): re-read the ink only if the change
+    // isn't an edit already shown.
+    const sub = liveQuery(() => db.pages.get(pageId)).subscribe({
+      next: (record) => {
+        const shown = shownRef.current;
+        if (!record) show(undefined);
+        else if (!shown || shown.updatedAt !== record.updatedAt || shown.template !== record.template) void reload();
+        else if (shown.dirty !== record.dirty) show({ ...shown, dirty: record.dirty });
+      },
+      error: () => void reload(),
+    });
+
+    return () => {
+      cancelled = true;
+      stopEdits();
+      sub.unsubscribe();
+    };
+  }, [pageId]);
 
   useEffect(() => {
     if (page) registry.set(pageId, page);
