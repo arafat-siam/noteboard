@@ -146,6 +146,11 @@ export class SyncEngine {
     return this.running;
   }
 
+  /** A sync already running steps aside between files while the Pencil is in use. */
+  private async pauseWhileBusy(): Promise<void> {
+    while (this.busy()) await new Promise((r) => setTimeout(r, 400));
+  }
+
   private async run(drive: DriveClient): Promise<void> {
     const db = this.db;
     let rootId = await db.getMeta<string>('driveRootId');
@@ -233,6 +238,7 @@ export class SyncEngine {
       }
       const seen = await db.sync.get(file.name);
       if (seen?.remoteModified === file.modifiedTime) continue;
+      await this.pauseWhileBusy();
       const remote = await drive.downloadJson<Page>(file.id);
       await db.transaction('rw', db.pages, async () => {
         const local = await db.pages.get(remote.id);
@@ -250,6 +256,7 @@ export class SyncEngine {
     const rev = (await db.getMeta<number>('libraryRev')) ?? 0;
     const pushedRev = await db.getMeta<number>('libraryPushedRev');
     if (libraryNeedsPush || rev !== pushedRev) {
+      await this.pauseWhileBusy();
       const data: LibraryFile = { format: 1, items: (await db.items.toArray()).filter(shared) };
       const known = await db.sync.get(LIBRARY_FILE);
       const saved = known
@@ -291,6 +298,7 @@ export class SyncEngine {
     const dirty = await db.pages.where('dirty').equals(1).toArray();
     for (const page of dirty) {
       if (deletedNotebooks.has(page.notebookId) || localOnly.has(page.notebookId)) continue;
+      await this.pauseWhileBusy();
       const name = `${PAGE_PREFIX}${page.id}.json`;
       const known = await db.sync.get(name);
       // Older pages get compacted on their next upload.

@@ -25,7 +25,7 @@ import type { PDFDocumentProxy, RenderTask } from 'pdfjs-dist';
 import { db } from '../db/db';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { getPdf, renderPdfRegion } from '../pdf/pdf';
-import { notePen, penActiveWithin } from './penState';
+import { noteHover, notePen, penActiveWithin } from './penState';
 import { diagnostics, recordEvent, recordFrame } from './diagnostics';
 import { hideHoverCursor, showHoverCursor } from './hoverCursor';
 
@@ -584,6 +584,7 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
   };
 
   const onHover = (e: React.PointerEvent<HTMLDivElement>) => {
+    noteHover();
     const tool = settings.tool;
     // Preview exactly where (and how big) ink will land.
     const size =
