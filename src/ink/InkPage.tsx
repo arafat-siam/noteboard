@@ -4,7 +4,7 @@ import { applyRegion, DEFAULT_FILL_OPACITY, drawPage, drawStroke, type CanvasReg
 import { adjustShape, polylinePoints, recognizeShape, type ShapeKind } from './shapes';
 import { buildGuides, sameSnap, snapLineEnd, snapToPoint, type SnapGuides, type SnapResult } from './snapping';
 import { pencilHaptic } from '../pencil/haptics';
-import { makeImageStroke, onImageLoaded, storeImage } from './images';
+import { makeImageStroke, onImageLoaded, readDropped, resolveDropped, storeImage } from './images';
 import { arrange, type ArrangeAction } from './layers';
 import { getClip, inkForPaste, onClipChange, setClip } from './clipboard';
 import {
@@ -1367,18 +1367,23 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
       onPointerCancel={(e) => finish(e, true)}
       onPointerLeave={endHover}
       onContextMenu={(e) => e.preventDefault()}
+      // Accept every drag: while dragging, Safari hides what's being dragged, so we can only
+      // check for pictures when it's dropped.
+      onDragEnter={(e) => e.preventDefault()}
       onDragOver={(e) => {
-        if ([...e.dataTransfer.items].some((i) => i.kind === 'file')) {
-          e.preventDefault();
-          e.dataTransfer.dropEffect = 'copy';
-        }
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'copy';
       }}
       onDrop={(e) => {
-        const files = [...e.dataTransfer.files].filter((file) => file.type.startsWith('image/'));
-        if (!files.length) return;
         e.preventDefault();
+        e.stopPropagation();
+        const dropped = readDropped(e.dataTransfer); // read now: the data is gone after this event
         const box = containerRef.current!.getBoundingClientRect();
-        void insertPictures(files, { x: (e.clientX - box.left) / scale, y: (e.clientY - box.top) / scale });
+        const at = { x: (e.clientX - box.left) / scale, y: (e.clientY - box.top) / scale };
+        void resolveDropped(dropped).then((blobs) => {
+          if (blobs.length) void insertPictures(blobs, at);
+          else if (dropped.files.length || dropped.urls.length) alert('This picture could not be added. Try saving it to Photos first, then drag it from there.');
+        });
       }}
     >
       <input

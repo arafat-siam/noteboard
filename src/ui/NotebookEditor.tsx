@@ -8,6 +8,7 @@ import { CopyPageDialog } from './CopyPageDialog';
 import { PageManager } from './PageManager';
 import { PAGE_ACTION, type PageAction } from '../ink/InkPage';
 import { getClip, setClip } from '../ink/clipboard';
+import { readDropped, resolveDropped } from '../ink/images';
 import { exportNotebookPdf, exportPagePng, safeFilename, shareOrDownload } from '../export/exporters';
 import type { ToolKind, ToolSettings } from '../ink/InkPage';
 import { PageSlot } from './PageSlot';
@@ -469,10 +470,14 @@ export function NotebookEditor({ notebookId, onClose }: { notebookId: string; on
     const onPaste = (e: ClipboardEvent) => {
       const target = e.target as HTMLElement | null;
       if (target?.closest?.('input, textarea, [contenteditable="true"]')) return;
-      const files = [...(e.clipboardData?.files ?? [])].filter((file) => file.type.startsWith('image/'));
-      if (!files.length && getClip()?.kind !== 'ink') return;
+      const dropped = readDropped(e.clipboardData);
+      if (!dropped.files.length && !dropped.urls.length && getClip()?.kind !== 'ink') return;
       e.preventDefault();
-      pageActionRef.current({ action: 'paste', files });
+      if (!dropped.files.length && dropped.urls.length) {
+        void resolveDropped(dropped).then((files) => files.length && pageActionRef.current({ action: 'paste', files }));
+        return;
+      }
+      pageActionRef.current({ action: 'paste', files: dropped.files });
     };
     window.addEventListener('paste', onPaste);
     return () => window.removeEventListener('paste', onPaste);
@@ -570,7 +575,23 @@ export function NotebookEditor({ notebookId, onClose }: { notebookId: string; on
         canRedo={redoStack.length > 0}
       />
 
-      <div className="pages-scroll" ref={attachScroll}>
+      <div
+        className="pages-scroll"
+        ref={attachScroll}
+        // Pictures dropped beside or between pages go onto the page on screen.
+        onDragEnter={(e) => e.preventDefault()}
+        onDragOver={(e) => {
+          e.preventDefault();
+          e.dataTransfer.dropEffect = 'copy';
+        }}
+        onDrop={(e) => {
+          e.preventDefault();
+          const dropped = readDropped(e.dataTransfer);
+          void resolveDropped(dropped).then((files) => {
+            if (files.length) pageAction({ action: 'insertPictures', files });
+          });
+        }}
+      >
         <div className="pages" ref={pagesWrapRef}>
           {pageIds.map((pageId, index) => (
             <PageSlot
