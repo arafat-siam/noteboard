@@ -27,6 +27,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { getPdf, renderPdfRegion } from '../pdf/pdf';
 import { notePen, penActiveWithin } from './penState';
 import { diagnostics, recordEvent, recordFrame } from './diagnostics';
+import { hideHoverCursor, showHoverCursor } from './hoverCursor';
 
 export type ToolKind = 'pen' | 'highlighter' | 'eraser' | 'lasso';
 
@@ -41,7 +42,7 @@ export interface ToolSettings {
   fingerDraws: boolean;
   /** Hold the hovering Pencil still to open the quick tool palette. */
   hoverPalette: boolean;
-  /** Draw a coloured preview dot under the hovering Pencil (iPadOS already shows its own pointer). */
+  /** Show the hover cursor for pens (on unless turned off; the eraser ring always shows). */
   hoverPreview?: boolean;
   /** Pen type used by the pen tool. */
   penBrush: BrushKind;
@@ -108,8 +109,6 @@ type Corner = 'nw' | 'ne' | 'se' | 'sw';
 type Handle = Corner | 'rotate';
 const LONG_PRESS_MS = 480;
 
-/** Only one hover cursor may be visible across all pages. */
-let visibleCursor: HTMLDivElement | null = null;
 const HOVER_HOLD_MS = 900;
 /** Extra area rendered around the visible part, so small scrolls need no redraw. */
 const VIEW_MARGIN = 0.3;
@@ -134,9 +133,7 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
   const gestureRef = useRef<Gesture | null>(null);
   const hiddenRef = useRef<Set<string>>(new Set());
   const frameRef = useRef<number | null>(null);
-  const cursorRef = useRef<HTMLDivElement>(null);
   const hoverRef = useRef<{ x: number; y: number; timer: number | null } | null>(null);
-  const hoverHideRef = useRef<number | null>(null);
   const pressRef = useRef<{ id: number; x: number; y: number; timer: number } | null>(null);
   const selectionBoxRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -563,10 +560,7 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
   const endHover = () => {
     if (hoverRef.current?.timer != null) clearTimeout(hoverRef.current.timer);
     hoverRef.current = null;
-    if (hoverHideRef.current != null) clearTimeout(hoverHideRef.current);
-    hoverHideRef.current = null;
-    if (cursorRef.current) cursorRef.current.style.display = 'none';
-    if (visibleCursor === cursorRef.current) visibleCursor = null;
+    hideHoverCursor();
   };
 
   /** The topmost stroke under a point (for tap / long-press selection). */
@@ -590,11 +584,6 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
   };
 
   const onHover = (e: React.PointerEvent<HTMLDivElement>) => {
-    const cursor = cursorRef.current;
-    const box = containerRef.current?.getBoundingClientRect();
-    if (!cursor || !box) return;
-    const x = e.clientX - box.left;
-    const y = e.clientY - box.top;
     const tool = settings.tool;
     // Preview exactly where (and how big) ink will land.
     const size =
@@ -602,18 +591,19 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
         ? settings.eraserSize * scale
         : tool === 'highlighter'
           ? settings.highlighterSize * scale
-          : Math.max(4, settings.penSize * scale);
-    if (visibleCursor && visibleCursor !== cursor) visibleCursor.style.display = 'none';
-    visibleCursor = cursor;
-    if (hoverHideRef.current != null) clearTimeout(hoverHideRef.current);
-    hoverHideRef.current = window.setTimeout(endHover, 350);
-    const showOwn = tool === 'eraser' || (settings.hoverPreview === true && tool !== 'lasso');
-    cursor.style.display = showOwn ? 'block' : 'none';
-    cursor.className = `hover-cursor ${tool}`;
-    cursor.style.width = cursor.style.height = `${size}px`;
-    cursor.style.transform = `translate(${x - size / 2}px, ${y - size / 2}px)`;
-    cursor.style.background =
-      tool === 'pen' ? settings.color : tool === 'highlighter' ? `${settings.highlighterColor}80` : 'transparent';
+          : Math.max(5, settings.penSize * scale);
+    if (tool === 'eraser' || settings.hoverPreview !== false) {
+      const n = e.nativeEvent as PointerEvent & { azimuthAngle?: number };
+      showHoverCursor(e.clientX, e.clientY, {
+        tool,
+        size,
+        color: tool === 'highlighter' ? settings.highlighterColor : settings.color,
+        twist: e.twist || 0,
+        azimuth: n.azimuthAngle,
+      });
+    } else {
+      hideHoverCursor();
+    }
 
     // Hover-hold palette, but never right after writing (pausing between words isn't a request).
     if (!settings.hoverPalette || !onHoverHold || penActiveWithin(1200)) return;
@@ -1030,7 +1020,6 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
       {background && pdfMissing && <div className="pdf-missing">PDF is still downloading from Google Drive…</div>}
       <canvas ref={inkRef} className="ink-layer" width={0} height={0} />
       <canvas ref={liveRef} className="ink-layer ink-input" width={0} height={0} />
-      <div ref={cursorRef} className="hover-cursor" style={{ display: 'none' }} />
       {selection && (
         <div
           ref={selectionBoxRef}

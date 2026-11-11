@@ -304,8 +304,8 @@ export function ToolPalette(props: Props) {
         {toggle('Hover palette', 'Hold the Pencil just above the page', settings.hoverPalette, {
           hoverPalette: !settings.hoverPalette,
         })}
-        {toggle('Pen preview dot', 'Coloured dot under the hovering Pencil', settings.hoverPreview === true, {
-          hoverPreview: settings.hoverPreview !== true,
+        {toggle('Hover cursor', 'Shows where the ink will land while the Pencil hovers', settings.hoverPreview !== false, {
+          hoverPreview: settings.hoverPreview === false,
         })}
         <div className="segmented">
           <button className={dock === 'top' ? 'on' : ''} onClick={() => setDock('top')}>
