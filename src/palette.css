@@ -677,3 +677,73 @@
 .nb-slider:focus-visible .nb-slider-thumb {
   box-shadow: 0 0 0 3px var(--accent);
 }
+
+/* Side handles: stretch only width or only height (free resize). */
+.selection-handle.n,
+.selection-handle.s,
+.selection-handle.e,
+.selection-handle.w {
+  border-radius: 6px;
+}
+.selection-handle.n,
+.selection-handle.s {
+  width: 26px;
+  height: 14px;
+  left: calc(50% - 13px);
+  cursor: ns-resize;
+}
+.selection-handle.n { top: -8px; }
+.selection-handle.s { bottom: -8px; }
+.selection-handle.e,
+.selection-handle.w {
+  width: 14px;
+  height: 26px;
+  top: calc(50% - 13px);
+  cursor: ew-resize;
+}
+.selection-handle.e { right: -8px; }
+.selection-handle.w { left: -8px; }
+/* The rotate handle sits below the bottom side handle. */
+.selection-box .selection-rotate {
+  bottom: -46px;
+}
+
+/* Shape points (line ends, rectangle / polygon corners). */
+.vertex-handle {
+  position: absolute;
+  width: 22px;
+  height: 22px;
+  margin: -11px 0 0 -11px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 3px solid #fff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+  pointer-events: auto;
+  touch-action: none;
+  cursor: move;
+}
+/* A line shows just its two end points, no box. */
+.selection-box.line-mode {
+  border-color: transparent;
+  background: transparent;
+}
+
+/* Live size / angle readout while resizing or rotating. */
+.gesture-badge {
+  display: none;
+  position: absolute;
+  z-index: 4;
+  transform: translateX(-50%);
+  padding: 4px 10px;
+  border-radius: 8px;
+  background: #1c1c1e;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+  white-space: nowrap;
+}
+.selection-box.transforming .selection-menu {
+  visibility: hidden;
+}

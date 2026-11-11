@@ -8,6 +8,7 @@ import { makeImageStroke, onImageLoaded, readDropped, resolveDropped, storeImage
 import { arrange, type ArrangeAction } from './layers';
 import { getClip, inkForPaste, onClipChange, setClip } from './clipboard';
 import { Slider } from './Slider';
+import { dragVertex, shapeVertices, strokeThrough, type ShapeVertices } from './shapeEdit';
 import {
   boundsOf,
   rectContains,
@@ -16,7 +17,7 @@ import {
   strokeInLasso,
   strokePoints,
   translateStroke,
-  scaleStroke,
+  scaleStrokeXY,
   recolorStroke,
   fillStroke,
   rotateStroke,
@@ -76,7 +77,7 @@ interface Props {
 
 interface Gesture {
   pointerId: number;
-  kind: 'ink' | 'erase' | 'lasso' | 'move' | 'scale' | 'rotate' | 'laser';
+  kind: 'ink' | 'erase' | 'lasso' | 'move' | 'scale' | 'rotate' | 'laser' | 'vertex';
   /** Page position on screen at gesture start; reading layout on every sample would stall the pen. */
   origin: { left: number; top: number };
   points: number[];
@@ -95,10 +96,15 @@ interface Gesture {
   offset: Point;
   /** Partial eraser: original stroke id -> the pieces left of it so far. */
   pieces: Map<string, Stroke[]>;
-  /** Resizing a selection: fixed corner, the dragged corner's start, current factor. */
+  /** Resizing a selection: fixed point, the dragged handle's start, stretch per axis. */
   anchor: Point;
   scaleFrom: Point;
-  factor: number;
+  sx: number;
+  sy: number;
+  /** Which directions a resize handle stretches (corners: both; side handles: one). */
+  axis: { x: boolean; y: boolean };
+  /** Dragging one point of a shape (line end, rectangle corner, polygon corner). */
+  vertex: { index: number; shape: ShapeVertices; stroke: Stroke; current: Point[] } | null;
   /** Rotating a selection: pointer angle at start and current rotation (radians). */
   startAngle: number;
   angle: number;
@@ -121,7 +127,10 @@ const HOLD_TO_SNAP_MS = 500;
 /** A finger touch shorter than this (that didn't move) is a tap: on ink it selects it, like Drawboard. */
 const TAP_MS = 300;
 type Corner = 'nw' | 'ne' | 'se' | 'sw';
-type Handle = Corner | 'rotate';
+type Side = 'n' | 'e' | 's' | 'w';
+type Handle = Corner | Side | 'rotate' | `v${number}`;
+/** Rotation snaps to every 15° when within this many degrees. */
+const ROTATE_SNAP_DEG = 3;
 const LONG_PRESS_MS = 480;
 
 const HOVER_HOLD_MS = 900;
@@ -129,6 +138,8 @@ const HOVER_HOLD_MS = 900;
 const LASER_LIFE_MS = 900;
 /** Extra area rendered around the visible part, so small scrolls need no redraw. */
 const VIEW_MARGIN = 0.3;
+/** Of the 2 × VIEW_MARGIN screens of extra canvas, this much goes ahead of the scrolling. */
+const VIEW_MARGIN_AHEAD = 0.48;
 /** iPad Safari refuses canvases above ~16.7M pixels; stay well under per canvas. */
 const MAX_CANVAS_PIXELS = 10_000_000;
 
@@ -149,6 +160,8 @@ function replaceIds(ids: Set<string>, before: Stroke[], after: Stroke[]): Set<st
 
 /** Editor → page requests (the page currently on screen handles them). */
 export const PAGE_ACTION = 'noteboard-page-action';
+/** Editor → pages: recompute the visible area now (after a zoom's scroll jump). */
+export const RELAYOUT = 'noteboard-relayout';
 export type PageAction = { pageId: string; action: 'insertPictures' | 'paste'; files: Blob[] };
 
 function getLiveContext(canvas: HTMLCanvasElement | null): CanvasRenderingContext2D | null {
@@ -188,6 +201,8 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
     () => (bgFile !== undefined && bgIndex !== undefined ? { kind: 'pdf' as const, fileId: bgFile, pageIndex: bgIndex } : undefined),
     [bgFile, bgIndex],
   );
+  const lastScrollTop = useRef(0);
+  const scrollDirection = useRef(0);
   /** Which part of the page the canvases currently show, at what resolution. */
   const regionRef = useRef<CanvasRegion | null>(null);
   /** What is painted on the ink canvas, to skip needless full redraws. */
@@ -273,11 +288,19 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
       const visibleTop = Math.max(pr.top, sr.top);
       const visibleBottom = Math.min(pr.bottom, sr.bottom);
       const mx = sr.width * VIEW_MARGIN;
-      const my = sr.height * VIEW_MARGIN;
+      // Extra canvas ahead of where the page is scrolling, less behind (same total size).
+      const scrollTop = scroller.scrollTop;
+      const direction = Math.sign(scrollTop - lastScrollTop.current);
+      if (direction) scrollDirection.current = direction;
+      lastScrollTop.current = scrollTop;
+      const ahead = sr.height * VIEW_MARGIN_AHEAD;
+      const behind = sr.height * (VIEW_MARGIN * 2 - VIEW_MARGIN_AHEAD);
+      const above = scrollDirection.current < 0 ? ahead : scrollDirection.current > 0 ? behind : sr.height * VIEW_MARGIN;
+      const below = scrollDirection.current > 0 ? ahead : scrollDirection.current < 0 ? behind : sr.height * VIEW_MARGIN;
       const left = Math.max(pr.left, sr.left - mx);
       const right = Math.min(pr.right, sr.right + mx);
-      const top = Math.max(pr.top, sr.top - my);
-      const bottom = Math.min(pr.bottom, sr.bottom + my);
+      const top = Math.max(pr.top, sr.top - above);
+      const bottom = Math.min(pr.bottom, sr.bottom + below);
 
       const canvases = [inkRef.current, liveRef.current].filter((c): c is HTMLCanvasElement => !!c);
       if (right <= left || bottom <= top) {
@@ -362,10 +385,13 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
       }
     };
     scroller.addEventListener('scroll', onScroll, { passive: true });
+    const relayout = () => layout(true);
+    window.addEventListener(RELAYOUT, relayout);
     const observer = new ResizeObserver(() => layout());
     observer.observe(scroller);
     return () => {
       scroller.removeEventListener('scroll', onScroll);
+      window.removeEventListener(RELAYOUT, relayout);
       observer.disconnect();
       if (raf != null) cancelAnimationFrame(raf);
     };
@@ -441,6 +467,54 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
     }
     ctx.restore();
     return true;
+  };
+
+  // ---- Shape points, size / angle readout ---------------------------------------------------
+  /** A single selected straight-edged shape is edited by its points (line: 2, rectangle: 4…). */
+  const editShape = useMemo(() => {
+    if (!selection || selection.ids.size !== 1) return null;
+    const stroke = page.strokes.find((s) => selection.ids.has(s.id));
+    const shape = stroke ? shapeVertices(stroke) : null;
+    return stroke && shape ? { stroke, shape } : null;
+  }, [selection, page.strokes]);
+
+  /** Moves the point handles during a drag (no React re-render per frame). */
+  const placeVertexHandles = (vertices: Point[]) => {
+    const box = selectionBoxRef.current;
+    if (!box || !selection) return;
+    vertices.forEach((q, i) => {
+      const el = box.querySelector<HTMLElement>(`[data-handle="v${i}"]`);
+      if (!el) return;
+      el.style.left = `${(q.x - selection.bounds.x) * scale}px`;
+      el.style.top = `${(q.y - selection.bounds.y) * scale}px`;
+    });
+  };
+
+  /** Tapping or dragging on the selection (generous area, so a thin line is easy to grab). */
+  const onSelectionBody = (p: Point) => {
+    if (!selection) return false;
+    const pad = 12 / scale;
+    const b = selection.bounds;
+    const inBox = p.x >= b.x - pad && p.x <= b.x + b.width + pad && p.y >= b.y - pad && p.y <= b.y + b.height + pad;
+    if (!inBox) return false;
+    if (!editShape || editShape.shape.closed) return true;
+    // A line: only near the line itself, not the whole empty box around a diagonal.
+    return strokeHit(editShape.stroke, p, pad);
+  };
+
+  const badgeRef = useRef<HTMLDivElement>(null);
+  const showBadge = (text: string) => {
+    const el = badgeRef.current;
+    const box = selectionBoxRef.current?.getBoundingClientRect();
+    const page = containerRef.current?.getBoundingClientRect();
+    if (!el || !box || !page) return;
+    el.textContent = text;
+    el.style.display = 'block';
+    el.style.left = `${box.left + box.width / 2 - page.left}px`;
+    el.style.top = `${box.top + box.height / 2 - page.top - 14}px`;
+  };
+  const hideBadge = () => {
+    if (badgeRef.current) badgeRef.current.style.display = 'none';
   };
 
   /** How close (page units) the Pencil must come to a point for it to snap: ~12 screen px. */
@@ -622,17 +696,31 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
       setBoxTransform(`translate(${g.offset.x * scale}px, ${g.offset.y * scale}px)`);
     } else if (g.kind === 'scale' && selection) {
       ctx.translate(g.anchor.x, g.anchor.y);
-      ctx.scale(g.factor, g.factor);
+      ctx.scale(g.sx, g.sy);
       ctx.translate(-g.anchor.x, -g.anchor.y);
       for (const s of page.strokes) if (selection.ids.has(s.id)) drawStroke(ctx, s);
       const b = selection.bounds;
-      setBoxTransform(`scale(${g.factor})`, `${(g.anchor.x - b.x) * scale}px ${(g.anchor.y - b.y) * scale}px`);
+      setBoxTransform(`scale(${g.sx}, ${g.sy})`, `${(g.anchor.x - b.x) * scale}px ${(g.anchor.y - b.y) * scale}px`);
+      showBadge(`${Math.round(b.width * g.sx)} × ${Math.round(b.height * g.sy)}`);
     } else if (g.kind === 'rotate' && selection) {
       ctx.translate(g.anchor.x, g.anchor.y);
       ctx.rotate(g.angle);
       ctx.translate(-g.anchor.x, -g.anchor.y);
       for (const s of page.strokes) if (selection.ids.has(s.id)) drawStroke(ctx, s);
       setBoxTransform(`rotate(${g.angle}rad)`, '50% 50%');
+      // Angle readout, like Drawboard: -180° … 180°.
+      let deg = Math.round((g.angle * 180) / Math.PI) % 360;
+      if (deg > 180) deg -= 360;
+      if (deg <= -180) deg += 360;
+      showBadge(`${deg}°`);
+    } else if (g.kind === 'vertex' && g.vertex) {
+      const v = g.vertex;
+      drawStroke(ctx, strokeThrough(v.stroke, v.current, v.shape.closed, v.stroke.id));
+      if (g.snap) {
+        g.shape = { kind: 'line', base: [v.shape.vertices[1 - v.index]!], from: { x: 0, y: 0 }, pressure: 0.5 };
+        drawSnapGuide(ctx, g);
+        g.shape = null;
+      }
     } else if (g.kind === 'erase' && g.pieces.size) {
       for (const pieces of g.pieces.values()) for (const s of pieces) drawStroke(ctx, s);
     }
@@ -644,6 +732,8 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
     if (!box) return;
     box.style.transformOrigin = origin;
     box.style.transform = transform;
+    // The menu hides while the selection is being moved, resized or rotated.
+    box.classList.toggle('transforming', !!transform);
   };
 
   /** Paints strokes on the ink layer right away, so nothing blinks while the save completes. */
@@ -867,7 +957,10 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
       pieces: new Map(),
       anchor: p,
       scaleFrom: p,
-      factor: 1,
+      sx: 1,
+      sy: 1,
+      axis: { x: true, y: true },
+      vertex: null,
       startAngle: 0,
       angle: 0,
       startedAt: performance.now(),
@@ -883,21 +976,40 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
       g.startAngle = Math.atan2(p.y - g.anchor.y, p.x - g.anchor.x);
       for (const id of selection.ids) hiddenRef.current.add(id);
       paintInk(true);
+    } else if (handle?.startsWith('v') && selection && editShape) {
+      // Drag one point of the shape.
+      g.kind = 'vertex';
+      g.vertex = { index: Number(handle.slice(1)), shape: editShape.shape, stroke: editShape.stroke, current: editShape.shape.vertices };
+      g.guides = buildGuides(page.strokes, selection.ids);
+      hiddenRef.current.add(editShape.stroke.id);
+      paintInk(true);
     } else if (handle && handle !== 'rotate' && selection) {
       const b = selection.bounds;
-      const corners: Record<Corner, Point> = {
-        nw: { x: b.x, y: b.y },
-        ne: { x: b.x + b.width, y: b.y },
-        se: { x: b.x + b.width, y: b.y + b.height },
-        sw: { x: b.x, y: b.y + b.height },
+      const x0 = b.x;
+      const x1 = b.x + b.width;
+      const y0 = b.y;
+      const y1 = b.y + b.height;
+      const xm = b.x + b.width / 2;
+      const ym = b.y + b.height / 2;
+      // [dragged point, fixed point, stretches x, stretches y]
+      const spec: Record<Corner | Side, [Point, Point, boolean, boolean]> = {
+        nw: [{ x: x0, y: y0 }, { x: x1, y: y1 }, true, true],
+        ne: [{ x: x1, y: y0 }, { x: x0, y: y1 }, true, true],
+        se: [{ x: x1, y: y1 }, { x: x0, y: y0 }, true, true],
+        sw: [{ x: x0, y: y1 }, { x: x1, y: y0 }, true, true],
+        n: [{ x: xm, y: y0 }, { x: xm, y: y1 }, false, true],
+        s: [{ x: xm, y: y1 }, { x: xm, y: y0 }, false, true],
+        e: [{ x: x1, y: ym }, { x: x0, y: ym }, true, false],
+        w: [{ x: x0, y: ym }, { x: x1, y: ym }, true, false],
       };
-      const opposite: Record<Corner, Corner> = { nw: 'se', ne: 'sw', se: 'nw', sw: 'ne' };
+      const [from, anchor, ax, ay] = spec[handle as Corner | Side];
       g.kind = 'scale';
-      g.anchor = corners[opposite[handle]];
-      g.scaleFrom = corners[handle];
+      g.anchor = anchor;
+      g.scaleFrom = from;
+      g.axis = { x: ax, y: ay };
       for (const id of selection.ids) hiddenRef.current.add(id);
       paintInk(true);
-    } else if (selection && rectContains(selection.bounds, p) && settings.tool !== 'eraser') {
+    } else if (selection && settings.tool !== 'eraser' && onSelectionBody(p)) {
       g.kind = 'move';
       for (const id of selection.ids) hiddenRef.current.add(id);
       paintInk(true);
@@ -994,17 +1106,42 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
           break;
         case 'rotate': {
           let angle = Math.atan2(p.y - g.anchor.y, p.x - g.anchor.x) - g.startAngle;
-          // Snap to straight angles (0°, 45°, 90°…) when close.
-          const step = Math.PI / 4;
+          // Snap to every 15° (0°, 15°, 30°, 45°, 90°…) when close, with a Pencil tick.
+          const step = Math.PI / 12;
           const snapped = Math.round(angle / step) * step;
-          if (Math.abs(angle - snapped) < (4 * Math.PI) / 180) angle = snapped;
+          const isSnapped = Math.abs(angle - snapped) < (ROTATE_SNAP_DEG * Math.PI) / 180;
+          if (isSnapped) {
+            if (Math.abs(snapped - g.angle) > 1e-6) pencilHaptic('alignment', ev.clientX, ev.clientY);
+            angle = snapped;
+          }
           g.angle = angle;
           break;
         }
         case 'scale': {
-          const from = Math.hypot(g.scaleFrom.x - g.anchor.x, g.scaleFrom.y - g.anchor.y);
-          const to = Math.hypot(p.x - g.anchor.x, p.y - g.anchor.y);
-          g.factor = Math.min(8, Math.max(0.1, from > 0 ? to / from : 1));
+          // Free resize: width and height stretch separately (corners), or one of them (sides).
+          const stretch = (from: number, anchor: number, to: number) => {
+            const d0 = from - anchor;
+            if (Math.abs(d0) < 2) return 1; // a flat line has no height to stretch
+            return Math.min(20, Math.max(0.05, (to - anchor) / d0));
+          };
+          g.sx = g.axis.x ? stretch(g.scaleFrom.x, g.anchor.x, p.x) : 1;
+          g.sy = g.axis.y ? stretch(g.scaleFrom.y, g.anchor.y, p.y) : 1;
+          break;
+        }
+        case 'vertex': {
+          const v = g.vertex;
+          if (!v) break;
+          let to = p;
+          if (v.shape.vertices.length === 2 && !v.shape.closed && g.guides) {
+            // A line's end snaps like when drawing it (ends, midpoints, perpendicular, angles).
+            const fixed = v.shape.vertices[1 - v.index]!;
+            const snap = snapLineEnd(fixed, p, g.guides, snapRadius());
+            if (snap && !sameSnap(snap, g.snap)) pencilHaptic('alignment', ev.clientX, ev.clientY);
+            g.snap = snap;
+            to = snap?.point ?? p;
+          }
+          v.current = dragVertex(v.shape, v.index, to);
+          placeVertexHandles(v.current);
           break;
         }
       }
@@ -1040,6 +1177,7 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
     if (!g || g.pointerId !== e.pointerId) return;
     gestureRef.current = null;
     if (cancelled) diagnostics.cancels += 1;
+    hideBadge();
 
     // A cancelled pen stroke (iPadOS occasionally cancels) is still kept: losing ink is worse.
     const keepInk = g.kind === 'ink' && g.points.length >= 3;
@@ -1083,24 +1221,40 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
           if (bounds) setSelection({ ids: new Set(rotated.map((s) => s.id)), bounds });
           break;
         }
+        case 'vertex': {
+          const v = g.vertex;
+          if (!v || !selection) break;
+          const moved = v.current.some((q, i) => Math.hypot(q.x - v.shape.vertices[i]!.x, q.y - v.shape.vertices[i]!.y) > 0.3);
+          if (!moved) {
+            hiddenRef.current = new Set();
+            paintInk(true);
+            placeVertexHandles(v.shape.vertices);
+            break;
+          }
+          const edited = strokeThrough(v.stroke, v.current, v.shape.closed, newId());
+          paintNow([edited]);
+          onChange(page.id, [edited], [v.stroke.id]);
+          setSelection({ ids: new Set([edited.id]), bounds: strokeBounds(edited) });
+          break;
+        }
         case 'scale': {
           if (!selection) break;
-          if (Math.abs(g.factor - 1) < 0.01) {
+          if (Math.abs(g.sx - 1) < 0.005 && Math.abs(g.sy - 1) < 0.005) {
             hiddenRef.current = new Set();
             paintInk(true);
             break;
           }
-          const f = g.factor;
+          const { sx, sy } = g;
           const scaled = page.strokes
             .filter((s) => selection.ids.has(s.id))
-            .map((s) => scaleStroke(s, g.anchor, f, newId()));
+            .map((s) => scaleStrokeXY(s, g.anchor, sx, sy, newId()));
           paintNow(scaled);
           onChange(page.id, scaled, [...selection.ids]);
           const b = selection.bounds;
-          const x0 = g.anchor.x + (b.x - g.anchor.x) * f;
-          const y0 = g.anchor.y + (b.y - g.anchor.y) * f;
-          const x1 = g.anchor.x + (b.x + b.width - g.anchor.x) * f;
-          const y1 = g.anchor.y + (b.y + b.height - g.anchor.y) * f;
+          const x0 = g.anchor.x + (b.x - g.anchor.x) * sx;
+          const y0 = g.anchor.y + (b.y - g.anchor.y) * sy;
+          const x1 = g.anchor.x + (b.x + b.width - g.anchor.x) * sx;
+          const y1 = g.anchor.y + (b.y + b.height - g.anchor.y) * sy;
           setSelection({
             ids: new Set(scaled.map((s) => s.id)),
             bounds: { x: Math.min(x0, x1), y: Math.min(y0, y1), width: Math.abs(x1 - x0), height: Math.abs(y1 - y0) },
@@ -1140,7 +1294,7 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
           break;
         }
       }
-    } else if (g.erased.size || g.pieces.size || g.kind === 'move' || g.kind === 'scale' || g.kind === 'rotate') {
+    } else if (g.erased.size || g.pieces.size || g.kind === 'move' || g.kind === 'scale' || g.kind === 'rotate' || g.kind === 'vertex') {
       hiddenRef.current = new Set();
       paintInk(true);
     }
@@ -1154,6 +1308,7 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
     const recolored = targets.map((s) => recolorStroke(s, color, newId()));
     paintNow(recolored);
     onChange(page.id, recolored, targets.map((s) => s.id));
+    keepPanelRef.current = true;
     setSelection({ ...selection, ids: replaceIds(selection.ids, targets, recolored) });
   };
 
@@ -1165,6 +1320,7 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
     const filled = targets.map((s) => fillStroke(s, fill, opacity, newId()));
     paintNow(filled);
     onChange(page.id, filled, targets.map((s) => s.id));
+    keepPanelRef.current = true;
     setSelection({ ...selection, ids: replaceIds(selection.ids, targets, filled) });
   };
   const selectedFill = selection ? page.strokes.find((s) => selection.ids.has(s.id) && s.fill) : undefined;
@@ -1193,8 +1349,14 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
   const selectedColor = (selection && page.strokes.find((s) => selection.ids.has(s.id))?.color) || settings.color;
   // A new selection starts with the pop-ups closed and the slider showing its current fill.
   const selectionKey = selection ? [...selection.ids].join() : '';
+  /** Set when the menu itself changed the selection (recolour, fill, arrange): keep its pop-up open. */
+  const keepPanelRef = useRef(false);
   useEffect(() => {
-    if (!selectionKey) setMenuPanel(null);
+    if (keepPanelRef.current) {
+      keepPanelRef.current = false;
+      return;
+    }
+    setMenuPanel(null);
   }, [selectionKey]);
   useEffect(() => {
     if (selectedFill?.fillOpacity != null) setFillOpacity(selectedFill.fillOpacity);
@@ -1335,6 +1497,7 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
     const result = arrange(page.strokes, selection.ids, action);
     if (!result) return;
     onChange(page.id, result.added, result.removedIds);
+    keepPanelRef.current = true;
     setSelection({ ...selection, ids: new Set(result.added.map((s) => s.id)) });
   };
 
@@ -1452,7 +1615,7 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
       {selection && (
         <div
           ref={selectionBoxRef}
-          className="selection-box"
+          className={`selection-box${editShape && !editShape.shape.closed ? ' line-mode' : ''}`}
           style={{
             left: selection.bounds.x * scale,
             top: selection.bounds.y * scale,
@@ -1576,14 +1739,27 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
               </div>
             )}
           </div>
-          {(['nw', 'ne', 'se', 'sw'] as const).map((corner) => (
-            <div key={corner} className={`selection-handle ${corner}`} data-handle={corner} aria-label="Resize" />
-          ))}
-          <div className="selection-rotate" data-handle="rotate" aria-label="Rotate">
-            ↻
-          </div>
+          {editShape
+            ? editShape.shape.vertices.map((q, i) => (
+                <div
+                  key={i}
+                  className="vertex-handle"
+                  data-handle={`v${i}`}
+                  aria-label={editShape.shape.closed ? `Corner ${i + 1}` : i === 0 ? 'Start of line' : 'End of line'}
+                  style={{ left: (q.x - selection.bounds.x) * scale, top: (q.y - selection.bounds.y) * scale }}
+                />
+              ))
+            : (['nw', 'ne', 'se', 'sw', 'n', 'e', 's', 'w'] as const).map((h) => (
+                <div key={h} className={`selection-handle ${h}`} data-handle={h} aria-label="Resize" />
+              ))}
+          {!(editShape && !editShape.shape.closed) && (
+            <div className="selection-rotate" data-handle="rotate" aria-label="Rotate">
+              ↻
+            </div>
+          )}
         </div>
       )}
+      <div ref={badgeRef} className="gesture-badge" aria-hidden="true" />
     </div>
   );
 }

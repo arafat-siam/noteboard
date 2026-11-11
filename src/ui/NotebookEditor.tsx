@@ -6,7 +6,7 @@ import { addPage, applyStrokeChange, copyPagesTo, deletePage, loadPage, notebook
 import { appendPdf } from '../pdf/pdf';
 import { CopyPageDialog } from './CopyPageDialog';
 import { PageManager } from './PageManager';
-import { isControl, PAGE_ACTION, type PageAction } from '../ink/InkPage';
+import { isControl, PAGE_ACTION, RELAYOUT, type PageAction } from '../ink/InkPage';
 import { getClip, setClip } from '../ink/clipboard';
 import { readDropped, resolveDropped } from '../ink/images';
 import { exportNotebookPdf, exportPagePng, safeFilename, shareOrDownload } from '../export/exporters';
@@ -265,11 +265,35 @@ export function NotebookEditor({ notebookId, onClose }: { notebookId: string; on
   // scroll (which cancels or breaks strokes). Finger scrolling is implemented here instead.
   const zoomRef = useRef(zoom);
   zoomRef.current = zoom;
+  /** Scroll position to apply together with a pinch's new zoom (see the layout effect below). */
+  /**
+   * The spot between the fingers when a pinch ended: which page, where on it (0–1), and where
+   * on screen. After re-rendering at the new zoom it's put back exactly there.
+   */
+  const pendingZoomScroll = useRef<{ page: number; u: number; v: number; x: number; y: number } | null>(null);
+  useLayoutEffect(() => {
+    const target = pendingZoomScroll.current;
+    if (!target) return;
+    pendingZoomScroll.current = null;
+    // Same frame as the re-render at the new zoom: drop the temporary scale and scroll so the
+    // same spot of the same page is under the fingers again — no jump, no shake.
+    const wrap = pagesWrapRef.current;
+    if (wrap) wrap.style.transform = '';
+    const el = scrollRef.current;
+    const pageEl = wrap?.querySelectorAll<HTMLElement>('.ink-page')[target.page];
+    if (el && pageEl) {
+      const r = pageEl.getBoundingClientRect();
+      el.scrollLeft += r.left + target.u * r.width - target.x;
+      el.scrollTop += r.top + target.v * r.height - target.y;
+    }
+    // Pages work out their visible area again now, before this frame is painted.
+    window.dispatchEvent(new Event(RELAYOUT));
+  }, [zoom]);
   useEffect(() => {
     const el = scrollEl;
     if (!el) return;
     const fingers = new Map<number, { x: number; y: number }>();
-    let pan: { x: number; y: number; t: number; vx: number; vy: number } | null = null;
+    let pan: { x: number; y: number; t: number; vx: number; vy: number; samples: { x: number; y: number; t: number }[] } | null = null;
     let pinch: { startDist: number; startZoom: number; current: number; midX: number; midY: number } | null = null;
     let inertia: number | null = null;
     let tap: { fingers: number; start: number; travel: number } | null = null;
@@ -288,7 +312,8 @@ export function NotebookEditor({ notebookId, onClose }: { notebookId: string; on
     };
     const startPan = () => {
       const first = [...fingers.values()][0];
-      pan = first ? { x: first.x, y: first.y, t: performance.now(), vx: 0, vy: 0 } : null;
+      const now = performance.now();
+      pan = first ? { x: first.x, y: first.y, t: now, vx: 0, vy: 0, samples: [{ x: first.x, y: first.y, t: now }] } : null;
     };
     const startPinch = () => {
       const rect = el.getBoundingClientRect();
@@ -307,17 +332,32 @@ export function NotebookEditor({ notebookId, onClose }: { notebookId: string; on
       const { current, startZoom, midX, midY } = pinch;
       pinch = null;
       const wrap = pagesWrapRef.current;
-      if (wrap) wrap.style.transform = '';
-      if (Math.abs(current - startZoom) < 0.01) return;
-      const ratio = current / startZoom;
+      if (Math.abs(current - startZoom) < 0.01) {
+        if (wrap) wrap.style.transform = '';
+        return;
+      }
       // Keep the spot between the fingers in place after re-rendering sharply at the new zoom.
-      const anchorX = el.scrollLeft + midX;
-      const anchorY = el.scrollTop + midY;
-      setZoom(current);
-      requestAnimationFrame(() => {
-        el.scrollLeft = anchorX * ratio - midX;
-        el.scrollTop = anchorY * ratio - midY;
+      // The scale transform stays on until that re-render is laid out (layout effect above).
+      const box = el.getBoundingClientRect();
+      const x = box.left + midX;
+      const y = box.top + midY;
+      const pages = [...(wrap?.querySelectorAll<HTMLElement>('.ink-page') ?? [])];
+      let page = -1;
+      let best = Infinity;
+      pages.forEach((p, i) => {
+        const r = p.getBoundingClientRect();
+        const d = y < r.top ? r.top - y : y > r.bottom ? y - r.bottom : 0;
+        if (d < best) {
+          best = d;
+          page = i;
+        }
       });
+      const r = pages[page]?.getBoundingClientRect();
+      pendingZoomScroll.current = r
+        ? { page, u: (x - r.left) / r.width, v: (y - r.top) / r.height, x, y }
+        : null;
+      if (!r && wrap) wrap.style.transform = '';
+      setZoom(current);
     };
 
     const onDown = (e: PointerEvent) => {
@@ -379,12 +419,16 @@ export function NotebookEditor({ notebookId, onClose }: { notebookId: string; on
         const dy = p.y - pan.y;
         el.scrollLeft -= dx;
         el.scrollTop -= dy;
-        const dt = Math.max(1, now - pan.t);
-        pan.vx = 0.7 * (dx / dt) + 0.3 * pan.vx;
-        pan.vy = 0.7 * (dy / dt) + 0.3 * pan.vy;
         pan.x = p.x;
         pan.y = p.y;
         pan.t = now;
+        // Release speed = movement over the last ~80 ms (steadier than the last sample alone).
+        pan.samples.push({ x: p.x, y: p.y, t: now });
+        while (pan.samples.length > 2 && now - pan.samples[0]!.t > 80) pan.samples.shift();
+        const first = pan.samples[0]!;
+        const span = Math.max(8, now - first.t);
+        pan.vx = (p.x - first.x) / span;
+        pan.vy = (p.y - first.y) / span;
       }
     };
 
@@ -397,20 +441,29 @@ export function NotebookEditor({ notebookId, onClose }: { notebookId: string; on
       } else if (fingers.size === 0 && pan) {
         // Momentum, like native scrolling.
         let { vx, vy } = pan;
-        if (performance.now() - pan.t > 80) vx = vy = 0; // finger stopped before lifting
+        if (performance.now() - pan.t > 60) vx = vy = 0; // finger stopped before lifting
         pan = null;
+        // Like iPad scrolling: glide out with a gentle, steady slow-down.
+        const max = 6; // px per ms
+        vx = Math.max(-max, Math.min(max, vx));
+        vy = Math.max(-max, Math.min(max, vy));
         let last = performance.now();
         const step = (now: number) => {
-          const dt = now - last;
+          const dt = Math.min(34, now - last);
           last = now;
+          const beforeLeft = el.scrollLeft;
+          const beforeTop = el.scrollTop;
           el.scrollLeft -= vx * dt;
           el.scrollTop -= vy * dt;
-          const decay = Math.pow(0.996, dt);
+          // Hit the top / bottom: stop instead of pushing against the edge.
+          if (el.scrollTop === beforeTop) vy = 0;
+          if (el.scrollLeft === beforeLeft) vx = 0;
+          const decay = Math.pow(0.9975, dt);
           vx *= decay;
           vy *= decay;
-          inertia = Math.hypot(vx, vy) > 0.02 ? requestAnimationFrame(step) : null;
+          inertia = Math.hypot(vx, vy) > 0.012 ? requestAnimationFrame(step) : null;
         };
-        if (Math.hypot(vx, vy) > 0.05) inertia = requestAnimationFrame(step);
+        if (Math.hypot(vx, vy) > 0.04) inertia = requestAnimationFrame(step);
       }
       if (fingers.size === 0 && tap) {
         if (tap.travel < 12 && performance.now() - tap.start < 300) {

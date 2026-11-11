@@ -127,6 +127,19 @@ export function scaleStroke(stroke: Stroke, anchor: Point, factor: number, id: s
   return { ...stroke, id, points, size: Math.max(0.3, stroke.size * factor) };
 }
 
+/**
+ * Stretches a stroke about `anchor` by sx horizontally and sy vertically (free resize).
+ * The line width follows the average stretch, so ink doesn't get blobby or hair-thin.
+ */
+export function scaleStrokeXY(stroke: Stroke, anchor: Point, sx: number, sy: number, id: string): Stroke {
+  const points = stroke.points.slice();
+  for (let i = 0; i + 1 < points.length; i += 3) {
+    points[i] = anchor.x + (points[i]! - anchor.x) * sx;
+    points[i + 1] = anchor.y + (points[i + 1]! - anchor.y) * sy;
+  }
+  return { ...stroke, id, points, size: Math.max(0.3, stroke.size * Math.sqrt(Math.abs(sx * sy))) };
+}
+
 /** Same stroke in a new colour (keeps its stacking order). */
 export function recolorStroke(stroke: Stroke, color: string, id: string): Stroke {
   return { ...stroke, id, color };
