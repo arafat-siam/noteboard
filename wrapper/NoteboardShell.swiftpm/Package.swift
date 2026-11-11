@@ -19,7 +19,7 @@ let package = Package(
             bundleIdentifier: "io.github.arafatsiam.noteboard.shell",
             displayVersion: "1.0",
             bundleVersion: "1",
-            appIcon: .placeholder(icon: .leaf),
+            appIcon: .asset("AppIcon"),
             accentColor: .presetColor(.blue),
             supportedDeviceFamilies: [
                 .pad

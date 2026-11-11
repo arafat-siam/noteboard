@@ -1,88 +1,103 @@
-// Generates the app icons (PNG) without any image tooling: draws pixels and encodes PNG with zlib.
+// Generates every app icon from one vector design (the Noteboard logo).
 // Run: npm run icons
-import { writeFileSync, mkdirSync } from 'node:fs';
-import { deflateSync } from 'node:zlib';
+//
+// Design: a white note page with a folded corner on a blue → violet tile, a flowing ink
+// stroke across it, and a pencil finishing the stroke.
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { Resvg } from '@resvg/resvg-js';
 
-function crc32(buf) {
-  let c;
-  const table = [];
-  for (let n = 0; n < 256; n++) {
-    c = n;
-    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
-    table[n] = c >>> 0;
-  }
-  let crc = 0xffffffff;
-  for (const b of buf) crc = table[(crc ^ b) & 0xff] ^ (crc >>> 8);
-  return (crc ^ 0xffffffff) >>> 0;
+/** The logo on a 1024 × 1024 canvas. `rounded`: corner radius of the tile (0 = full bleed). */
+function logo(rounded) {
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#4C7DFF"/>
+      <stop offset="0.55" stop-color="#5B5BF5"/>
+      <stop offset="1" stop-color="#7A3FE8"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.22" cy="0.12" r="0.75">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.30"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="ink" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#3F6CFF"/>
+      <stop offset="1" stop-color="#7B3FE4"/>
+    </linearGradient>
+    <linearGradient id="fold" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0" stop-color="#C9D3F7"/>
+      <stop offset="1" stop-color="#EEF2FF"/>
+    </linearGradient>
+    <linearGradient id="body" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFC94A"/>
+      <stop offset="0.5" stop-color="#FFB21E"/>
+      <stop offset="1" stop-color="#F29A0E"/>
+    </linearGradient>
+    <filter id="shadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="22"/>
+    </filter>
+  </defs>
+
+  <rect width="1024" height="1024" rx="${rounded}" fill="url(#bg)"/>
+  <rect width="1024" height="1024" rx="${rounded}" fill="url(#glow)"/>
+
+  <g transform="rotate(-7 480 500)">
+    <!-- page shadow -->
+    <path d="M300 214 H592 L692 314 V744 Q692 796 640 796 H300 Q248 796 248 744 V266 Q248 214 300 214 Z"
+          fill="#1B1460" opacity="0.32" filter="url(#shadow)" transform="translate(10 26)"/>
+    <!-- page with folded corner -->
+    <path d="M300 214 H592 L692 314 V744 Q692 796 640 796 H300 Q248 796 248 744 V266 Q248 214 300 214 Z" fill="#FFFFFF"/>
+    <path d="M592 214 V282 Q592 314 624 314 H692 Z" fill="url(#fold)"/>
+    <!-- ruled lines -->
+    <g stroke="#E4E9F7" stroke-width="12" stroke-linecap="round">
+      <line x1="314" y1="372" x2="540" y2="372"/>
+      <line x1="314" y1="444" x2="626" y2="444"/>
+      <line x1="314" y1="516" x2="626" y2="516"/>
+    </g>
+    <!-- handwriting stroke -->
+    <path d="M318 662 C 352 560, 404 548, 418 616 C 430 676, 476 690, 506 628 C 532 574, 574 556, 600 604"
+          fill="none" stroke="url(#ink)" stroke-width="36" stroke-linecap="round" stroke-linejoin="round"/>
+
+    <!-- pencil: tip at the end of the stroke, body towards the lower right -->
+    <g transform="translate(604 612) rotate(48)">
+      <rect x="40" y="12" width="300" height="58" rx="10" fill="#1B1460" opacity="0.28" filter="url(#shadow)"/>
+      <path d="M0 0 L66 -29 L66 29 Z" fill="#F6D7AE"/>
+      <path d="M0 0 L22 -9.6 L22 9.6 Z" fill="#2A2A35"/>
+      <rect x="64" y="-29" width="200" height="58" fill="url(#body)"/>
+      <rect x="64" y="-29" width="200" height="16" fill="#FFFFFF" opacity="0.28"/>
+      <rect x="262" y="-29" width="30" height="58" fill="#C7CEDF"/>
+      <rect x="270" y="-29" width="5" height="58" fill="#A8B1C7"/>
+      <rect x="282" y="-29" width="5" height="58" fill="#A8B1C7"/>
+      <path d="M290 -29 H318 Q338 -29 338 -9 V9 Q338 29 318 29 H290 Z" fill="#FF6F91"/>
+    </g>
+  </g>
+</svg>`;
 }
 
-function chunk(type, data) {
-  const len = Buffer.alloc(4);
-  len.writeUInt32BE(data.length);
-  const body = Buffer.concat([Buffer.from(type), data]);
-  const crc = Buffer.alloc(4);
-  crc.writeUInt32BE(crc32(body));
-  return Buffer.concat([len, body, crc]);
-}
-
-function png(size, pixel) {
-  const raw = Buffer.alloc((size * 4 + 1) * size);
-  for (let y = 0; y < size; y++) {
-    raw[y * (size * 4 + 1)] = 0;
-    for (let x = 0; x < size; x++) {
-      const [r, g, b, a] = pixel(x / size, y / size);
-      const i = y * (size * 4 + 1) + 1 + x * 4;
-      raw[i] = r;
-      raw[i + 1] = g;
-      raw[i + 2] = b;
-      raw[i + 3] = a;
-    }
-  }
-  const ihdr = Buffer.alloc(13);
-  ihdr.writeUInt32BE(size, 0);
-  ihdr.writeUInt32BE(size, 4);
-  ihdr[8] = 8;
-  ihdr[9] = 6;
-  return Buffer.concat([
-    Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
-    chunk('IHDR', ihdr),
-    chunk('IDAT', deflateSync(raw)),
-    chunk('IEND', Buffer.alloc(0)),
-  ]);
-}
-
-const distToSegment = (px, py, ax, ay, bx, by) => {
-  const dx = bx - ax;
-  const dy = by - ay;
-  const t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy)));
-  return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
-};
-
-// Blue gradient tile, white page, dark ink swoosh.
-function icon(u, v) {
-  const top = [62, 128, 240];
-  const bottom = [36, 86, 200];
-  let c = top.map((t, i) => Math.round(t + (bottom[i] - t) * v));
-  const inPage = u > 0.24 && u < 0.76 && v > 0.17 && v < 0.83;
-  if (inPage) {
-    c = [255, 255, 255];
-    for (const ly of [0.36, 0.48, 0.6, 0.72]) if (Math.abs(v - ly) < 0.006 && u > 0.3 && u < 0.7) c = [169, 196, 223];
-    const d = Math.min(
-      distToSegment(u, v, 0.32, 0.62, 0.42, 0.34),
-      distToSegment(u, v, 0.42, 0.34, 0.52, 0.6),
-      distToSegment(u, v, 0.52, 0.6, 0.66, 0.3),
-    );
-    if (d < 0.025) c = [28, 28, 30];
-  }
-  return [...c, 255];
+function render(svg, size) {
+  return new Resvg(svg, { fitTo: { mode: 'width', value: size } }).render().asPng();
 }
 
 mkdirSync('public', { recursive: true });
-writeFileSync('public/icon-512.png', png(512, icon));
-writeFileSync('public/icon-192.png', png(192, icon));
-writeFileSync('public/apple-touch-icon.png', png(180, icon));
+// Home Screen / install icons are full squares: iPadOS and Android round the corners themselves.
+const square = logo(0);
+writeFileSync('public/icon-512.png', render(square, 512));
+writeFileSync('public/icon-192.png', render(square, 192));
+writeFileSync('public/apple-touch-icon.png', render(square, 180));
+// Browser tab icon keeps its own rounded corners.
+writeFileSync('public/icon.svg', logo(228));
+// Noteboard Shell (Swift Playgrounds) app icon.
+const assets = 'wrapper/NoteboardShell.swiftpm/Sources/Assets.xcassets';
+mkdirSync(`${assets}/AppIcon.appiconset`, { recursive: true });
+writeFileSync(`${assets}/AppIcon.appiconset/AppIcon.png`, render(square, 1024));
 writeFileSync(
-  'public/icon.svg',
-  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3e80f0"/><stop offset="1" stop-color="#2456c8"/></linearGradient></defs><rect width="100" height="100" rx="22" fill="url(#g)"/><rect x="24" y="17" width="52" height="66" rx="3" fill="#fff"/><path d="M32 62 42 34 52 60 66 30" fill="none" stroke="#1c1c1e" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+  `${assets}/AppIcon.appiconset/Contents.json`,
+  JSON.stringify(
+    { images: [{ filename: 'AppIcon.png', idiom: 'universal', platform: 'ios', size: '1024x1024' }], info: { author: 'xcode', version: 1 } },
+    null,
+    2,
+  ) + '\n',
 );
-console.log('Icons written to public/');
+writeFileSync(`${assets}/Contents.json`, JSON.stringify({ info: { author: 'xcode', version: 1 } }, null, 2) + '\n');
+// Optional preview with rounded corners, for checking the design: ICON_PREVIEW=path npm run icons
+if (process.env.ICON_PREVIEW) writeFileSync(process.env.ICON_PREVIEW, render(logo(228), 512));
+console.log('Icons written.');
