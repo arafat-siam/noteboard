@@ -2,6 +2,7 @@ import { getStroke } from 'perfect-freehand';
 import type { Stroke } from '../model/types';
 import { smoothInput } from './smoothing';
 import { BRUSHES } from './brushes';
+import { chiselPath } from './chisel';
 
 export function brushOf(stroke: Pick<Stroke, 'tool' | 'brush'>) {
   return stroke.tool === 'highlighter' ? null : BRUSHES[stroke.brush ?? 'fountain'];
@@ -53,6 +54,12 @@ export function outlineToSvgPath(outline: number[][]): string {
   return `${d} Z`;
 }
 
+/** SVG path data for any stroke (chisel highlighters have their own shape). */
+export function strokeSvgPath(stroke: Stroke, complete: boolean): string {
+  if (stroke.tool === 'highlighter' && stroke.nib === 'chisel') return chiselPath(stroke.points, stroke.size);
+  return outlineToSvgPath(strokeOutline(stroke, complete));
+}
+
 /** Grainy graphite pattern for the pencil, one per colour. */
 const pencilPatterns = new Map<string, CanvasPattern | null>();
 
@@ -85,7 +92,7 @@ const MAX_CACHE = 20_000;
 function cachedPath(stroke: Stroke): Path2D {
   let path = pathCache.get(stroke.id);
   if (!path) {
-    path = new Path2D(outlineToSvgPath(strokeOutline(stroke, true)));
+    path = new Path2D(strokeSvgPath(stroke, true));
     if (pathCache.size >= MAX_CACHE) pathCache.clear();
     pathCache.set(stroke.id, path);
   }
@@ -93,7 +100,7 @@ function cachedPath(stroke: Stroke): Path2D {
 }
 
 export function drawStroke(ctx: CanvasRenderingContext2D, stroke: Stroke, live = false): void {
-  const path = live ? new Path2D(outlineToSvgPath(strokeOutline(stroke, false))) : cachedPath(stroke);
+  const path = live ? new Path2D(strokeSvgPath(stroke, false)) : cachedPath(stroke);
   ctx.save();
   const brush = brushOf(stroke);
   if (!brush) {

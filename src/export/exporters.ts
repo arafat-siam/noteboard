@@ -2,7 +2,7 @@ import type { PDFPage, RGB } from 'pdf-lib';
 import { db as defaultDb, type NoteboardDB } from '../db/db';
 import { getPdf, renderPdfRegion } from '../pdf/pdf';
 import type { LibraryItem, Notebook, Page, PaperTemplate } from '../model/types';
-import { brushOf, drawPage, outlineToSvgPath, strokeOutline } from '../ink/render';
+import { brushOf, drawPage, strokeSvgPath } from '../ink/render';
 import { TEMPLATE_METRICS } from '../ink/templates';
 import { mergeLibrary, mergePage } from '../sync/merge';
 import { markLibraryChanged } from '../db/library';
@@ -71,7 +71,7 @@ export async function exportNotebookPdf(notebook: Notebook, pages: Page[], db: N
     }
     const ordered = [...page.strokes.filter((s) => s.tool === 'highlighter'), ...page.strokes.filter((s) => s.tool !== 'highlighter')];
     for (const stroke of ordered) {
-      const path = outlineToSvgPath(strokeOutline(stroke, true));
+      const path = strokeSvgPath(stroke, true);
       if (!path) continue;
       pdfPage.drawSvgPath(path, {
         x: 0,

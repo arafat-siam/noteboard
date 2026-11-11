@@ -1,3 +1,4 @@
+import { rotateNibAngles } from './chisel';
 import type { Stroke } from '../model/types';
 
 export interface Point {
@@ -136,5 +137,5 @@ export function rotateStroke(stroke: Stroke, center: Point, angle: number, id: s
     points[i] = center.x + dx * cos - dy * sin;
     points[i + 1] = center.y + dx * sin + dy * cos;
   }
-  return { ...stroke, id, points };
+  return { ...stroke, id, points: stroke.nib === 'chisel' ? rotateNibAngles(points, angle) : points };
 }

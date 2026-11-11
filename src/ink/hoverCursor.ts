@@ -11,10 +11,8 @@ export interface HoverCursorStyle {
   /** Diameter in CSS pixels. */
   size: number;
   color: string;
-  /** Pencil barrel roll in degrees (0 if the browser doesn't report it). */
-  twist: number;
-  /** Direction the Pencil leans, in radians (undefined if unknown). */
-  azimuth?: number;
+  /** Highlighter chisel-tip angle in radians (follows barrel roll when known). */
+  angle: number;
 }
 
 let el: HTMLDivElement | null = null;
@@ -37,10 +35,10 @@ export function showHoverCursor(clientX: number, clientY: number, style: HoverCu
     return;
   }
   const highlighter = style.tool === 'highlighter';
-  const width = highlighter ? Math.max(4, style.size * 0.35) : style.size;
-  const height = style.size;
-  // Highlighter chisel: barrel roll if reported, otherwise follow the lean direction.
-  const angle = highlighter ? (style.twist ? style.twist : style.azimuth !== undefined ? (style.azimuth * 180) / Math.PI : 0) : 0;
+  // Highlighter: the chisel tip itself (long side along the tip angle).
+  const width = style.size;
+  const height = highlighter ? Math.max(3, style.size * 0.22) : style.size;
+  const angle = highlighter ? (style.angle * 180) / Math.PI : 0;
   cursor.className = `hover-cursor ${style.tool}`;
   cursor.style.display = 'block';
   cursor.style.width = `${width}px`;
