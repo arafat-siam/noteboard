@@ -279,3 +279,51 @@ export function sortItems(list: LibraryItem[], key: SortKey): LibraryItem[] {
     }
   });
 }
+
+export interface PageSpec {
+  width: number;
+  height: number;
+  template?: PaperTemplate;
+  background?: Page['background'];
+}
+
+/** Creates a notebook with the given pages (used by PDF import). */
+export async function createNotebookFromPages(
+  db: NoteboardDB,
+  name: string,
+  parentId: ID | null,
+  specs: PageSpec[],
+  coverColor: string = COVER_COLORS[2]!,
+): Promise<Notebook> {
+  const now = Date.now();
+  const id = newId();
+  const pages: Page[] = specs.map((spec) => ({
+    ...blankPage(id, spec.template ?? 'blank', now),
+    width: spec.width,
+    height: spec.height,
+    ...(spec.background ? { background: spec.background } : {}),
+  }));
+  const notebook: Notebook = {
+    kind: 'notebook',
+    id,
+    parentId,
+    name: cleanName(name),
+    coverColor,
+    template: 'blank',
+    pageIds: pages.map((p) => p.id),
+    deletedPageIds: [],
+    tags: [],
+    createdAt: now,
+    updatedAt: now,
+    lastOpenedAt: null,
+    trashedAt: null,
+    favorite: false,
+    deleted: false,
+  };
+  await db.transaction('rw', db.items, db.pages, db.meta, async () => {
+    await db.items.add(notebook);
+    await db.pages.bulkAdd(pages);
+    await markLibraryChanged(db);
+  });
+  return notebook;
+}

@@ -19,6 +19,7 @@ src/db/                 Dexie schema, library ops (folders/trash/move), page ops
 src/ink/                InkPage (Pencil input + canvas), render, shapes (recognition), geometry, templates
 src/sync/               Google auth (redirect token flow), Drive REST client, merge rules, SyncEngine
 src/export/             PDF / PNG / JSON backup export & import, share sheet
+src/pdf/pdf.ts          PDF import (pdf.js, lazy-loaded), page background rendering per visible region
 src/ui/                 Sidebar, LibraryView, NotebookEditor, dialogs
 src/pencil/bridge.ts    Hook for an optional native wrapper to forward Pencil double-tap/squeeze
 docs/                   ARCHITECTURE.md, ROADMAP.md, GOOGLE_DRIVE_SETUP.md
@@ -45,6 +46,7 @@ Verify UI changes in the browser pane (launch config `noteboard-dev`). Synthetic
 - Pencil must never scroll the page (touchstart with `touchType === 'stylus'` is prevented in NotebookEditor); fingers scroll.
 - App lock (`src/security/`): the user sets the PIN on first launch; only a salted PBKDF2 hash is stored on the device. Never hard-code a PIN or any secret — the repo and the deployed JS are public. It's a lock screen, not disk encryption; say so honestly.
 - Data privacy model: the site is public but holds no data. Each visitor's notes live in their own browser (IndexedDB) and their own Google Drive.
+- Imported PDFs live in the Dexie `files` table (immutable blobs) and sync to Drive as `file_<id>.pdf`; pages reference them via `page.background`. Export embeds the original PDF pages (pdf-lib embedPdf) under the ink.
 - Google scope is `drive.file` only. No secrets in the repo (the OAuth client ID is public by design).
 - CI annotations (`scripts/ci-run.sh`) are how build errors are read without GitHub login — keep using it for new CI steps.
 

@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { newId, type Page, type Stroke } from '../model/types';
 import { applyRegion, drawPage, drawStroke, type CanvasRegion } from './render';
-import { recognizeShape } from './shapes';
+import { adjustShape, recognizeShape, type ShapeKind } from './shapes';
 import {
   boundsOf,
   rectContains,
@@ -21,6 +21,10 @@ import { eraseFromStroke } from './erase';
 import type { BrushKind } from './brushes';
 import { PEN_COLORS, type PenSlot } from './palette';
 import { templateStyle } from './templates';
+import type { PDFDocumentProxy, RenderTask } from 'pdfjs-dist';
+import { db } from '../db/db';
+import { useLiveQuery } from 'dexie-react-hooks';
+import { getPdf, renderPdfRegion } from '../pdf/pdf';
 import { notePen, penActiveWithin } from './penState';
 import { diagnostics, recordEvent, recordFrame } from './diagnostics';
 
@@ -88,6 +92,8 @@ interface Gesture {
   /** Rotating a selection: pointer angle at start and current rotation (radians). */
   startAngle: number;
   angle: number;
+  /** Snapped shape that keeps following the Pencil until it lifts (Drawboard-style). */
+  shape: { kind: ShapeKind; base: Point[]; from: Point; pressure: number } | null;
 }
 
 interface Selection {
@@ -130,6 +136,19 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
   const hoverRef = useRef<{ x: number; y: number; timer: number | null } | null>(null);
   const hoverHideRef = useRef<number | null>(null);
   const pressRef = useRef<{ id: number; x: number; y: number; timer: number } | null>(null);
+  const selectionBoxRef = useRef<HTMLDivElement>(null);
+  // Imported PDF page under the ink.
+  const pdfCanvasRef = useRef<HTMLCanvasElement>(null);
+  const pdfDocRef = useRef<PDFDocumentProxy | null>(null);
+  const pdfRenderRef = useRef<{ task: RenderTask | null; generation: number }>({ task: null, generation: 0 });
+  const [pdfMissing, setPdfMissing] = useState(false);
+  // Stable identity (the page object is re-read after every save; the PDF behind it isn't).
+  const bgFile = page.background?.fileId;
+  const bgIndex = page.background?.pageIndex;
+  const background = useMemo(
+    () => (bgFile !== undefined && bgIndex !== undefined ? { kind: 'pdf' as const, fileId: bgFile, pageIndex: bgIndex } : undefined),
+    [bgFile, bgIndex],
+  );
   /** Which part of the page the canvases currently show, at what resolution. */
   const regionRef = useRef<CanvasRegion | null>(null);
   /** What is painted on the ink canvas, to skip needless full redraws. */
@@ -168,6 +187,35 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
     };
   }, []);
 
+  /** Draws the visible part of the PDF page; the previous image stays until the new one is ready. */
+  const renderPdf = useCallback(async () => {
+    const doc = pdfDocRef.current;
+    const region = regionRef.current;
+    const target = pdfCanvasRef.current;
+    if (!doc || !region || !target || !background) return;
+    const state = pdfRenderRef.current;
+    state.task?.cancel();
+    const generation = ++state.generation;
+    const pixelWidth = Math.max(1, Math.ceil(region.width * region.k));
+    const pixelHeight = Math.max(1, Math.ceil(region.height * region.k));
+    try {
+      const { canvas, task } = await renderPdfRegion(doc, background.pageIndex, region, pixelWidth, pixelHeight);
+      if (generation !== state.generation) return task.cancel();
+      state.task = task;
+      await task.promise;
+      if (generation !== state.generation) return;
+      target.width = pixelWidth;
+      target.height = pixelHeight;
+      target.style.left = `${region.x * scale}px`;
+      target.style.top = `${region.y * scale}px`;
+      target.style.width = `${(pixelWidth / region.k) * scale}px`;
+      target.style.height = `${(pixelHeight / region.k) * scale}px`;
+      target.getContext('2d')!.drawImage(canvas, 0, 0);
+    } catch {
+      // Cancelled by a newer render, or a broken page: keep whatever is showing.
+    }
+  }, [background, scale]);
+
   /** Sizes the canvases to the visible part of the page (+ margin) at full screen sharpness. */
   const layout = useCallback(
     (force = false) => {
@@ -197,6 +245,9 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
         // Far from view: free the canvas memory.
         if (regionRef.current) {
           for (const c of canvases) c.width = c.height = 0;
+          pdfRenderRef.current.task?.cancel();
+          pdfRenderRef.current.generation++;
+          if (pdfCanvasRef.current) pdfCanvasRef.current.width = pdfCanvasRef.current.height = 0;
           regionRef.current = null;
           paintedRef.current = { region: null, ids: new Set() };
         }
@@ -227,9 +278,32 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
       }
       diagnostics.canvasPixels = pixelWidth * pixelHeight;
       paintInk(true);
+      void renderPdf();
     },
-    [scroller, scale, dpr, paintInk],
+    [scroller, scale, dpr, paintInk, renderPdf],
   );
+
+  // Re-open once a PDF that was still syncing arrives on this device.
+  const pdfAvailable = useLiveQuery(
+    async () => (background ? (await db.files.where('id').equals(background.fileId).count()) > 0 : false),
+    [background],
+  );
+
+  // Open the PDF behind this page (if any).
+  useEffect(() => {
+    if (!background) return;
+    let alive = true;
+    void getPdf(db, background.fileId).then((doc) => {
+      if (!alive) return;
+      pdfDocRef.current = doc;
+      setPdfMissing(!doc);
+      void renderPdf();
+    });
+    return () => {
+      alive = false;
+      pdfRenderRef.current.task?.cancel();
+    };
+  }, [background, renderPdf, pdfAvailable]);
 
   // Re-layout when zoom changes (before paint, so nothing flashes) …
   useLayoutEffect(() => {
@@ -269,7 +343,7 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
   }, [page.strokes, paintInk]);
 
   useEffect(() => {
-    if (settings.tool !== 'lasso') setSelection(null);
+    if (settings.tool === 'eraser') setSelection(null);
   }, [settings.tool]);
 
   useEffect(() => {
@@ -347,6 +421,7 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
           g.points = shape.points.flatMap((p) => [p.x, p.y, avg]);
           for (const p of shape.points) growDirty(g, p.x, p.y);
           g.snapped = true;
+          g.shape = { kind: shape.kind, base: shape.points, from: pts[pts.length - 1]!, pressure: avg };
           g.needsDraw = true;
         } else {
           g.holdSince = Infinity; // don't retry on every frame
@@ -378,20 +453,49 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
     } else if (g.kind === 'move' && selection) {
       ctx.translate(g.offset.x, g.offset.y);
       for (const s of page.strokes) if (selection.ids.has(s.id)) drawStroke(ctx, s);
+      setBoxTransform(`translate(${g.offset.x * scale}px, ${g.offset.y * scale}px)`);
     } else if (g.kind === 'scale' && selection) {
       ctx.translate(g.anchor.x, g.anchor.y);
       ctx.scale(g.factor, g.factor);
       ctx.translate(-g.anchor.x, -g.anchor.y);
       for (const s of page.strokes) if (selection.ids.has(s.id)) drawStroke(ctx, s);
+      const b = selection.bounds;
+      setBoxTransform(`scale(${g.factor})`, `${(g.anchor.x - b.x) * scale}px ${(g.anchor.y - b.y) * scale}px`);
     } else if (g.kind === 'rotate' && selection) {
       ctx.translate(g.anchor.x, g.anchor.y);
       ctx.rotate(g.angle);
       ctx.translate(-g.anchor.x, -g.anchor.y);
       for (const s of page.strokes) if (selection.ids.has(s.id)) drawStroke(ctx, s);
+      setBoxTransform(`rotate(${g.angle}rad)`, '50% 50%');
     } else if (g.kind === 'erase' && g.pieces.size) {
       for (const pieces of g.pieces.values()) for (const s of pieces) drawStroke(ctx, s);
     }
   };
+
+  /** Moves the selection frame with the ink during a drag (no React re-render per frame). */
+  const setBoxTransform = (transform: string, origin = '0 0') => {
+    const box = selectionBoxRef.current;
+    if (!box) return;
+    box.style.transformOrigin = origin;
+    box.style.transform = transform;
+  };
+
+  /** Paints strokes on the ink layer right away, so nothing blinks while the save completes. */
+  const paintNow = (strokes: Stroke[]) => {
+    const ctx = inkRef.current?.getContext('2d');
+    const region = regionRef.current;
+    if (!ctx || !region) return;
+    applyRegion(ctx, region);
+    for (const s of strokes) {
+      drawStroke(ctx, s);
+      paintedRef.current.ids.add(s.id);
+    }
+  };
+
+  // A new selection (or new bounds) resets the frame's drag transform.
+  useLayoutEffect(() => {
+    setBoxTransform('');
+  }, [selection]);
 
   const requestRender = () => {
     if (frameRef.current == null) frameRef.current = requestAnimationFrame(renderLive);
@@ -572,6 +676,7 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
       lasso: [p],
       moveStart: p,
       offset: { x: 0, y: 0 },
+      shape: null,
       pieces: new Map(),
       anchor: p,
       scaleFrom: p,
@@ -602,18 +707,19 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
       g.scaleFrom = corners[handle];
       for (const id of selection.ids) hiddenRef.current.add(id);
       paintInk(true);
+    } else if (selection && rectContains(selection.bounds, p) && settings.tool !== 'eraser') {
+      g.kind = 'move';
+      for (const id of selection.ids) hiddenRef.current.add(id);
+      paintInk(true);
     } else if (settings.tool === 'lasso') {
-      if (selection && rectContains(selection.bounds, p)) {
-        g.kind = 'move';
-        for (const id of selection.ids) hiddenRef.current.add(id);
-        paintInk(true);
-      } else {
-        setSelection(null);
-        g.kind = 'lasso';
+      setSelection(null);
+      g.kind = 'lasso';
+    } else {
+      if (selection) setSelection(null);
+      if (settings.tool === 'eraser') {
+        g.kind = 'erase';
+        eraseAt(g, p);
       }
-    } else if (settings.tool === 'eraser') {
-      g.kind = 'erase';
-      eraseAt(g, p);
     }
     gestureRef.current = g;
     requestRender();
@@ -654,7 +760,16 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
       const p = { x: (ev.clientX - g.origin.left) / scale, y: (ev.clientY - g.origin.top) / scale };
       switch (g.kind) {
         case 'ink':
-          if (g.snapped) break;
+          if (g.snapped) {
+            if (g.shape) {
+              const pts = adjustShape(g.shape.kind, g.shape.base, g.shape.from, p);
+              const pr = g.shape.pressure;
+              g.points = pts.flatMap((q) => [q.x, q.y, pr]);
+              for (const q of pts) growDirty(g, q.x, q.y);
+              g.needsDraw = true;
+            }
+            break;
+          }
           g.points.push(p.x, p.y, pressureOf(ev));
           growDirty(g, p.x, p.y);
           if (Math.hypot(p.x - g.holdAnchor.x, p.y - g.holdAnchor.y) > 3) {
@@ -688,7 +803,9 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
         }
       }
     }
-    if (g.kind === 'ink' && !g.snapped) {
+    if (g.kind === 'ink' && g.snapped) {
+      g.lastSampleAt = performance.now();
+    } else if (g.kind === 'ink') {
       const predicted = native.getPredictedEvents?.() ?? [];
       g.predicted = predicted.flatMap((ev) => {
         const x = (ev.clientX - g.origin.left) / scale;
@@ -725,6 +842,8 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
             paintedRef.current.ids.add(stroke.id);
           }
           onChange(page.id, [stroke], []);
+          // Like Drawboard: a recognised shape stays selected, ready to move, resize or rotate.
+          if (g.snapped) setSelection({ ids: new Set([stroke.id]), bounds: strokeBounds(stroke) });
           break;
         }
         case 'erase':
@@ -744,6 +863,7 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
           const rotated = page.strokes
             .filter((s) => selection.ids.has(s.id))
             .map((s) => rotateStroke(s, g.anchor, g.angle, newId()));
+          paintNow(rotated);
           onChange(page.id, rotated, [...selection.ids]);
           const bounds = unionRects(rotated.map(strokeBounds));
           if (bounds) setSelection({ ids: new Set(rotated.map((s) => s.id)), bounds });
@@ -760,6 +880,7 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
           const scaled = page.strokes
             .filter((s) => selection.ids.has(s.id))
             .map((s) => scaleStroke(s, g.anchor, f, newId()));
+          paintNow(scaled);
           onChange(page.id, scaled, [...selection.ids]);
           const b = selection.bounds;
           const x0 = g.anchor.x + (b.x - g.anchor.x) * f;
@@ -796,6 +917,7 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
           const moved = page.strokes
             .filter((s) => selection.ids.has(s.id))
             .map((s) => translateStroke(s, dx, dy, newId()));
+          paintNow(moved);
           onChange(page.id, moved, [...selection.ids]);
           setSelection({
             ids: new Set(moved.map((s) => s.id)),
@@ -814,6 +936,7 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
   const recolorSelection = (color: string) => {
     if (!selection) return;
     const recolored = page.strokes.filter((s) => selection.ids.has(s.id)).map((s) => recolorStroke(s, color, newId()));
+    paintNow(recolored);
     onChange(page.id, recolored, [...selection.ids]);
     setSelection({ ...selection, ids: new Set(recolored.map((s) => s.id)) });
   };
@@ -849,11 +972,14 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
       onPointerLeave={endHover}
       onContextMenu={(e) => e.preventDefault()}
     >
+      {background && <canvas ref={pdfCanvasRef} className="ink-layer pdf-layer" width={0} height={0} />}
+      {background && pdfMissing && <div className="pdf-missing">PDF is still downloading from Google Drive…</div>}
       <canvas ref={inkRef} className="ink-layer" width={0} height={0} />
       <canvas ref={liveRef} className="ink-layer ink-input" width={0} height={0} />
       <div ref={cursorRef} className="hover-cursor" style={{ display: 'none' }} />
       {selection && (
         <div
+          ref={selectionBoxRef}
           className="selection-box"
           style={{
             left: selection.bounds.x * scale,

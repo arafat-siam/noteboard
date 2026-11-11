@@ -1,5 +1,5 @@
 import Dexie, { type Table } from 'dexie';
-import type { LibraryItem, Page } from '../model/types';
+import type { LibraryItem, Page, StoredFile } from '../model/types';
 
 export interface MetaRow {
   key: string;
@@ -19,6 +19,7 @@ export class NoteboardDB extends Dexie {
   pages!: Table<Page, string>;
   meta!: Table<MetaRow, string>;
   sync!: Table<SyncRow, string>;
+  files!: Table<StoredFile, string>;
 
   constructor(name = 'noteboard') {
     super(name);
@@ -27,6 +28,14 @@ export class NoteboardDB extends Dexie {
       pages: 'id, notebookId, dirty',
       meta: 'key',
       sync: 'key',
+    });
+    // v2: imported PDFs.
+    this.version(2).stores({
+      items: 'id, kind',
+      pages: 'id, notebookId, dirty',
+      meta: 'key',
+      sync: 'key',
+      files: 'id, uploaded',
     });
   }
 

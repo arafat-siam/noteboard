@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { recognizeShape } from './shapes';
+import { adjustShape, recognizeShape } from './shapes';
 import type { Point } from './geometry';
 
 // Deterministic "hand wobble".
@@ -96,5 +96,30 @@ describe('recognizeShape', () => {
 
   it('ignores tiny marks', () => {
     expect(recognizeShape(line({ x: 0, y: 0 }, { x: 5, y: 3 }, 6, 0))).toBeNull();
+  });
+});
+
+describe('adjustShape', () => {
+  it('swings and stretches a line around its start', () => {
+    const base = [{ x: 0, y: 0 }, { x: 50, y: 0 }, { x: 100, y: 0 }];
+    const out = adjustShape('line', base, { x: 100, y: 0 }, { x: 0, y: 200 });
+    expect(out[0]).toEqual({ x: 0, y: 0 });
+    expect(out[2]!.x).toBeCloseTo(0, 5);
+    expect(out[2]!.y).toBeCloseTo(200, 5);
+  });
+
+  it('stretches a rectangle from the corner opposite the Pencil', () => {
+    const base = [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 50 }, { x: 0, y: 50 }];
+    const out = adjustShape('rectangle', base, { x: 100, y: 50 }, { x: 200, y: 150 });
+    expect(out[0]).toEqual({ x: 0, y: 0 });
+    expect(out[2]).toEqual({ x: 200, y: 150 });
+  });
+
+  it('keeps circles round', () => {
+    const base = Array.from({ length: 37 }, (_, i) => ({ x: 50 + 50 * Math.cos((i / 36) * Math.PI * 2), y: 50 + 50 * Math.sin((i / 36) * Math.PI * 2) }));
+    const out = adjustShape('circle', base, { x: 100, y: 100 }, { x: 200, y: 140 });
+    const xs = out.map((p) => p.x);
+    const ys = out.map((p) => p.y);
+    expect(Math.max(...xs) - Math.min(...xs)).toBeCloseTo(Math.max(...ys) - Math.min(...ys), 5);
   });
 });

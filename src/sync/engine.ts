@@ -29,6 +29,7 @@ interface LibraryFile {
 
 const LIBRARY_FILE = 'library.json';
 const PAGE_PREFIX = 'page_';
+const FILE_PREFIX = 'file_';
 const AUTO_SYNC_DELAY_MS = 4_000;
 const PERIODIC_SYNC_MS = 60_000;
 
@@ -222,6 +223,33 @@ export class SyncEngine {
         : await drive.createJson(rootId, LIBRARY_FILE, data, { kind: 'library' });
       await db.sync.put({ key: LIBRARY_FILE, fileId: saved.id, remoteModified: saved.modifiedTime });
       await db.setMeta('libraryPushedRev', rev);
+    }
+
+    // 3b. Imported PDFs: upload new ones (before the pages that use them), download missing ones.
+    const localFiles = new Set((await db.files.toCollection().primaryKeys()) as string[]);
+    for (const file of await db.files.where('uploaded').equals(0).toArray()) {
+      const saved = await drive.createBinary(rootId, `${FILE_PREFIX}${file.id}.pdf`, file.data, file.mime, {
+        kind: 'file',
+        fileId: file.id,
+        name: file.name.slice(0, 100),
+      });
+      await db.sync.put({ key: `${FILE_PREFIX}${file.id}`, fileId: saved.id, remoteModified: saved.modifiedTime });
+      await db.files.update(file.id, { uploaded: 1 });
+    }
+    for (const remote of remoteFiles) {
+      const fileId = remote.appProperties?.fileId;
+      if (!remote.name.startsWith(FILE_PREFIX) || !fileId || localFiles.has(fileId)) continue;
+      const data = await drive.downloadBlob(remote.id);
+      await db.files.put({
+        id: fileId,
+        name: remote.appProperties?.name ?? remote.name,
+        mime: data.type || 'application/pdf',
+        size: data.size,
+        data,
+        createdAt: Date.now(),
+        uploaded: 1,
+      });
+      await db.sync.put({ key: `${FILE_PREFIX}${fileId}`, fileId: remote.id, remoteModified: remote.modifiedTime });
     }
 
     // 4. Push dirty pages.

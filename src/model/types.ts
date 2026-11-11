@@ -22,12 +22,34 @@ export interface Stroke {
   createdAt: number;
 }
 
+/** A page drawn on top of a page of an imported PDF (the PDF itself is in the files store). */
+export interface PdfBackground {
+  kind: 'pdf';
+  fileId: ID;
+  /** 0-based page number in the PDF. */
+  pageIndex: number;
+}
+
+/** An imported file (currently PDFs). Immutable; synced to Google Drive as-is. */
+export interface StoredFile {
+  id: ID;
+  name: string;
+  mime: string;
+  size: number;
+  data: Blob;
+  createdAt: number;
+  /** 1 once a copy is in Google Drive. */
+  uploaded: 0 | 1;
+}
+
 export interface Page {
   id: ID;
   notebookId: ID;
   template: PaperTemplate;
   width: number;
   height: number;
+  /** Imported PDF page shown under the ink. */
+  background?: PdfBackground;
   strokes: Stroke[];
   /** Tombstones: ids of erased strokes, kept so deletions survive merges with other devices. */
   deletedStrokeIds: ID[];

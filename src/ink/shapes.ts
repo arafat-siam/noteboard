@@ -305,3 +305,37 @@ export function recognizeShape(rawPoints: Point[]): RecognizedShape | null {
   if (corners.length >= 4 && corners.length <= 8) return { kind: 'polygon', points: polylinePoints(corners, true) };
   return null;
 }
+
+/**
+ * Drawboard / Apple Notes behaviour: after a shape snaps, keep the Pencil down and move it to
+ * adjust the shape. Lines and open polylines swing and stretch around their start point;
+ * closed shapes stretch from the corner opposite the Pencil (circles stay round).
+ */
+export function adjustShape(kind: ShapeKind, base: Point[], from: Point, to: Point): Point[] {
+  if (base.length < 2) return base;
+  if (kind === 'line' || kind === 'polyline') {
+    const a = base[0]!;
+    const v0x = from.x - a.x;
+    const v0y = from.y - a.y;
+    const len0 = Math.hypot(v0x, v0y);
+    if (len0 < 1) return base;
+    const s = Math.hypot(to.x - a.x, to.y - a.y) / len0;
+    const angle = Math.atan2(to.y - a.y, to.x - a.x) - Math.atan2(v0y, v0x);
+    const cos = Math.cos(angle) * s;
+    const sin = Math.sin(angle) * s;
+    return base.map((p) => ({ x: a.x + (p.x - a.x) * cos - (p.y - a.y) * sin, y: a.y + (p.x - a.x) * sin + (p.y - a.y) * cos }));
+  }
+  const b = boundsOf(base);
+  const cx = b.x + b.width / 2;
+  const cy = b.y + b.height / 2;
+  const anchor = { x: from.x >= cx ? b.x : b.x + b.width, y: from.y >= cy ? b.y : b.y + b.height };
+  const dx0 = from.x - anchor.x;
+  const dy0 = from.y - anchor.y;
+  let sx = Math.abs(dx0) > 4 ? (to.x - anchor.x) / dx0 : 1;
+  let sy = Math.abs(dy0) > 4 ? (to.y - anchor.y) / dy0 : 1;
+  // Never flip or collapse the shape.
+  sx = Math.max(0.05, sx);
+  sy = Math.max(0.05, sy);
+  if (kind === 'circle') sx = sy = Math.max(sx, sy);
+  return base.map((p) => ({ x: anchor.x + (p.x - anchor.x) * sx, y: anchor.y + (p.y - anchor.y) * sy }));
+}

@@ -80,3 +80,13 @@ describe('mergeLibrary', () => {
     expect(r.localChanged || r.remoteChanged).toBe(false);
   });
 });
+
+describe('mergePage with imported PDFs', () => {
+  it('keeps the PDF background whichever copy is newer', () => {
+    const background = { kind: 'pdf' as const, fileId: 'f1', pageIndex: 3 };
+    const withBg = page({ background, strokes: [stroke('a')], updatedAt: 1 });
+    const newerWithoutField = { ...page({ strokes: [stroke('b')], updatedAt: 9 }), background };
+    expect(mergePage(withBg, newerWithoutField).background).toEqual(background);
+    expect(mergePage(newerWithoutField, withBg).background).toEqual(background);
+  });
+});

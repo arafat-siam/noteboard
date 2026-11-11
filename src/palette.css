@@ -456,3 +456,21 @@
   top: auto !important;
   bottom: -104px;
 }
+
+/* ---- Imported PDF pages ---- */
+.pdf-missing {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: #8a8a8e;
+  font-size: 14px;
+  pointer-events: none;
+}
+.import-pdf {
+  cursor: pointer;
+}
+.import-pdf.busy {
+  opacity: 0.6;
+  pointer-events: none;
+}

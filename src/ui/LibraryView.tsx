@@ -21,6 +21,7 @@ import { exportNotebookPdf, safeFilename, shareOrDownload } from '../export/expo
 import { COVER_COLORS, FOLDER_COLORS, type ID, type LibraryItem } from '../model/types';
 import { ColorRow, FolderGlyph, Modal, MoveDialog, NewNotebookDialog, PromptDialog } from './Dialogs';
 import { act, pathOf, useLibrary, type LibraryState } from './useLibrary';
+import { importPdf } from '../pdf/pdf';
 import { readDragIds, writeDragIds } from './dnd';
 
 interface Props {
@@ -68,6 +69,7 @@ export function LibraryView({ route, onNavigate, onOpenNotebook, onToggleSidebar
   const [selecting, setSelecting] = useState(false);
   const [selected, setSelected] = useState<Set<ID>>(new Set());
   const [dialog, setDialog] = useState<Dialog>(null);
+  const [importing, setImporting] = useState(false);
   const [menuFor, setMenuFor] = useState<ID | null>(null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
 
@@ -217,6 +219,31 @@ export function LibraryView({ route, onNavigate, onOpenNotebook, onToggleSidebar
             <button className="text-button" onClick={() => setDialog({ kind: 'new-folder' })}>
               + Folder
             </button>
+            <label className={`text-button import-pdf ${importing ? 'busy' : ''}`}>
+              {importing ? 'Importing…' : 'Import PDF'}
+              <input
+                type="file"
+                accept="application/pdf,.pdf"
+                multiple
+                hidden
+                disabled={importing}
+                onChange={(e) => {
+                  const files = [...(e.target.files ?? [])];
+                  e.target.value = '';
+                  if (!files.length) return;
+                  setImporting(true);
+                  void act(async () => {
+                    let first: string | null = null;
+                    for (const file of files) {
+                      const notebook = await importPdf(db, file, folderId);
+                      first ??= notebook.id;
+                    }
+                    // A single PDF opens straight away, ready to annotate.
+                    if (files.length === 1 && first) onOpenNotebook(first);
+                  }).finally(() => setImporting(false));
+                }}
+              />
+            </label>
             <button className="primary" onClick={() => setDialog({ kind: 'new-notebook' })}>
               + Notebook
             </button>

@@ -107,6 +107,35 @@ export class DriveClient {
     return (await res.json()) as DriveFile;
   }
 
+  /** Uploads a binary file (e.g. an imported PDF). */
+  async createBinary(
+    folderId: string,
+    name: string,
+    data: Blob,
+    mime: string,
+    appProperties: Record<string, string>,
+  ): Promise<DriveFile> {
+    const boundary = `noteboard-${crypto.randomUUID()}`;
+    const metadata = { name, parents: [folderId], mimeType: mime, appProperties };
+    const body = new Blob([
+      `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n`,
+      `--${boundary}\r\nContent-Type: ${mime}\r\n\r\n`,
+      data,
+      `\r\n--${boundary}--`,
+    ]);
+    const res = await this.request(`${UPLOAD}/files?uploadType=multipart&fields=${FILE_FIELDS}`, {
+      method: 'POST',
+      headers: { 'Content-Type': `multipart/related; boundary=${boundary}` },
+      body,
+    });
+    return (await res.json()) as DriveFile;
+  }
+
+  async downloadBlob(fileId: string): Promise<Blob> {
+    const res = await this.request(`${API}/files/${fileId}?alt=media`);
+    return res.blob();
+  }
+
   /** Moves a file to the Drive trash (recoverable by the user for 30 days). */
   async trash(fileId: string): Promise<void> {
     await this.request(`${API}/files/${fileId}?fields=id`, {

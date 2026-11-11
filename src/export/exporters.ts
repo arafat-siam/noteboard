@@ -1,5 +1,6 @@
 import type { PDFPage, RGB } from 'pdf-lib';
-import type { NoteboardDB } from '../db/db';
+import { db as defaultDb, type NoteboardDB } from '../db/db';
+import { getPdf, renderPdfRegion } from '../pdf/pdf';
 import type { LibraryItem, Notebook, Page, PaperTemplate } from '../model/types';
 import { brushOf, drawPage, outlineToSvgPath, strokeOutline } from '../ink/render';
 import { TEMPLATE_METRICS } from '../ink/templates';
@@ -40,16 +41,34 @@ function drawTemplatePdf(pdfPage: PDFPage, template: PaperTemplate, width: numbe
 }
 
 /** Vector PDF: ink stays sharp at any zoom and prints cleanly. */
-export async function exportNotebookPdf(notebook: Notebook, pages: Page[]): Promise<Blob> {
+export async function exportNotebookPdf(notebook: Notebook, pages: Page[], db: NoteboardDB = defaultDb): Promise<Blob> {
   // pdf-lib is large; load it only when the user exports.
   const lib = await import('pdf-lib');
   rgb = lib.rgb;
   const pdf = await lib.PDFDocument.create();
   pdf.setTitle(notebook.name);
   pdf.setCreator('Noteboard');
+  // Imported PDFs are embedded as real PDF pages (text stays selectable and vector-sharp).
+  const sources = new Map<string, Promise<import('pdf-lib').PDFDocument | null>>();
+  const sourceOf = (fileId: string) => {
+    let src = sources.get(fileId);
+    if (!src) {
+      src = db.files.get(fileId).then(async (f) => (f ? lib.PDFDocument.load(await f.data.arrayBuffer(), { ignoreEncryption: true }) : null));
+      sources.set(fileId, src);
+    }
+    return src;
+  };
   for (const page of pages) {
     const pdfPage = pdf.addPage([page.width * PT, page.height * PT]);
-    drawTemplatePdf(pdfPage, page.template, page.width, page.height);
+    if (page.background) {
+      const src = await sourceOf(page.background.fileId);
+      if (src) {
+        const [embedded] = await pdf.embedPdf(src, [page.background.pageIndex]);
+        if (embedded) pdfPage.drawPage(embedded, { x: 0, y: 0, width: page.width * PT, height: page.height * PT });
+      }
+    } else {
+      drawTemplatePdf(pdfPage, page.template, page.width, page.height);
+    }
     const ordered = [...page.strokes.filter((s) => s.tool === 'highlighter'), ...page.strokes.filter((s) => s.tool !== 'highlighter')];
     for (const stroke of ordered) {
       const path = outlineToSvgPath(strokeOutline(stroke, true));
@@ -69,13 +88,22 @@ export async function exportNotebookPdf(notebook: Notebook, pages: Page[]): Prom
 }
 
 /** High-resolution PNG of one page, including the paper template. */
-export async function exportPagePng(page: Page, pixelScale = 2): Promise<Blob> {
+export async function exportPagePng(page: Page, pixelScale = 2, db: NoteboardDB = defaultDb): Promise<Blob> {
   const canvas = document.createElement('canvas');
   canvas.width = Math.round(page.width * pixelScale);
   canvas.height = Math.round(page.height * pixelScale);
   const ctx = canvas.getContext('2d')!;
   ctx.fillStyle = '#fff';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
+  if (page.background) {
+    const doc = await getPdf(db, page.background.fileId);
+    if (doc) {
+      const region = { x: 0, y: 0, width: page.width, height: page.height, k: pixelScale };
+      const { canvas: rendered, task } = await renderPdfRegion(doc, page.background.pageIndex, region, canvas.width, canvas.height);
+      await task.promise;
+      ctx.drawImage(rendered, 0, 0);
+    }
+  }
   const m = TEMPLATE_METRICS;
   ctx.strokeStyle = m.lineColor;
   ctx.lineWidth = pixelScale * 0.8;
