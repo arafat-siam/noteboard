@@ -304,6 +304,9 @@ export function ToolPalette(props: Props) {
         {toggle('Hover palette', 'Hold the Pencil just above the page', settings.hoverPalette, {
           hoverPalette: !settings.hoverPalette,
         })}
+        {toggle('Pen preview dot', 'Coloured dot under the hovering Pencil', settings.hoverPreview === true, {
+          hoverPreview: settings.hoverPreview !== true,
+        })}
         <div className="segmented">
           <button className={dock === 'top' ? 'on' : ''} onClick={() => setDock('top')}>
             Toolbar on top

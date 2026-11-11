@@ -41,6 +41,8 @@ export interface ToolSettings {
   fingerDraws: boolean;
   /** Hold the hovering Pencil still to open the quick tool palette. */
   hoverPalette: boolean;
+  /** Draw a coloured preview dot under the hovering Pencil (iPadOS already shows its own pointer). */
+  hoverPreview?: boolean;
   /** Pen type used by the pen tool. */
   penBrush: BrushKind;
   /** Eraser removes whole strokes, or only the ink under it. */
@@ -137,6 +139,7 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
   const hoverHideRef = useRef<number | null>(null);
   const pressRef = useRef<{ id: number; x: number; y: number; timer: number } | null>(null);
   const selectionBoxRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   // Imported PDF page under the ink.
   const pdfCanvasRef = useRef<HTMLCanvasElement>(null);
   const pdfDocRef = useRef<PDFDocumentProxy | null>(null);
@@ -497,6 +500,26 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
     setBoxTransform('');
   }, [selection]);
 
+  // Keep the selection menu fully on screen: flip below when there's no room above (or the
+  // tool palette is there), and slide sideways near the left/right edges.
+  useLayoutEffect(() => {
+    const menu = menuRef.current;
+    if (!menu || !selection) return;
+    menu.classList.remove('below');
+    menu.style.transform = '';
+    const view = (scroller ?? document.documentElement).getBoundingClientRect();
+    const palette = document.querySelector('.tool-palette.dock-top')?.getBoundingClientRect();
+    const topLimit = Math.max(view.top, palette ? palette.bottom : 0) + 8;
+    if (menu.getBoundingClientRect().top < topLimit) menu.classList.add('below');
+    const r = menu.getBoundingClientRect();
+    const right = Math.min(view.right, window.innerWidth) - 8;
+    const left = Math.max(view.left, 0) + 8;
+    let shift = 0;
+    if (r.right > right) shift = right - r.right;
+    if (r.left + shift < left) shift = left - r.left;
+    if (shift) menu.style.transform = `translateX(${shift}px)`;
+  }, [selection, scale, scroller]);
+
   const requestRender = () => {
     if (frameRef.current == null) frameRef.current = requestAnimationFrame(renderLive);
   };
@@ -584,7 +607,8 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
     visibleCursor = cursor;
     if (hoverHideRef.current != null) clearTimeout(hoverHideRef.current);
     hoverHideRef.current = window.setTimeout(endHover, 350);
-    cursor.style.display = tool === 'lasso' ? 'none' : 'block';
+    const showOwn = tool === 'eraser' || (settings.hoverPreview === true && tool !== 'lasso');
+    cursor.style.display = showOwn ? 'block' : 'none';
     cursor.className = `hover-cursor ${tool}`;
     cursor.style.width = cursor.style.height = `${size}px`;
     cursor.style.transform = `translate(${x - size / 2}px, ${y - size / 2}px)`;
@@ -941,6 +965,36 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
     setSelection({ ...selection, ids: new Set(recolored.map((s) => s.id)) });
   };
 
+  useEffect(() => {
+    if (!selection) return;
+    let tap: { id: number; x: number; y: number; t: number } | null = null;
+    const isInside = (e: PointerEvent) => {
+      const target = e.target as Element | null;
+      // Selection menu/handles, the tool palette, the quick palette and dialogs never deselect.
+      if (target?.closest?.('.selection-box, .tool-palette, .quick-palette, .modal-backdrop, .editor-top')) return true;
+      const box = selectionBoxRef.current?.getBoundingClientRect();
+      return !!box && e.clientX >= box.left && e.clientX <= box.right && e.clientY >= box.top && e.clientY <= box.bottom;
+    };
+    const onDown = (e: PointerEvent) => {
+      if (isInside(e)) return;
+      // A finger may be starting to scroll: only a tap deselects. Pencil/mouse deselect at once.
+      if (e.pointerType === 'touch') tap = { id: e.pointerId, x: e.clientX, y: e.clientY, t: performance.now() };
+      else setSelection(null);
+    };
+    const onUp = (e: PointerEvent) => {
+      if (tap && tap.id === e.pointerId && Math.hypot(e.clientX - tap.x, e.clientY - tap.y) < 10 && performance.now() - tap.t < 400) {
+        setSelection(null);
+      }
+      tap = null;
+    };
+    window.addEventListener('pointerdown', onDown, true);
+    window.addEventListener('pointerup', onUp, true);
+    return () => {
+      window.removeEventListener('pointerdown', onDown, true);
+      window.removeEventListener('pointerup', onUp, true);
+    };
+  }, [selection]);
+
   const deleteSelection = () => {
     if (!selection) return;
     onChange(page.id, [], [...selection.ids]);
@@ -988,7 +1042,7 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
             height: selection.bounds.height * scale,
           }}
         >
-          <div className={`selection-menu ${selection.bounds.y * scale < 130 ? 'below' : ''}`}>
+          <div ref={menuRef} className="selection-menu">
             {PEN_COLORS.map((c) => (
               <button
                 key={c}

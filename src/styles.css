@@ -724,10 +724,9 @@ button.link.muted {
   top: 0;
   pointer-events: none;
 }
-/* No system pointer over pages: iPadOS shows one for a hovering Pencil, which doubled up with
-   our own hover cursor. Mice and trackpads on desktop still get a crosshair. */
+/* Let iPadOS draw its own Pencil hover pointer (it sits exactly under the tip). */
 .ink-page {
-  cursor: none;
+  cursor: default;
   touch-action: none;
 }
 @media (hover: hover) and (pointer: fine) {
