@@ -28,6 +28,10 @@ import { DEFAULT_POINTER, DEFAULT_SHAPE, DEFAULT_SLOTS, DEFAULT_TAPE, DEFAULT_TE
 import { isBrushKind } from '../ink/brushes';
 import { newId as makeId } from '../model/types';
 
+/** Zoom range: 5 % (see a whole notebook at once) to 400 %. */
+const MIN_ZOOM = 0.05;
+const MAX_ZOOM = 4;
+
 interface Op {
   pageId: string;
   added: Stroke[];
@@ -193,7 +197,7 @@ export function NotebookEditor({ notebookId, onClose }: { notebookId: string; on
   }, [scrollEl]);
 
   const fitScale = Math.min((containerWidth - 32) / PAGE_WIDTH, 1.6);
-  const scale = Math.max(0.2, fitScale * zoom);
+  const scale = Math.max(0.01, fitScale * zoom);
 
   // ---- Editing & undo ----------------------------------------------------------------
   const apply = useCallback(async (op: Op): Promise<Op> => {
@@ -455,7 +459,7 @@ export function NotebookEditor({ notebookId, onClose }: { notebookId: string; on
       if (tap) tap.travel += Math.hypot(p.x - prev.x, p.y - prev.y);
 
       if (pinch && fingers.size >= 2) {
-        pinch.current = Math.min(4, Math.max(0.5, pinch.startZoom * (fingerDistance() / pinch.startDist)));
+        pinch.current = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, pinch.startZoom * (fingerDistance() / pinch.startDist)));
         // Both fingers report every frame: apply once per frame, not once per finger.
         if (pinchFrame == null) pinchFrame = requestAnimationFrame(showPinch);
       } else if (pan) {
@@ -629,13 +633,13 @@ export function NotebookEditor({ notebookId, onClose }: { notebookId: string; on
         <span className="muted page-count">{pageIds.length} page{pageIds.length === 1 ? '' : 's'}</span>
         <div className="spacer" />
         <div className="zoom-controls" role="group" aria-label="Zoom">
-          <button className="tool" aria-label="Zoom out" onClick={() => setZoom((z) => Math.max(0.5, z / 1.25))}>
+          <button className="tool" aria-label="Zoom out" onClick={() => setZoom((z) => Math.max(MIN_ZOOM, z / 1.25))}>
             <Icon name="minus" size={18} />
           </button>
           <button className="tool text" onClick={() => setZoom(1)} title="Reset zoom">
             {Math.round(zoom * 100)}%
           </button>
-          <button className="tool" aria-label="Zoom in" onClick={() => setZoom((z) => Math.min(4, z * 1.25))}>
+          <button className="tool" aria-label="Zoom in" onClick={() => setZoom((z) => Math.min(MAX_ZOOM, z * 1.25))}>
             <Icon name="plus" size={18} />
           </button>
         </div>

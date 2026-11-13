@@ -937,25 +937,83 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
     setBoxTransform('');
   }, [selection]);
 
-  // Keep the selection menu fully on screen: flip below when there's no room above (or the
-  // tool palette is there), and slide sideways near the left/right edges.
-  useLayoutEffect(() => {
+  /**
+   * Keeps the selection menu (and its pop-up panel) fully on screen: above the selection if it
+   * fits, else below it, else floating inside the visible area. Never under a floating tool bar.
+   */
+  const placeMenu = () => {
     const menu = menuRef.current;
-    if (!menu || !selection) return;
-    menu.classList.remove('below');
+    const box = selectionBoxRef.current;
+    if (!menu || !box) return;
     menu.style.transform = '';
+    menu.style.left = '0px';
     const view = (scroller ?? document.documentElement).getBoundingClientRect();
-    const palette = document.querySelector('.tool-palette.side-top')?.getBoundingClientRect();
-    const topLimit = Math.max(view.top, palette ? palette.bottom : 0) + 8;
-    if (menu.getBoundingClientRect().top < topLimit) menu.classList.add('below');
+    let top = Math.max(view.top, 0) + 8;
+    // Inner size (without scroll bars): the menu must never make the page scroll sideways.
+    const innerRight = scroller ? view.left + scroller.clientWidth : view.right;
+    const innerBottom = scroller ? view.top + scroller.clientHeight : view.bottom;
+    let bottom = Math.min(innerBottom, window.innerHeight) - 8;
+    let left = Math.max(view.left, 0) + 8;
+    let right = Math.min(innerRight, window.innerWidth) - 8;
+    const palette = document.querySelector<HTMLElement>('.tool-palette.floating:not(.minimized)');
+    if (palette) {
+      const p = palette.getBoundingClientRect();
+      if (palette.classList.contains('side-top')) top = Math.max(top, p.bottom + 8);
+      else if (palette.classList.contains('side-bottom')) bottom = Math.min(bottom, p.top - 8);
+      else if (palette.classList.contains('side-left')) left = Math.max(left, p.right + 8);
+      else if (palette.classList.contains('side-right')) right = Math.min(right, p.left - 8);
+    }
+    // Never wider than the visible area (it wraps onto two rows instead).
+    menu.style.maxWidth = `${Math.max(200, right - left)}px`;
+    const b = box.getBoundingClientRect();
+    const h = menu.offsetHeight;
+    const above = b.top - h - 12;
+    // Below the selection means below its rotate handle.
+    const below = b.bottom + 46;
+    const y = above >= top ? above : below + h <= bottom ? below : Math.max(top, Math.min(bottom - h, above));
+    menu.style.top = `${y - b.top}px`;
     const r = menu.getBoundingClientRect();
-    const right = Math.min(view.right, window.innerWidth) - 8;
-    const left = Math.max(view.left, 0) + 8;
-    let shift = 0;
-    if (r.right > right) shift = right - r.right;
-    if (r.left + shift < left) shift = left - r.left;
-    if (shift) menu.style.transform = `translateX(${shift}px)`;
-  }, [selection, scale, scroller]);
+    let dx = 0;
+    if (r.right > right) dx = right - r.right;
+    if (r.left + dx < left) dx = left - r.left;
+    // Moved with `left` (not a transform), so it never widens the scrollable area.
+    if (dx) menu.style.left = `${dx}px`;
+    const panel = menu.querySelector<HTMLElement>('.sel-panel');
+    if (panel) {
+      panel.classList.remove('up');
+      panel.style.left = '0px';
+      if (panel.getBoundingClientRect().bottom > bottom && y - panel.offsetHeight - 6 >= top) panel.classList.add('up');
+      const pr = panel.getBoundingClientRect();
+      let px = 0;
+      if (pr.right > right) px = right - pr.right;
+      if (pr.left + px < left) px = left - pr.left;
+      if (px) panel.style.left = `${px}px`;
+    }
+  };
+  const placeMenuRef = useRef(placeMenu);
+  placeMenuRef.current = placeMenu;
+  useLayoutEffect(() => {
+    if (selection) placeMenu();
+  });
+  // Follow scrolling and resizing while something is selected.
+  useEffect(() => {
+    if (!selection) return;
+    let raf: number | null = null;
+    const onMove = () => {
+      if (raf == null)
+        raf = requestAnimationFrame(() => {
+          raf = null;
+          placeMenuRef.current();
+        });
+    };
+    scroller?.addEventListener('scroll', onMove, { passive: true });
+    window.addEventListener('resize', onMove);
+    return () => {
+      scroller?.removeEventListener('scroll', onMove);
+      window.removeEventListener('resize', onMove);
+      if (raf != null) cancelAnimationFrame(raf);
+    };
+  }, [selection, scroller]);
 
   const requestRender = () => {
     if (frameRef.current == null) frameRef.current = requestAnimationFrame(renderLive);

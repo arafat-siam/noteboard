@@ -205,36 +205,93 @@
 .side-top .pen-tray {
   align-items: flex-start;
 }
-/* Sideways: pens lie down, pointing into the page. */
+/* Sideways: pens lie down, pointing into the page (slightly smaller, so they fit the bar). */
 .tool-palette.vertical .pen {
   width: 72px;
-  height: 30px;
+  height: 28px;
 }
-.vertical .pen-art {
+.tool-palette.vertical .pen-art {
+  inset: auto;
   left: 50%;
   top: 50%;
   width: 30px;
   height: 76px;
-  inset: auto;
   margin: -38px 0 0 -15px;
 }
-.side-left .pen-art {
-  transform: translateX(-8px) rotate(90deg);
+.tool-palette.side-left .pen-art {
+  transform: translateX(-6px) rotate(90deg) scale(0.8);
 }
 .tool-palette.side-left .pen.active .pen-art {
-  transform: translateX(10px) rotate(90deg);
+  transform: translateX(6px) rotate(90deg) scale(0.8);
 }
 .tool-palette.side-left .pen:not(.active):active .pen-art {
-  transform: translateX(-2px) rotate(90deg);
+  transform: translateX(-1px) rotate(90deg) scale(0.8);
 }
-.side-right .pen-art {
-  transform: translateX(8px) rotate(-90deg);
+.tool-palette.side-right .pen-art {
+  transform: translateX(6px) rotate(-90deg) scale(0.8);
 }
 .tool-palette.side-right .pen.active .pen-art {
-  transform: translateX(-10px) rotate(-90deg);
+  transform: translateX(-6px) rotate(-90deg) scale(0.8);
 }
 .tool-palette.side-right .pen:not(.active):active .pen-art {
-  transform: translateX(2px) rotate(-90deg);
+  transform: translateX(1px) rotate(-90deg) scale(0.8);
+}
+
+/* Docked: a compact bar joined to the edge (only the pen tips show). */
+.tool-palette.docked:not(.vertical) .palette-row {
+  height: 52px;
+}
+.tool-palette.docked:not(.vertical) .pen {
+  height: 52px;
+}
+.tool-palette.docked:not(.vertical) .pen-art {
+  inset: auto;
+  left: 0;
+  top: 0;
+  width: 30px;
+  height: 76px;
+}
+.tool-palette.docked.side-bottom .pen-art {
+  transform: translateY(24px);
+}
+.tool-palette.docked.side-bottom .pen.active .pen-art {
+  transform: translateY(8px);
+}
+.tool-palette.docked.side-bottom .pen:not(.active):active .pen-art {
+  transform: translateY(18px);
+}
+.tool-palette.docked.side-top .pen-art {
+  transform: translateY(-48px) rotate(180deg);
+}
+.tool-palette.docked.side-top .pen.active .pen-art {
+  transform: translateY(-32px) rotate(180deg);
+}
+.tool-palette.docked.side-top .pen:not(.active):active .pen-art {
+  transform: translateY(-42px) rotate(180deg);
+}
+.tool-palette.docked .palette-button {
+  width: 36px;
+  height: 36px;
+}
+.tool-palette.docked .palette-color {
+  width: 26px;
+  height: 26px;
+}
+.tool-palette.docked.vertical .palette-row,
+.tool-palette.docked.vertical .pen {
+  width: 58px;
+}
+.tool-palette.docked.side-left .pen-art {
+  transform: translateX(-10px) rotate(90deg) scale(0.72);
+}
+.tool-palette.docked.side-left .pen.active .pen-art {
+  transform: translateX(0) rotate(90deg) scale(0.72);
+}
+.tool-palette.docked.side-right .pen-art {
+  transform: translateX(10px) rotate(-90deg) scale(0.72);
+}
+.tool-palette.docked.side-right .pen.active .pen-art {
+  transform: translateX(0) rotate(-90deg) scale(0.72);
 }
 .tray-divider {
   width: 1px;
@@ -1291,4 +1348,21 @@
 }
 .hover-cursor.laser {
   box-shadow: 0 0 0 4px color-mix(in srgb, currentColor 30%, transparent);
+}
+
+/* The selection menu is placed by JS (InkPage placeMenu); narrow screens wrap it onto 2 rows. */
+.selection-menu {
+  max-width: calc(100vw - 16px);
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.selection-menu .sel-panel {
+  max-width: calc(100vw - 16px);
+}
+.selection-menu .sel-panel.up {
+  top: auto;
+  bottom: calc(100% + 6px);
+}
+.selection-menu {
+  width: max-content;
 }

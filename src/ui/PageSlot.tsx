@@ -113,14 +113,21 @@ export const PageSlot = memo(function PageSlot(props: Props) {
         onHoverHold={props.onHoverHold}
         onRequestSelect={props.onRequestSelect}
       />
-      <div className="page-footer">
-        <span>
-          Page {props.index + 1} of {props.total}
-        </span>
-        <button className="link" onClick={() => props.onPageMenu(page)}>
-          Page options
+      {props.scale < 0.3 ? (
+        // Zoomed far out: just the page number (tap it for the page options).
+        <button className="page-number-mini" onClick={() => props.onPageMenu(page)}>
+          {props.index + 1}
         </button>
-      </div>
+      ) : (
+        <div className="page-footer">
+          <span>
+            Page {props.index + 1} of {props.total}
+          </span>
+          <button className="link" onClick={() => props.onPageMenu(page)}>
+            Page options
+          </button>
+        </div>
+      )}
     </div>
   );
 });

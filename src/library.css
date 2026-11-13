@@ -896,3 +896,48 @@ button.new-notebook {
 .tile.grid .folder-art {
   margin-top: 40px;
 }
+
+/* Sync status: text on the left (shortened if needed), buttons on the right, never overlapping. */
+.sync-badge:not(.action) {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 6px;
+}
+.sync-badge.muted {
+  grid-template-columns: auto minmax(0, 1fr);
+}
+.sync-label {
+  min-width: 0;
+  overflow: hidden;
+}
+.sync-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sync-text.wrap {
+  white-space: normal;
+}
+.sync-extra {
+  grid-column: 1 / -1;
+  border-top: 1px solid var(--border);
+  margin-top: 6px;
+  padding-top: 4px;
+}
+.sync-extra .link {
+  padding: 2px 0;
+  font-size: 12px;
+}
+.editor-top .sync-badge {
+  max-width: 150px;
+}
+.page-number-mini {
+  justify-self: center;
+  background: none;
+  border: none;
+  padding: 0 4px;
+  font-size: 11px;
+  color: var(--muted);
+}
