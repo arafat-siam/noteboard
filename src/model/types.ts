@@ -7,7 +7,59 @@ export type PaperTemplate = 'blank' | 'ruled' | 'grid' | 'dotted';
  * rotate, and layering. Their `points` are the 4 corners (top-left, top-right, bottom-right,
  * bottom-left, pressure 0) and `image.fileId` points at the picture in the files table.
  */
-export type InkTool = 'pen' | 'highlighter' | 'image';
+export type InkTool = 'pen' | 'highlighter' | 'image' | 'text' | 'tape';
+
+/** Pen types. Each is a different response to Pencil pressure and a different look. */
+export type BrushKind =
+  | 'fountain'
+  | 'ballpoint'
+  | 'pencil'
+  | 'brush'
+  | 'fineliner'
+  | 'marker'
+  | 'calligraphy'
+  | 'crayon';
+
+/** Line style of a stroke (shapes, lines). Missing = solid. */
+export type DashStyle = 'dashed' | 'dotted';
+
+/** Fonts for text boxes (each maps to fonts the iPad has; see ink/text.ts). */
+export type TextFont = 'sans' | 'serif' | 'mono' | 'rounded' | 'hand';
+
+/**
+ * A text box. Laid out at its own size (`width` × `height` page units, `size` = font size) and
+ * then mapped onto the stroke's 4 corner points, exactly like a picture: so moving, resizing,
+ * rotating, layering, undo and sync all work unchanged.
+ */
+export interface TextContent {
+  content: string;
+  font: TextFont;
+  size: number;
+  bold?: boolean;
+  italic?: boolean;
+  underline?: boolean;
+  align?: 'left' | 'center' | 'right';
+  /** Box size the text was laid out in (page units). */
+  width: number;
+  height: number;
+  /** Optional background colour behind the text. */
+  background?: string;
+}
+
+/**
+ * Per-pen look, saved with each stroke so it draws the same on every device.
+ * Missing values use the pen type's defaults (ink/brushes.ts).
+ */
+export interface PenStyle {
+  /** 0–1 ink opacity. */
+  opacity?: number;
+  /** How much Pencil pressure changes the width (0 = none, 1 = a lot). */
+  thinning?: number;
+  /** Tapered ends, page units. */
+  taper?: number;
+  /** Extra smoothing of wobbly lines, 0–1. */
+  stabilize?: number;
+}
 
 /** A4 at 96 dpi. All ink is stored in these page units, independent of screen size or zoom. */
 export const PAGE_WIDTH = 794;
@@ -24,13 +76,25 @@ export interface Stroke {
   /** False for mouse/finger input, where pressure is simulated from speed. */
   hasPressure: boolean;
   /** Pen type (pens only). Missing on older strokes = fountain pen. */
-  brush?: 'fountain' | 'ballpoint' | 'pencil' | 'brush';
+  brush?: BrushKind;
+  /** Pen look overrides (opacity, pressure response, taper, smoothing). */
+  penStyle?: PenStyle;
+  /** Dashed or dotted line. Missing = solid. */
+  dash?: DashStyle;
+  /** Arrowheads at the start / end of an open line. */
+  arrowStart?: boolean;
+  arrowEnd?: boolean;
+  /** Text boxes only (tool 'text'): its 4 corners are in `points`, like a picture. */
+  text?: TextContent;
   /** Fill inside the shape (closed along its points). Missing = no fill. Strokes are
    *  immutable, so changing the fill makes a new stroke (new id) like recolouring. */
   fill?: string;
   /** Fill opacity 0–1 (default 0.3). */
   fillOpacity?: number;
-  /** Pictures only (tool 'image'). */
+  /**
+   * Pictures only (tool 'image'). Tape (tool 'tape') is a band `size` wide along `points` that
+   * hides what is under it until tapped.
+   */
   image?: { fileId: ID };
   /**
    * Stacking order: items are drawn oldest first, so a larger createdAt is in front.

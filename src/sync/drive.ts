@@ -129,6 +129,45 @@ export class DriveClient {
     return res.blob();
   }
 
+  /** Bookmark for "what changed since now" (Drive changes API). */
+  async startPageToken(): Promise<string> {
+    const res = await this.request(`${API}/changes/startPageToken`);
+    return ((await res.json()) as { startPageToken: string }).startPageToken;
+  }
+
+  /**
+   * Files changed since `token` (only files this app can see, i.e. Noteboard's own) and the
+   * bookmark to use next time. One small request when nothing changed, instead of listing the
+   * whole Noteboard folder.
+   */
+  async changesSince(token: string): Promise<{ files: (DriveFile & { parents?: string[]; trashed?: boolean })[]; removed: number; next: string }> {
+    const files: (DriveFile & { parents?: string[]; trashed?: boolean })[] = [];
+    let removed = 0;
+    let pageToken: string | undefined = token;
+    let next = token;
+    while (pageToken) {
+      const params = new URLSearchParams({
+        pageToken,
+        pageSize: '1000',
+        spaces: 'drive',
+        fields: `nextPageToken,newStartPageToken,changes(fileId,removed,file(${FILE_FIELDS},parents,trashed))`,
+      });
+      const res = await this.request(`${API}/changes?${params}`);
+      const body = (await res.json()) as {
+        nextPageToken?: string;
+        newStartPageToken?: string;
+        changes: { fileId: string; removed?: boolean; file?: DriveFile & { parents?: string[]; trashed?: boolean } }[];
+      };
+      for (const c of body.changes ?? []) {
+        if (c.removed || !c.file) removed++;
+        else files.push(c.file);
+      }
+      pageToken = body.nextPageToken;
+      if (body.newStartPageToken) next = body.newStartPageToken;
+    }
+    return { files, removed, next };
+  }
+
   /** Moves a file to the Drive trash (recoverable by the user for 30 days). */
   async trash(fileId: string): Promise<void> {
     await this.request(`${API}/files/${fileId}?fields=id`, {

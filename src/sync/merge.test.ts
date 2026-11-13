@@ -90,3 +90,23 @@ describe('mergePage with imported PDFs', () => {
     expect(mergePage(newerWithoutField, withBg).background).toEqual(background);
   });
 });
+
+describe('new kinds of items survive merging and compacting', () => {
+  it('keeps text boxes, tape, dashed lines, arrows and pen styles intact', async () => {
+    const { compactStroke } = await import('./compact');
+    const text: Stroke = {
+      ...stroke('t', 5), tool: 'text', size: 0, hasPressure: false,
+      points: [0, 0, 0, 100, 0, 0, 100, 30, 0, 0, 30, 0],
+      text: { content: 'Hello', font: 'serif', size: 18, bold: true, width: 100, height: 30, align: 'center' },
+    };
+    const tape: Stroke = { ...stroke('tp', 6), tool: 'tape', color: '#f4b400', size: 28, points: [0, 0, 0, 50, 0, 0] };
+    const line: Stroke = { ...stroke('l', 7), dash: 'dotted', arrowEnd: true, brush: 'calligraphy', penStyle: { opacity: 0.5, thinning: 0.2 } };
+    const merged = mergePage(page({ strokes: [text, tape] }), page({ strokes: [line] }));
+    expect(merged.strokes.map((s) => s.id)).toEqual(['t', 'tp', 'l']);
+    expect(merged.strokes[0]!.text).toEqual(text.text);
+    expect(merged.strokes[1]!.tool).toBe('tape');
+    const kept = compactStroke(merged.strokes[2]!);
+    expect([kept.dash, kept.arrowEnd, kept.brush, kept.penStyle]).toEqual(['dotted', true, 'calligraphy', { opacity: 0.5, thinning: 0.2 }]);
+    expect(compactStroke(text).text).toEqual(text.text);
+  });
+});

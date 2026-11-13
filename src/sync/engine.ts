@@ -53,6 +53,12 @@ function extensionFor(mime: string): string {
   return sub ? `.${sub.replace('svg+xml', 'svg')}` : '';
 }
 const AUTO_SYNC_DELAY_MS = 4_000;
+/** Drive changes-feed bookmark (see quickCheck). */
+const CHANGES_TOKEN = 'driveChangesToken';
+/** Even when the changes feed says nothing changed, list the folder this often. */
+const FULL_SYNC_EVERY_MS = 15 * 60_000;
+/** Files transferred at the same time. */
+const PARALLEL = 4;
 const PERIODIC_SYNC_MS = 60_000;
 
 export class SyncEngine {
@@ -66,6 +72,8 @@ export class SyncEngine {
   private busy: () => boolean = () => false;
   /** Automatic syncing switched off by the user (kept across launches). */
   private paused = readPaused();
+  /** When the last complete sync finished (a full one is still done every so often). */
+  private lastFullSync = 0;
 
   constructor(private readonly db: NoteboardDB) {
     this.status = this.restingStatus();
@@ -201,6 +209,64 @@ export class SyncEngine {
     while (this.busy()) await new Promise((r) => setTimeout(r, 400));
   }
 
+  /** Anything on this device waiting to go up to Drive? */
+  private async hasLocalChanges(): Promise<boolean> {
+    const db = this.db;
+    if ((await db.pages.where('dirty').equals(1).count()) > 0) return true;
+    if ((await db.files.where('uploaded').equals(0).count()) > 0) return true;
+    if (((await db.getMeta<string[]>('driveRemovalQueue')) ?? []).length > 0) return true;
+    const rev = (await db.getMeta<number>('libraryRev')) ?? 0;
+    return rev !== (await db.getMeta<number>('libraryPushedRev'));
+  }
+
+  /**
+   * Cheap check before a full sync: asks Drive's changes feed whether any Noteboard file changed
+   * (one small request). Returns 'unchanged' when there is nothing to do at all, otherwise the
+   * bookmark to store after the full sync. Changes this device made itself are recognised (same
+   * modified time as recorded) and ignored.
+   */
+  private async quickCheck(drive: DriveClient, rootId: string): Promise<{ unchanged: boolean; next: string | null }> {
+    const db = this.db;
+    const token = await db.getMeta<string>(CHANGES_TOKEN);
+    const fresh = Date.now() - this.lastFullSync < FULL_SYNC_EVERY_MS;
+    if (!token) return { unchanged: false, next: await drive.startPageToken().catch(() => null) };
+    try {
+      const { files, removed, next } = await drive.changesSince(token);
+      let foreign = removed > 0;
+      for (const f of files) {
+        if (foreign) break;
+        if (f.id === rootId) {
+          if (f.trashed) foreign = true;
+          continue;
+        }
+        if (!f.parents?.includes(rootId)) continue;
+        const key = f.name.startsWith(FILE_PREFIX) && f.appProperties?.fileId ? `${FILE_PREFIX}${f.appProperties.fileId}` : f.name;
+        const seen = await db.sync.get(key);
+        if (!seen || seen.remoteModified !== f.modifiedTime || f.trashed) foreign = true;
+      }
+      if (!foreign && fresh && !(await this.hasLocalChanges())) {
+        await db.setMeta(CHANGES_TOKEN, next);
+        return { unchanged: true, next };
+      }
+      return { unchanged: false, next };
+    } catch {
+      // Token expired or the changes feed isn't available: do a full sync and start over.
+      return { unchanged: false, next: await drive.startPageToken().catch(() => null) };
+    }
+  }
+
+  /** Runs `work` on every item, at most `limit` at a time (Drive is much faster in parallel). */
+  private async pool<T>(items: T[], limit: number, work: (item: T) => Promise<void>): Promise<void> {
+    let next = 0;
+    const worker = async () => {
+      while (next < items.length) {
+        const item = items[next++]!;
+        await work(item);
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  }
+
   private async run(drive: DriveClient): Promise<void> {
     const db = this.db;
     let rootId = await db.getMeta<string>('driveRootId');
@@ -209,6 +275,16 @@ export class SyncEngine {
       await db.setMeta('driveRootId', rootId);
     }
 
+    const check = await this.quickCheck(drive, rootId);
+    if (check.unchanged) return;
+    await this.fullSync(drive, rootId);
+    // Only after a complete sync: the next check starts from here.
+    if (check.next) await db.setMeta(CHANGES_TOKEN, check.next);
+    this.lastFullSync = Date.now();
+  }
+
+  private async fullSync(drive: DriveClient, rootId: string): Promise<void> {
+    const db = this.db;
     let remoteFiles: DriveFile[];
     let libraryForcePush = false;
     try {
@@ -285,6 +361,7 @@ export class SyncEngine {
     const deletedNotebooks = new Set(
       (await db.items.toArray()).filter((i) => i.kind === 'notebook' && i.deleted).map((i) => i.id),
     );
+    const toPull: DriveFile[] = [];
     for (const file of remoteFiles) {
       if (!file.name.startsWith(PAGE_PREFIX)) continue;
       const notebookId = file.appProperties?.notebookId;
@@ -295,7 +372,9 @@ export class SyncEngine {
         continue;
       }
       const seen = await db.sync.get(file.name);
-      if (seen?.remoteModified === file.modifiedTime) continue;
+      if (seen?.remoteModified !== file.modifiedTime) toPull.push(file);
+    }
+    await this.pool(toPull, PARALLEL, async (file) => {
       await this.pauseWhileBusy();
       const remote = await drive.downloadJson<Page>(file.id);
       await db.transaction('rw', db.pages, db.strokes, async () => {
@@ -308,7 +387,7 @@ export class SyncEngine {
         await writePage(db, { ...merged, dirty: samePageContent(merged, remote) ? 0 : 1 });
       });
       await db.sync.put({ key: file.name, fileId: file.id, remoteModified: file.modifiedTime });
-    }
+    });
 
     // 3. Push the library if it changed locally (revision counter guards against edits mid-upload).
     const rev = (await db.getMeta<number>('libraryRev')) ?? 0;
@@ -353,12 +432,13 @@ export class SyncEngine {
     }
 
     // 4. Push dirty pages.
-    const dirty = await db.pages.where('dirty').equals(1).toArray();
-    for (const record of dirty) {
-      if (deletedNotebooks.has(record.notebookId) || localOnly.has(record.notebookId)) continue;
+    const dirty = (await db.pages.where('dirty').equals(1).toArray()).filter(
+      (record) => !deletedNotebooks.has(record.notebookId) && !localOnly.has(record.notebookId),
+    );
+    await this.pool(dirty, PARALLEL, async (record) => {
       await this.pauseWhileBusy();
       const page = await loadPage(db, record.id);
-      if (!page) continue;
+      if (!page) return;
       const name = `${PAGE_PREFIX}${page.id}.json`;
       const known = await db.sync.get(name);
       // Older pages get compacted on their next upload.
@@ -374,6 +454,6 @@ export class SyncEngine {
         .modify((p) => {
           if (p.updatedAt === page.updatedAt) p.dirty = 0;
         });
-    }
+    });
   }
 }

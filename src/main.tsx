@@ -6,6 +6,10 @@ import { bounceToShellApp, getToken, handleRedirect, isConfigured, signIn, wasCo
 import './pencil/bridge';
 import './styles.css';
 import './palette.css';
+import './library.css';
+import { applyTheme } from './ui/theme';
+
+applyTheme();
 
 // Safari's own pinch-zoom of the whole page enlarges canvases as bitmaps (blurry ink); the
 // editor implements its own sharp zoom instead.
@@ -58,6 +62,21 @@ function start(): void {
       </AppLock>
     </StrictMode>,
   );
+  hideSplash();
+}
+
+/** Fades the launch logo out once the first screen is drawn (shown at least briefly, so it never flickers). */
+function hideSplash(): void {
+  const splash = document.getElementById('splash');
+  if (!splash) return;
+  const shownFor = performance.now();
+  const remove = () => {
+    splash.classList.add('hide');
+    setTimeout(() => splash.remove(), 400);
+  };
+  requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(remove, Math.max(0, 650 - shownFor))));
+  // Safety net if frames don't run (e.g. the page opened in the background).
+  setTimeout(remove, 2500);
 }
 
 start();

@@ -1,19 +1,30 @@
+/* Colours are tokens: light by default, dark when the iPad is in Dark Mode (Appearance:
+   Automatic) or when Dark is chosen in Settings. Pages stay paper-white in both. */
 :root {
-  --bg: #f2f2f7;
+  --bg: #f4f4f7;
   --surface: #ffffff;
-  --surface-2: #f7f7fa;
+  --surface-2: #f2f2f6;
+  --surface-3: #e9e9ef;
   --text: #1c1c1e;
-  --muted: #6e6e73;
-  --border: #d9d9de;
+  --muted: #6b6b72;
+  --border: #dedee4;
   --accent: #2f6fde;
+  --accent-strong: #1f5bc4;
   --accent-soft: rgba(47, 111, 222, 0.12);
+  --on-accent: #ffffff;
   --danger: #d93025;
   --ok: #1e8e3e;
   --warn: #b26a00;
-  --desk: #e4e4ea;
+  --desk: #e6e6ec;
+  --paper: #ffffff;
+  --tooltip: #1c1c1e;
+  --on-tooltip: #ffffff;
+  --scrim: rgba(0, 0, 0, 0.28);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.06), 0 2px 8px rgba(0, 0, 0, 0.06);
+  --shadow-md: 0 4px 18px rgba(0, 0, 0, 0.12);
   --radius: 12px;
-  --sidebar-width: 270px;
-  color-scheme: light dark;
+  --sidebar-width: 272px;
+  color-scheme: light;
   font-family:
     -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto,
     sans-serif;
@@ -22,17 +33,42 @@
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #000000;
-    --surface: #1c1c1e;
-    --surface-2: #2c2c2e;
+  :root:not([data-theme='light']) {
+    --bg: #0b0b0d;
+    --surface: #1c1c1f;
+    --surface-2: #26262a;
+    --surface-3: #313136;
     --text: #f2f2f7;
-    --muted: #98989f;
-    --border: #3a3a3c;
+    --muted: #9a9aa2;
+    --border: #36363c;
     --accent: #5e9bff;
+    --accent-strong: #7aaeff;
     --accent-soft: rgba(94, 155, 255, 0.18);
-    --desk: #111114;
+    --desk: #121215;
+    --tooltip: #3a3a3f;
+    --scrim: rgba(0, 0, 0, 0.5);
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --shadow-md: 0 6px 22px rgba(0, 0, 0, 0.45);
+    color-scheme: dark;
   }
+}
+:root[data-theme='dark'] {
+  --bg: #0b0b0d;
+  --surface: #1c1c1f;
+  --surface-2: #26262a;
+  --surface-3: #313136;
+  --text: #f2f2f7;
+  --muted: #9a9aa2;
+  --border: #36363c;
+  --accent: #5e9bff;
+  --accent-strong: #7aaeff;
+  --accent-soft: rgba(94, 155, 255, 0.18);
+  --desk: #121215;
+  --tooltip: #3a3a3f;
+  --scrim: rgba(0, 0, 0, 0.5);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 6px 22px rgba(0, 0, 0, 0.45);
+  color-scheme: dark;
 }
 
 * {
@@ -1016,8 +1052,8 @@ button.link.muted {
   transform: translateX(-50%);
   padding: 10px 16px;
   border-radius: 12px;
-  background: #1c1c1e;
-  color: #fff;
+  background: var(--tooltip);
+  color: var(--on-tooltip);
   font-size: 14px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
   pointer-events: none;

@@ -50,7 +50,8 @@ export function boundsOf(points: Point[]): Rect {
 
 export function strokeBounds(stroke: Stroke): Rect {
   const b = boundsOf(strokePoints(stroke));
-  const pad = stroke.size;
+  const pad =
+    stroke.tool === 'tape' ? stroke.size / 2 : stroke.arrowStart || stroke.arrowEnd ? Math.max(9, stroke.size * 4.5) : stroke.size;
   return { x: b.x - pad, y: b.y - pad, width: b.width + pad * 2, height: b.height + pad * 2 };
 }
 
@@ -69,8 +70,8 @@ export function rectContains(r: Rect, p: Point): boolean {
 
 /** True if the eraser circle at `p` touches the stroke. */
 export function strokeHit(stroke: Stroke, p: Point, radius: number): boolean {
-  if (stroke.tool === 'image') {
-    // Anywhere on the picture (or within reach of its edge).
+  if (stroke.tool === 'image' || stroke.tool === 'text') {
+    // Anywhere on the picture / text box (or within reach of its edge).
     const c = strokePoints(stroke).slice(0, 4);
     if (pointInPolygon(p, c)) return true;
     return c.some((a, i) => distanceToSegment(p, a, c[(i + 1) % c.length]!) <= radius);

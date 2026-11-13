@@ -24,6 +24,9 @@ interface FakeFile {
 }
 
 let files: Map<string, FakeFile>;
+/** Drive's changes feed: ids of files in the order they changed. */
+let changeLog: string[] = [];
+let folderLists = 0;
 let clock = 0;
 const stamp = () => new Date(1_700_000_000_000 + ++clock * 1000).toISOString();
 const meta = (f: FakeFile) => ({ id: f.id, name: f.name, modifiedTime: f.modifiedTime, appProperties: f.appProperties });
@@ -47,8 +50,18 @@ async function fakeFetch(input: RequestInfo | URL, init: RequestInit = {}): Prom
   const url = new URL(String(input));
   const method = init.method ?? 'GET';
   const path = url.pathname;
+  if (path === '/drive/v3/changes/startPageToken') return json({ startPageToken: String(changeLog.length) });
+  if (path === '/drive/v3/changes') {
+    const from = Number(url.searchParams.get('pageToken'));
+    const changes = changeLog.slice(from).map((fileId) => {
+      const f = files.get(fileId)!;
+      return { fileId, file: { ...meta(f), parents: f.parents, trashed: f.trashed } };
+    });
+    return json({ changes, newStartPageToken: String(changeLog.length) });
+  }
   if (path.endsWith('/files') && method === 'GET') {
     const q = url.searchParams.get('q') ?? '';
+    if (q.includes('in parents')) folderLists++;
     let list = [...files.values()].filter((f) => !f.trashed);
     if (q.includes('noteboardRoot')) list = list.filter((f) => f.appProperties.noteboardRoot === '1');
     const parent = q.match(/'([^']+)' in parents/)?.[1];
@@ -59,12 +72,14 @@ async function fakeFetch(input: RequestInfo | URL, init: RequestInit = {}): Prom
     const body = JSON.parse(String(init.body));
     const f: FakeFile = { id: crypto.randomUUID(), name: body.name, parents: [], mimeType: body.mimeType, appProperties: body.appProperties ?? {}, data: new Uint8Array(), modifiedTime: stamp(), trashed: false };
     files.set(f.id, f);
+    changeLog.push(f.id);
     return json({ id: f.id });
   }
   if (path.endsWith('/upload/drive/v3/files') && method === 'POST') {
     const { metadata, data } = await parseMultipart(init.body as Blob, (init.headers as Record<string, string>)['Content-Type']!);
     const f: FakeFile = { id: crypto.randomUUID(), name: metadata.name, parents: metadata.parents, mimeType: metadata.mimeType, appProperties: metadata.appProperties ?? {}, data, modifiedTime: stamp(), trashed: false };
     files.set(f.id, f);
+    changeLog.push(f.id);
     return json(meta(f));
   }
   const id = path.split('/').pop()!;
@@ -73,10 +88,13 @@ async function fakeFetch(input: RequestInfo | URL, init: RequestInit = {}): Prom
   if (path.includes('/upload/') && method === 'PATCH') {
     f.data = new Uint8Array(await (init.body as Blob).arrayBuffer());
     f.modifiedTime = stamp();
+    changeLog.push(f.id);
     return json(meta(f));
   }
   if (method === 'PATCH') {
     Object.assign(f, JSON.parse(String(init.body)));
+    f.modifiedTime = stamp();
+    changeLog.push(f.id);
     return json({ id });
   }
   if (url.searchParams.get('alt') === 'media') return new Response(f.data, { status: 200 });
@@ -93,6 +111,8 @@ const stroke = (id: string): Stroke => ({
 
 beforeEach(async () => {
   files = new Map();
+  changeLog = [];
+  folderLists = 0;
   vi.stubGlobal('fetch', fakeFetch);
   (await import('./auth.testing')).setToken();
   vi.stubGlobal('navigator', { onLine: true });
@@ -221,6 +241,41 @@ describe('pausing sync', () => {
     expect(calls).toHaveBeenCalled();
     expect(engine.current.state).toBe('paused'); // still paused afterwards
     engine.setPaused(false);
+  });
+});
+
+describe('Drive changes feed', () => {
+  it('an idle device checks with one small request instead of listing the folder', async () => {
+    const a = new NoteboardDB(`ca-${crypto.randomUUID()}`);
+    const b = new NoteboardDB(`cb-${crypto.randomUUID()}`);
+    const nb = await createNotebook(a, 'Maths', null);
+    await applyStrokeChange(a, nb.pageIds[0]!, [stroke('m1')], []);
+    const engineA = new SyncEngine(a) as unknown as { run(d: DriveClient): Promise<void> };
+    const engineB = new SyncEngine(b) as unknown as { run(d: DriveClient): Promise<void> };
+    const drive = new DriveClient('test-token');
+
+    await engineA.run(drive);
+    await engineB.run(drive);
+    expect((await loadPage(b, nb.pageIds[0]!))?.strokes.map((s) => s.id)).toEqual(['m1']);
+
+    // Let both settle (B's first sync uploads its copy of the library list, which A then reads).
+    await engineA.run(drive);
+    await engineB.run(drive);
+    // Nothing changed anywhere: no folder listing, on either device.
+    const before = folderLists;
+    await engineA.run(drive);
+    await engineB.run(drive);
+    expect(folderLists).toBe(before);
+
+    // A writes: A uploads (its own change is not mistaken for someone else's) …
+    await applyStrokeChange(a, nb.pageIds[0]!, [stroke('m2')], []);
+    await engineA.run(drive);
+    const afterUpload = folderLists;
+    await engineA.run(drive);
+    expect(folderLists).toBe(afterUpload);
+    // … and B notices through the changes feed and pulls it.
+    await engineB.run(drive);
+    expect((await loadPage(b, nb.pageIds[0]!))?.strokes.map((s) => s.id).sort()).toEqual(['m1', 'm2']);
   });
 });
 

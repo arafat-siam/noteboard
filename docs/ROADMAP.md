@@ -18,22 +18,26 @@
 - [x] Export PNG, JSON backup & import
 - [x] Google Drive sync (conflict-free merge, compact storage, pause / sync now, keep on this iPad only)
 - [x] PIN app lock
+- [x] Text boxes (fonts, size, bold/italic/underline, alignment, colour, highlight), editable, move/resize/rotate
+- [x] Shapes tool: 13 shapes, solid / dashed / dotted borders, arrows, fill; line style + arrowheads on any selected ink
+- [x] Tape (any colour, tap to peek), eight pen types (fineliner, marker, calligraphy, crayon added) with opacity / pressure / taper / smoothing per pen
+- [x] Hex colours and colour wheel everywhere; laser colour / size / trail; hover pointer dot / ring / crosshair
+- [x] Toolbar floating or docked, on any side; Light / Dark / Automatic appearance; launch screen with logo
+- [x] Export chosen pages (range or picked in Pages) as PDF or PNG images
+- [x] Drive changes feed: idle devices check with one small request; pages transfer 4 at a time
 
 ## Missing compared with pro note apps (GoodNotes, Notability, Drawboard, Noteshelf)
 Rough priority order (★ = biggest gap).
 
 ### Writing and editing
-- [ ] ★ Text boxes (typed text with fonts, sizes, colours)
 - [ ] ★ Handwriting search and convert handwriting to text
-- [ ] ★ Custom colours (colour wheel / hex / eyedropper) and saved favourite colours
+- [ ] Eyedropper and saved favourite colours
 - [ ] Ruler (and protractor) for straight lines at any angle
-- [ ] Shapes tool: arrows, dashed/dotted lines, stars; line style and arrowheads on any line
-- [ ] Eraser options: erase only highlighter, auto-switch back to the pen
+- [ ] Eraser: auto-switch back to the pen
 - [ ] Rectangle selection and select-by-type in the lasso
 - [ ] Zoom window (write large, ink lands small) for neat handwriting
 - [ ] Picture tools: crop, opacity, replace; camera photo and document scanner
 - [ ] Stickers / saved elements library (reuse drawings and pictures)
-- [ ] Tape (hide answers, tap to reveal) for studying
 - [ ] Audio recording synced to what you wrote
 
 ### Pages, paper and PDFs
@@ -53,9 +57,9 @@ Rough priority order (★ = biggest gap).
 - [ ] Lock individual notebooks
 
 ### Sharing and sync
-- [ ] Export selected pages only; print
+- [ ] Print
 - [ ] Share a read-only link; real-time collaboration
-- [ ] Faster, near-instant sync between devices (Drive changes API)
+- [ ] Push notifications for near-instant sync (Drive changes are polled every minute)
 - [ ] Version history / restore an older version of a page; automatic backups
 - [ ] Presentation mode (mirror to an external display without the toolbars)
 
@@ -65,5 +69,5 @@ Rough priority order (★ = biggest gap).
 
 ### Polish
 - [ ] Two notebooks side by side inside the app
-- [ ] Dark paper mode
+- [ ] Dark paper (the app UI already has dark mode)
 - [ ] Accessibility audit, localization, onboarding tour

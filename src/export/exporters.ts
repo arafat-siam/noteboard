@@ -2,8 +2,10 @@ import type { PDFPage, RGB } from 'pdf-lib';
 import { db as defaultDb, type NoteboardDB } from '../db/db';
 import { loadPage, withStrokes, writePage } from '../db/pages';
 import { getPdf, renderPdfRegion } from '../pdf/pdf';
-import type { LibraryItem, Notebook, Page, PaperTemplate } from '../model/types';
-import { brushOf, DEFAULT_FILL_OPACITY, drawPage, fillSvgPath, outlineToSvgPath, strokeOutline } from '../ink/render';
+import type { LibraryItem, Notebook, Page, PaperTemplate, Stroke } from '../model/types';
+import { brushOf, DEFAULT_FILL_OPACITY, drawPage, fillSvgPath, strokeSvgPath } from '../ink/render';
+import { arrowPath } from '../ink/shapeTool';
+import { drawTextStroke } from '../ink/text';
 import { TEMPLATE_METRICS } from '../ink/templates';
 import { imageCorners, preloadImages } from '../ink/images';
 import { mergeLibrary, mergePage } from '../sync/merge';
@@ -95,8 +97,13 @@ export async function exportNotebookPdf(notebook: Notebook, pages: Page[], db: N
     // Stacking order, like on screen (pictures and ink layered as arranged).
     const ordered = [...page.strokes].sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id));
     for (const stroke of ordered) {
-      if (stroke.tool === 'image') {
-        const embedded = stroke.image ? await pictureOf(stroke.image.fileId) : null;
+      if (stroke.tool === 'image' || stroke.tool === 'text') {
+        const embedded =
+          stroke.tool === 'image'
+            ? stroke.image
+              ? await pictureOf(stroke.image.fileId)
+              : null
+            : await textImage(stroke).then(async (png) => (png ? pdf.embedPng(await png.arrayBuffer()) : null));
         if (!embedded) continue;
         const [tl, tr, , bl] = imageCorners(stroke) as [{ x: number; y: number }, { x: number; y: number }, unknown, { x: number; y: number }];
         const width = Math.hypot(tr.x - tl.x, tr.y - tl.y) * PT;
@@ -126,20 +133,30 @@ export async function exportNotebookPdf(notebook: Notebook, pages: Page[], db: N
           });
         }
       }
-      const path = outlineToSvgPath(strokeOutline(stroke, true));
+      const path = strokeSvgPath(stroke);
       if (!path) continue;
-      pdfPage.drawSvgPath(path, {
-        x: 0,
-        y: page.height * PT,
-        scale: PT,
-        color: hexToRgb(stroke.color),
-        opacity: stroke.tool === 'highlighter' ? 0.35 : (brushOf(stroke)?.opacity ?? 1),
-        borderWidth: 0,
-      });
+      const opacity = stroke.tool === 'highlighter' ? 0.35 : stroke.tool === 'tape' ? 1 : (brushOf(stroke)?.opacity ?? 1);
+      pdfPage.drawSvgPath(path, { x: 0, y: page.height * PT, scale: PT, color: hexToRgb(stroke.color), opacity, borderWidth: 0 });
+      const arrows = arrowPath(stroke);
+      if (arrows) pdfPage.drawSvgPath(arrows, { x: 0, y: page.height * PT, scale: PT, color: hexToRgb(stroke.color), opacity, borderWidth: 0 });
     }
   }
   const bytes = await pdf.save();
   return new Blob([bytes], { type: 'application/pdf' });
+}
+
+/** A text box drawn at 4 pixels per page unit (placed on its corners like a picture). */
+async function textImage(stroke: Stroke): Promise<Blob | null> {
+  const t = stroke.text;
+  if (!t) return null;
+  const k = 4;
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.ceil(t.width * k));
+  canvas.height = Math.max(1, Math.ceil(t.height * k));
+  const ctx = canvas.getContext('2d')!;
+  ctx.scale(k, k);
+  drawTextStroke(ctx, { ...stroke, points: [0, 0, 0, t.width, 0, 0, t.width, t.height, 0, 0, t.height, 0] });
+  return new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
 }
 
 /** High-resolution PNG of one page, including the paper template. */
@@ -242,6 +259,24 @@ export async function shareOrDownload(blob: Blob, filename: string): Promise<voi
   a.download = filename;
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 10_000);
+}
+
+/** Several files at once (e.g. one PNG per page): one share sheet, or one download each. */
+export async function shareOrDownloadAll(files: { blob: Blob; name: string }[]): Promise<void> {
+  if (files.length === 1) return shareOrDownload(files[0]!.blob, files[0]!.name);
+  const list = files.map((f) => new File([f.blob], f.name, { type: f.blob.type }));
+  if (navigator.canShare?.({ files: list })) {
+    try {
+      await navigator.share({ files: list });
+      return;
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return;
+    }
+  }
+  for (const f of files) {
+    await shareOrDownload(f.blob, f.name);
+    await new Promise((r) => setTimeout(r, 250));
+  }
 }
 
 export function safeFilename(name: string): string {

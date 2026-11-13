@@ -27,8 +27,21 @@ import {
 } from './geometry';
 import { eraseFromStroke } from './erase';
 import type { BrushKind } from './brushes';
-import { PEN_COLORS, type PenSlot } from './palette';
+import {
+  PEN_COLORS,
+  SHAPE_SIZE_RANGE,
+  type PenSlot,
+  type PointerSettings,
+  type ShapeToolSettings,
+  type TapeToolSettings,
+  type TextToolSettings,
+} from './palette';
 import { templateStyle } from './templates';
+import type { DashStyle, PenStyle, TextContent } from '../model/types';
+import { boxCorners, DEFAULT_TEXT_WIDTH, makeTextStroke, retextStroke, TEXT_FONT_ORDER, TEXT_FONTS } from './text';
+import { makeShapeStroke, makeTapeStroke } from './shapeTool';
+import { revealedTape } from './render';
+import { DashSample } from '../ui/Icon';
 import type { PDFDocumentProxy, RenderTask } from 'pdfjs-dist';
 import { db } from '../db/db';
 import { useLiveQuery } from 'dexie-react-hooks';
@@ -37,7 +50,7 @@ import { noteHover, notePen, penActiveWithin } from './penState';
 import { diagnostics, recordEvent, recordFrame } from './diagnostics';
 import { hideHoverCursor, showHoverCursor } from './hoverCursor';
 
-export type ToolKind = 'pen' | 'highlighter' | 'eraser' | 'lasso' | 'laser';
+export type ToolKind = 'pen' | 'highlighter' | 'eraser' | 'lasso' | 'laser' | 'text' | 'shape' | 'tape';
 
 export interface ToolSettings {
   tool: ToolKind;
@@ -59,6 +72,14 @@ export interface ToolSettings {
   /** The user's pens (tray order) and which one is in hand. color/penSize/... mirror it. */
   slots: PenSlot[];
   activeSlot: string;
+  /** Fine-tuning of the pen in hand (mirrors its slot). */
+  penStyle?: PenStyle;
+  /** Eraser leaves pen ink alone and only removes highlighter. */
+  eraseHighlighterOnly?: boolean;
+  text: TextToolSettings;
+  shape: ShapeToolSettings;
+  tape: TapeToolSettings;
+  pointer: PointerSettings;
 }
 
 interface Props {
@@ -77,7 +98,7 @@ interface Props {
 
 interface Gesture {
   pointerId: number;
-  kind: 'ink' | 'erase' | 'lasso' | 'move' | 'scale' | 'rotate' | 'laser' | 'vertex';
+  kind: 'ink' | 'erase' | 'lasso' | 'move' | 'scale' | 'rotate' | 'laser' | 'vertex' | 'shape' | 'tape' | 'text';
   /** Page position on screen at gesture start; reading layout on every sample would stall the pen. */
   origin: { left: number; top: number };
   points: number[];
@@ -123,6 +144,21 @@ interface Selection {
   bounds: Rect;
 }
 
+/** A text box being typed into. */
+interface TextDraft {
+  /** The box being changed, or null for a new one. */
+  editing: Stroke | null;
+  /** Top-left corner (page units). */
+  at: Point;
+  /** Box width in the text's own units. */
+  width: number;
+  /** On-page size of one text unit (a resized box keeps its scale while editing). */
+  factor: number;
+  content: string;
+  color: string;
+  style: Omit<TextToolSettings, 'color'>;
+}
+
 const HOLD_TO_SNAP_MS = 500;
 /** A finger touch shorter than this (that didn't move) is a tap: on ink it selects it, like Drawboard. */
 const TAP_MS = 300;
@@ -150,7 +186,9 @@ const VIEW_LEAD = 0.1;
 
 /** Menus, buttons and sliders on the page (the Pencil and fingers operate them, not write). */
 export function isControl(target: EventTarget | null): boolean {
-  return !!(target as Element | null)?.closest?.('button, input, select, textarea, label, [role="slider"], .selection-menu, .canvas-menu');
+  return !!(target as Element | null)?.closest?.(
+    'button, input, select, textarea, label, [role="slider"], .selection-menu, .canvas-menu, .text-editor',
+  );
 }
 
 /** Swaps replaced items' ids in a selection (recolour / fill make new strokes). */
@@ -532,11 +570,15 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
   const drawLaser = (ctx: CanvasRenderingContext2D, region: CanvasRegion): boolean => {
     const now = performance.now();
     const drawing = gestureRef.current?.kind === 'laser';
+    const { laserColor, laserSize, laserTrail } = settings.pointer ?? { laserColor: '#ff3b30', laserSize: 10, laserTrail: LASER_LIFE_MS };
+    const life = Math.max(120, laserTrail || 0);
     // Drop faded points (the trail being drawn keeps at least its tip).
     laserRef.current = laserRef.current
       .map((trail, i, all) => {
         const live = drawing && i === all.length - 1;
-        const kept = trail.filter((q) => now - q.t < LASER_LIFE_MS);
+        // "Dot only": no trail, just the tip while it moves.
+        if (!laserTrail) return live && trail.length ? [trail[trail.length - 1]!] : [];
+        const kept = trail.filter((q) => now - q.t < life);
         return live && !kept.length && trail.length ? [trail[trail.length - 1]!] : kept;
       })
       .filter((trail) => trail.length);
@@ -551,26 +593,29 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
       for (let i = 1; i < trail.length; i++) {
         const a = trail[i - 1]!;
         const b = trail[i]!;
-        const fade = Math.max(0, 1 - (now - b.t) / LASER_LIFE_MS);
-        // Soft red glow, then a bright core.
+        const fade = Math.max(0, 1 - (now - b.t) / life);
+        // Soft glow, then a bright core.
         ctx.globalAlpha = 0.25 * fade;
-        ctx.strokeStyle = '#ff3b30';
-        ctx.lineWidth = 12 * px;
+        ctx.strokeStyle = laserColor;
+        ctx.lineWidth = laserSize * 1.2 * px;
         ctx.beginPath();
         ctx.moveTo(a.x, a.y);
         ctx.lineTo(b.x, b.y);
         ctx.stroke();
         ctx.globalAlpha = fade;
-        ctx.strokeStyle = '#ff6b5e';
-        ctx.lineWidth = 4 * px;
+        ctx.lineWidth = laserSize * 0.4 * px;
         ctx.stroke();
       }
       const tip = trail[trail.length - 1]!;
-      const fade = Math.max(0, 1 - (now - tip.t) / LASER_LIFE_MS);
-      ctx.globalAlpha = drawing ? 1 : fade;
-      ctx.fillStyle = '#ff3b30';
+      const fade = laserTrail ? Math.max(0, 1 - (now - tip.t) / life) : 1;
+      ctx.globalAlpha = 0.3 * (drawing ? 1 : fade);
+      ctx.fillStyle = laserColor;
       ctx.beginPath();
-      ctx.arc(tip.x, tip.y, 5 * px, 0, Math.PI * 2);
+      ctx.arc(tip.x, tip.y, laserSize * px, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = drawing ? 1 : fade;
+      ctx.beginPath();
+      ctx.arc(tip.x, tip.y, laserSize * 0.5 * px, 0, Math.PI * 2);
       ctx.fill();
     }
     ctx.restore();
@@ -617,15 +662,21 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
   };
 
   const badgeRef = useRef<HTMLDivElement>(null);
-  const showBadge = (text: string) => {
+  /** Size / angle readout; at the selection's centre, or at (left, top) in page CSS px. */
+  const showBadge = (text: string, left?: number, top?: number) => {
     const el = badgeRef.current;
-    const box = selectionBoxRef.current?.getBoundingClientRect();
-    const page = containerRef.current?.getBoundingClientRect();
-    if (!el || !box || !page) return;
+    if (!el) return;
+    if (left === undefined || top === undefined) {
+      const box = selectionBoxRef.current?.getBoundingClientRect();
+      const page = containerRef.current?.getBoundingClientRect();
+      if (!box || !page) return;
+      left = box.left + box.width / 2 - page.left;
+      top = box.top + box.height / 2 - page.top - 14;
+    }
     el.textContent = text;
     el.style.display = 'block';
-    el.style.left = `${box.left + box.width / 2 - page.left}px`;
-    el.style.top = `${box.top + box.height / 2 - page.top - 14}px`;
+    el.style.left = `${left}px`;
+    el.style.top = `${top}px`;
   };
   const hideBadge = () => {
     if (badgeRef.current) badgeRef.current.style.display = 'none';
@@ -705,7 +756,18 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
       hasPressure: g.hasPressure,
       createdAt: Date.now(),
       ...(highlighter ? {} : { brush: settings.penBrush }),
+      ...(!highlighter && settings.penStyle && Object.keys(settings.penStyle).length ? { penStyle: settings.penStyle } : {}),
     };
+  };
+
+  /** The shape or tape being dragged out, as it would be saved. */
+  const dragItem = (g: Gesture, id = 'live'): Stroke | null => {
+    const a = g.moveStart;
+    const b = g.scaleFrom;
+    if (Math.hypot(b.x - a.x, b.y - a.y) < 3) return null;
+    if (g.kind === 'tape') return makeTapeStroke(a, b, settings.tape.color, settings.tape.width, id);
+    const s = settings.shape;
+    return makeShapeStroke(s.kind, a, b, { color: s.color, size: s.size, dash: s.dash, fill: s.fill, fillOpacity: s.fillOpacity }, id);
   };
 
   const growDirty = (g: Gesture, x: number, y: number) => {
@@ -796,7 +858,14 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
 
     clearLive(ctx, null);
     applyRegion(ctx, region);
-    if (g.kind === 'lasso' && g.lasso.length > 1) {
+    if (g.kind === 'shape' || g.kind === 'tape') {
+      const item = dragItem(g);
+      if (item) drawStroke(ctx, item, true);
+      if (item && g.kind === 'shape') {
+        const b = strokeBounds(item);
+        showBadge(`${Math.round(b.width)} × ${Math.round(b.height)}`, (b.x + b.width / 2) * scale, b.y * scale - 22);
+      }
+    } else if (g.kind === 'lasso' && g.lasso.length > 1) {
       ctx.setLineDash([6 / scale, 5 / scale]);
       ctx.lineWidth = 1.5 / scale;
       ctx.strokeStyle = '#2f6fde';
@@ -876,7 +945,7 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
     menu.classList.remove('below');
     menu.style.transform = '';
     const view = (scroller ?? document.documentElement).getBoundingClientRect();
-    const palette = document.querySelector('.tool-palette.dock-top')?.getBoundingClientRect();
+    const palette = document.querySelector('.tool-palette.side-top')?.getBoundingClientRect();
     const topLimit = Math.max(view.top, palette ? palette.bottom : 0) + 8;
     if (menu.getBoundingClientRect().top < topLimit) menu.classList.add('below');
     const r = menu.getBoundingClientRect();
@@ -892,12 +961,25 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
     if (frameRef.current == null) frameRef.current = requestAnimationFrame(renderLive);
   };
 
+  /** What the eraser may touch: never pictures or text; only highlighter if so set. */
+  const erasable = (s: Stroke) =>
+    s.tool !== 'image' && s.tool !== 'text' && (!settings.eraseHighlighterOnly || s.tool === 'highlighter');
+
   const eraseAt = (g: Gesture, p: Point) => {
     const radius = settings.eraserSize / 2;
     let changed = false;
     if (settings.eraserMode === 'partial') {
       for (const s of page.strokes) {
-        if (s.tool === 'image') continue;
+        if (!erasable(s)) continue;
+        if (s.tool === 'tape') {
+          // Tape comes off whole.
+          if (!g.erased.has(s.id) && !g.pieces.has(s.id) && strokeHit(s, p, radius)) {
+            g.pieces.set(s.id, []);
+            hiddenRef.current.add(s.id);
+            changed = true;
+          }
+          continue;
+        }
         const current = g.pieces.get(s.id) ?? (g.erased.has(s.id) ? [] : [s]);
         let touched = false;
         const next: Stroke[] = [];
@@ -919,7 +1001,7 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
       return;
     }
     for (const s of page.strokes) {
-      if (s.tool === 'image') continue;
+      if (!erasable(s)) continue;
       if (!g.erased.has(s.id) && strokeHit(s, p, radius)) {
         g.erased.add(s.id);
         hiddenRef.current.add(s.id);
@@ -946,6 +1028,31 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
     return undefined;
   };
 
+  /** The topmost tape under a point. */
+  const tapeAt = (p: Point): Stroke | undefined => {
+    for (let i = page.strokes.length - 1; i >= 0; i--) {
+      const s = page.strokes[i]!;
+      if (s.tool === 'tape' && strokeHit(s, p, 2)) return s;
+    }
+    return undefined;
+  };
+
+  /** Peek under tape, or cover it up again (this device, this session only). */
+  const toggleTape = (s: Stroke) => {
+    if (revealedTape.has(s.id)) revealedTape.delete(s.id);
+    else revealedTape.add(s.id);
+    paintInk(true);
+  };
+
+  /** The topmost text box under a point. */
+  const textAt = (p: Point): Stroke | undefined => {
+    for (let i = page.strokes.length - 1; i >= 0; i--) {
+      const s = page.strokes[i]!;
+      if (s.tool === 'text' && strokeHit(s, p, 2)) return s;
+    }
+    return undefined;
+  };
+
   const selectStroke = (s: Stroke) => {
     const b = strokeBounds(s);
     setSelection({ ids: new Set([s.id]), bounds: b });
@@ -962,17 +1069,31 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
     // Preview exactly where (and how big) ink will land.
     const size =
       tool === 'laser'
-        ? 10
+        ? settings.pointer?.laserSize ?? 10
         : tool === 'eraser'
-        ? settings.eraserSize * scale
-        : tool === 'highlighter'
-          ? settings.highlighterSize * scale
-          : Math.max(5, settings.penSize * scale);
+          ? settings.eraserSize * scale
+          : tool === 'highlighter'
+            ? settings.highlighterSize * scale
+            : tool === 'tape'
+              ? settings.tape.width * scale
+              : tool === 'shape'
+                ? 18
+                : Math.max(settings.pointer?.cursor === 'dot' ? 5 : 9, settings.penSize * scale);
     if (tool === 'eraser' || settings.hoverPreview !== false) {
       showHoverCursor(e.nativeEvent, {
         tool,
         size,
-        color: tool === 'highlighter' ? settings.highlighterColor : settings.color,
+        variant: settings.pointer?.cursor,
+        color:
+          tool === 'highlighter'
+            ? settings.highlighterColor
+            : tool === 'laser'
+              ? settings.pointer?.laserColor ?? '#ff3b30'
+              : tool === 'tape'
+                ? settings.tape.color
+                : tool === 'shape'
+                  ? settings.shape.color
+                  : settings.color,
       });
     } else {
       hideHoverCursor();
@@ -1131,6 +1252,11 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
     } else if (settings.tool === 'laser') {
       g.kind = 'laser';
       laserRef.current.push([{ ...p, t: performance.now() }]);
+    } else if (settings.tool === 'shape' || settings.tool === 'tape' || settings.tool === 'text') {
+      if (selection) setSelection(null);
+      g.kind = settings.tool;
+      g.moveStart = p;
+      g.scaleFrom = p;
     } else if (settings.tool === 'lasso') {
       setSelection(null);
       g.kind = 'lasso';
@@ -1219,6 +1345,11 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
         case 'move':
           g.offset = { x: p.x - g.moveStart.x, y: p.y - g.moveStart.y };
           break;
+        case 'shape':
+        case 'tape':
+        case 'text':
+          g.scaleFrom = p;
+          break;
         case 'rotate': {
           let angle = Math.atan2(p.y - g.anchor.y, p.x - g.anchor.x) - g.startAngle;
           // Snap to every 15° (0°, 15°, 30°, 45°, 90°…) when close, with a Pencil tick.
@@ -1283,8 +1414,11 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
       cancelPress();
       // A quick finger tap that didn't move (moving cancels the press): select the ink under it.
       if (!cancelled && performance.now() - press.t < TAP_MS) {
+        // Tapping tape peeks under it (like flash cards); tapping ink selects it.
+        const tape = tapeAt(press.at);
         const hit = strokeAt(press.at);
-        if (hit) selectStroke(hit);
+        if (tape && (!hit || hit.id === tape.id || hit.createdAt < tape.createdAt)) toggleTape(tape);
+        else if (hit) selectStroke(hit);
       }
     }
     if (e.pointerType === 'pen') notePen(false);
@@ -1311,6 +1445,33 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
           onChange(page.id, [stroke], []);
           // Like Drawboard: a recognised shape stays selected, ready to move, resize or rotate.
           if (g.snapped) setSelection({ ids: new Set([stroke.id]), bounds: strokeBounds(stroke) });
+          break;
+        }
+        case 'shape':
+        case 'tape': {
+          const item = dragItem(g, newId());
+          if (!item) {
+            // A tap with the tape tool peeks under tape.
+            const tape = g.kind === 'tape' ? tapeAt(g.moveStart) : undefined;
+            if (tape) toggleTape(tape);
+            break;
+          }
+          paintNow([item]);
+          onChange(page.id, [item], []);
+          if (g.kind === 'shape') setSelection({ ids: new Set([item.id]), bounds: strokeBounds(item) });
+          break;
+        }
+        case 'text': {
+          const existing = textAt(g.moveStart);
+          if (existing && Math.hypot(g.scaleFrom.x - g.moveStart.x, g.scaleFrom.y - g.moveStart.y) < 6) {
+            startTextEdit(existing);
+            break;
+          }
+          // Drag sideways to choose the box width; a tap gives the standard width.
+          const dx = g.scaleFrom.x - g.moveStart.x;
+          const width = Math.abs(dx) > 40 ? Math.abs(dx) : DEFAULT_TEXT_WIDTH;
+          const x = Math.abs(dx) > 40 ? Math.min(g.moveStart.x, g.scaleFrom.x) : g.moveStart.x;
+          startTextEdit(null, { x: Math.min(x, page.width - 40), y: g.moveStart.y - settings.text.size * 0.9 }, Math.min(width, page.width - x));
           break;
         }
         case 'erase':
@@ -1413,6 +1574,7 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
       hiddenRef.current = new Set();
       paintInk(true);
     }
+    if (g.kind === 'shape') hideBadge();
     requestRender(); // clears the live layer
   };
 
@@ -1430,7 +1592,7 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
   /** Fills the selected strokes (null = remove fill). */
   const fillSelection = (fill: string | null, opacity: number) => {
     if (!selection) return;
-    const targets = page.strokes.filter((s) => selection.ids.has(s.id) && s.tool !== 'image');
+    const targets = page.strokes.filter((s) => selection.ids.has(s.id) && (s.tool === 'pen' || s.tool === 'highlighter'));
     if (!targets.length) return;
     const filled = targets.map((s) => fillStroke(s, fill, opacity, newId()));
     paintNow(filled);
@@ -1443,7 +1605,7 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
   /** Shows the selection with a different fill opacity while the slider moves (not saved yet). */
   const previewFill = (opacity: number) => {
     if (!selection || !selectedFill?.fill) return;
-    const targets = page.strokes.filter((s) => selection.ids.has(s.id) && s.tool !== 'image');
+    const targets = page.strokes.filter((s) => selection.ids.has(s.id) && (s.tool === 'pen' || s.tool === 'highlighter'));
     hiddenRef.current = new Set(targets.map((s) => s.id));
     paintInk(true);
     const ctx = inkRef.current?.getContext('2d');
@@ -1459,8 +1621,11 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
   };
   const [fillOpacity, setFillOpacity] = useState(DEFAULT_FILL_OPACITY);
   /** Which pop-up of the selection menu is open. */
-  const [menuPanel, setMenuPanel] = useState<'color' | 'fill' | 'arrange' | null>(null);
+  const [menuPanel, setMenuPanel] = useState<'color' | 'fill' | 'arrange' | 'style' | null>(null);
   const onlyPictures = !!selection && page.strokes.every((s) => !selection.ids.has(s.id) || s.tool === 'image');
+  /** Fill applies to ink and shapes, not to pictures, text or tape. */
+  const canFill = !!selection && page.strokes.some((s) => selection.ids.has(s.id) && (s.tool === 'pen' || s.tool === 'highlighter'));
+  const singleText = !!selection && selection.ids.size === 1 && page.strokes.some((s) => selection.ids.has(s.id) && s.tool === 'text');
   const selectedColor = (selection && page.strokes.find((s) => selection.ids.has(s.id))?.color) || settings.color;
   // A new selection starts with the pop-ups closed and the slider showing its current fill.
   const selectionKey = selection ? [...selection.ids].join() : '';
@@ -1641,6 +1806,156 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
     return () => window.removeEventListener('pointerdown', close, true);
   }, [canvasMenu]);
 
+  // ---- Text boxes ------------------------------------------------------------------------
+  const textAreaRef = useRef<HTMLTextAreaElement>(null);
+  const [textEdit, setTextEdit] = useState<TextDraft | null>(null);
+  const textEditRef = useRef(textEdit);
+  textEditRef.current = textEdit;
+
+  /** Opens the text editor on a box (or a new one at `at`). Focuses synchronously so the iPad keyboard opens. */
+  const startTextEdit = (existing: Stroke | null, at?: Point, width?: number) => {
+    if (textEditRef.current) commitText();
+    let draft: TextDraft;
+    if (existing?.text) {
+      const [tl, tr] = boxCorners(existing);
+      const t = existing.text;
+      draft = {
+        editing: existing,
+        at: tl,
+        width: t.width,
+        factor: Math.hypot(tr.x - tl.x, tr.y - tl.y) / (t.width || 1),
+        content: t.content,
+        color: existing.color,
+        style: { font: t.font, size: t.size, bold: !!t.bold, italic: !!t.italic, underline: !!t.underline, align: t.align ?? 'left', background: t.background ?? null },
+      };
+      hiddenRef.current.add(existing.id);
+      paintInk(true);
+      setSelection(null);
+    } else {
+      const s = settings.text;
+      draft = {
+        editing: null,
+        at: at ?? visibleCenter(),
+        width: width ?? DEFAULT_TEXT_WIDTH,
+        factor: 1,
+        content: '',
+        color: s.color,
+        style: { font: s.font, size: s.size, bold: s.bold, italic: s.italic, underline: s.underline, align: s.align, background: s.background },
+      };
+    }
+    const area = textAreaRef.current;
+    if (area) {
+      area.value = draft.content;
+      area.focus({ preventScroll: true });
+    }
+    setTextEdit(draft);
+  };
+
+  const commitText = () => {
+    const d = textEditRef.current;
+    if (!d) return;
+    textEditRef.current = null;
+    setTextEdit(null);
+    textAreaRef.current?.blur();
+    const content = d.content.replace(/\s+$/, '');
+    const { background, ...style } = d.style;
+    const text: Omit<TextContent, 'height'> = { ...style, ...(background ? { background } : {}), content, width: d.width };
+    if (d.editing?.text) {
+      const before = d.editing.text;
+      const same =
+        content === before.content &&
+        d.color === d.editing.color &&
+        JSON.stringify({ ...before, height: 0 }) === JSON.stringify({ ...text, height: 0 });
+      if (same) {
+        hiddenRef.current.delete(d.editing.id);
+        paintInk(true);
+        return;
+      }
+      if (!content) {
+        onChange(page.id, [], [d.editing.id]);
+        return;
+      }
+      const { background: _bg, ...rest } = before;
+      const next = retextStroke({ ...d.editing, text: { ...rest, height: before.height } as TextContent }, text, d.color);
+      paintNow([next]);
+      onChange(page.id, [next], [d.editing.id]);
+      return;
+    }
+    if (!content) return;
+    const stroke = makeTextStroke(d.at, text, d.color);
+    paintNow([stroke]);
+    onChange(page.id, [stroke], []);
+  };
+  const commitTextRef = useRef(commitText);
+  commitTextRef.current = commitText;
+
+  // Tapping anywhere outside the text box (or switching tools) finishes editing.
+  useEffect(() => {
+    if (!textEdit) return;
+    const onDown = (e: PointerEvent) => {
+      if (!(e.target as Element | null)?.closest?.('.text-editor')) commitTextRef.current();
+    };
+    window.addEventListener('pointerdown', onDown, true);
+    return () => window.removeEventListener('pointerdown', onDown, true);
+  }, [!!textEdit]);
+  useEffect(() => {
+    if (settings.tool !== 'text') commitTextRef.current();
+  }, [settings.tool]);
+  // Grow the box with its text.
+  useLayoutEffect(() => {
+    const area = textAreaRef.current;
+    if (!area || !textEdit) return;
+    area.style.height = '0px';
+    area.style.height = `${area.scrollHeight}px`;
+  }, [textEdit, scale]);
+
+  const patchDraft = (patch: Partial<TextDraft['style']> & { color?: string }) => {
+    const { color, ...style } = patch;
+    setTextEdit((d) => (d ? { ...d, ...(color ? { color } : {}), style: { ...d.style, ...style } } : d));
+    // Keep the keyboard up while formatting.
+    requestAnimationFrame(() => textAreaRef.current?.focus({ preventScroll: true }));
+  };
+
+  const editSelectedText = () => {
+    const s = selection && page.strokes.find((x) => selection.ids.has(x.id) && x.tool === 'text');
+    if (s) startTextEdit(s);
+  };
+
+  // ---- Line style of selected shapes / ink ---------------------------------------------------
+  const restyleSelection = (patch: { dash?: DashStyle | null; arrowStart?: boolean; arrowEnd?: boolean; size?: number }) => {
+    if (!selection) return;
+    const targets = page.strokes.filter((s) => selection.ids.has(s.id) && s.tool === 'pen');
+    if (!targets.length) return;
+    const next = targets.map((s) => {
+      const out: Stroke = { ...s, id: newId() };
+      if ('dash' in patch) {
+        if (patch.dash) out.dash = patch.dash;
+        else delete out.dash;
+      }
+      if (patch.arrowStart !== undefined) {
+        if (patch.arrowStart) out.arrowStart = true;
+        else delete out.arrowStart;
+      }
+      if (patch.arrowEnd !== undefined) {
+        if (patch.arrowEnd) out.arrowEnd = true;
+        else delete out.arrowEnd;
+      }
+      if (patch.size !== undefined) out.size = patch.size;
+      return out;
+    });
+    paintNow(next);
+    onChange(page.id, next, targets.map((s) => s.id));
+    keepPanelRef.current = true;
+    const bounds = unionRects(next.map(strokeBounds));
+    setSelection({ ids: replaceIds(selection.ids, targets, next), bounds: bounds ?? selection.bounds });
+  };
+  const selectedPens = selection ? page.strokes.filter((s) => selection.ids.has(s.id) && s.tool === 'pen') : [];
+  const selectedLine = selectedPens.length === 1 && editShape && !editShape.shape.closed ? selectedPens[0] : undefined;
+  const [lineWidth, setLineWidth] = useState(2);
+  useEffect(() => {
+    if (selectedPens[0]) setLineWidth(selectedPens[0].size);
+  }, [selectedPens[0]?.size]);
+
   const deleteSelection = () => {
     if (!selection) return;
     onChange(page.id, [], [...selection.ids]);
@@ -1750,7 +2065,24 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
               <span className="sel-label">Colour</span>
             </button>
             )}
-            {!onlyPictures && (
+            {singleText && (
+              <button className="sel-btn" aria-label="Edit text" onClick={editSelectedText}>
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 6.5V5h14v1.5M12 5v14M9 19h6" /></svg>
+                <span className="sel-label">Edit</span>
+              </button>
+            )}
+            {selectedPens.length > 0 && (
+              <button
+                className={`sel-btn${menuPanel === 'style' ? ' open' : ''}`}
+                aria-label="Line style"
+                aria-expanded={menuPanel === 'style'}
+                onClick={() => setMenuPanel((p) => (p === 'style' ? null : 'style'))}
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16" /><path d="M4 12h3M10.5 12h3M17 12h3" /><path d="M4.5 17h.01M8.5 17h.01M12.5 17h.01M16.5 17h.01M20 17h.01" strokeWidth="2.6" /></svg>
+                <span className="sel-label">Style</span>
+              </button>
+            )}
+            {canFill && (
             <button
               className={`sel-btn${menuPanel === 'fill' ? ' open' : ''}`}
               aria-label="Fill"
@@ -1798,6 +2130,50 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
                 <button onClick={() => arrangeSelection('back')}>Send to Back</button>
               </div>
             )}
+            {menuPanel === 'style' && selectedPens.length > 0 && (
+              <div className="sel-panel sel-style" role="group" aria-label="Line style">
+                <div className="segmented compact">
+                  {([null, 'dashed', 'dotted'] as const).map((d) => (
+                    <button
+                      key={d ?? 'solid'}
+                      className={(selectedPens[0]!.dash ?? null) === d ? 'on' : ''}
+                      onClick={() => restyleSelection({ dash: d })}
+                      aria-label={d ?? 'Solid'}
+                    >
+                      <DashSample dash={d} />
+                      <span>{d === 'dashed' ? 'Dashed' : d === 'dotted' ? 'Dotted' : 'Solid'}</span>
+                    </button>
+                  ))}
+                </div>
+                {selectedLine && (
+                  <div className="segmented compact">
+                    <button className={selectedLine.arrowStart ? 'on' : ''} onClick={() => restyleSelection({ arrowStart: !selectedLine.arrowStart })}>
+                      <svg viewBox="0 0 32 12" aria-hidden="true"><path d="M3 6h26M9 1.5 3 6l6 4.5" /></svg>
+                      <span>Start arrow</span>
+                    </button>
+                    <button className={selectedLine.arrowEnd ? 'on' : ''} onClick={() => restyleSelection({ arrowEnd: !selectedLine.arrowEnd })}>
+                      <svg viewBox="0 0 32 12" aria-hidden="true"><path d="M3 6h26M23 1.5 29 6l-6 4.5" /></svg>
+                      <span>End arrow</span>
+                    </button>
+                  </div>
+                )}
+                <label className="sel-opacity">
+                  <span>Width</span>
+                  <Slider
+                    value={lineWidth}
+                    min={SHAPE_SIZE_RANGE.min}
+                    max={SHAPE_SIZE_RANGE.max}
+                    step={SHAPE_SIZE_RANGE.step}
+                    label="Line width"
+                    onInput={setLineWidth}
+                    onCommit={(v) => {
+                      if (Math.abs(v - (selectedPens[0]?.size ?? v)) > 0.01) restyleSelection({ size: v });
+                    }}
+                  />
+                  <span className="sel-value">{lineWidth.toFixed(1)}</span>
+                </label>
+              </div>
+            )}
             {menuPanel === 'color' && (
               <div className="sel-panel" role="group" aria-label="Colours">
                 <div className="sel-swatches">
@@ -1810,6 +2186,9 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
                       onClick={() => recolorSelection(c)}
                     />
                   ))}
+                  <label className="sel-color custom" aria-label="Custom colour">
+                    <input type="color" value={selectedColor} onChange={(e) => recolorSelection(e.target.value)} />
+                  </label>
                 </div>
               </div>
             )}
@@ -1869,12 +2248,122 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
               ))}
           {!(editShape && !editShape.shape.closed) && (
             <div className="selection-rotate" data-handle="rotate" aria-label="Rotate">
-              ↻
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 12a7 7 0 1 1-2.05-4.95M19 4.5V8h-3.5" /></svg>
             </div>
           )}
         </div>
       )}
       <div ref={badgeRef} className="gesture-badge" aria-hidden="true" />
+      <div
+        className={`text-editor${textEdit ? ' open' : ''}`}
+        style={
+          textEdit
+            ? { left: textEdit.at.x * scale, top: textEdit.at.y * scale, width: textEdit.width * textEdit.factor * scale }
+            : undefined
+        }
+      >
+        {textEdit && (
+          <div className="text-format" role="toolbar" aria-label="Text formatting" onPointerDown={(e) => e.preventDefault()}>
+            <select
+              aria-label="Font"
+              value={textEdit.style.font}
+              onChange={(e) => patchDraft({ font: e.target.value as TextDraft['style']['font'] })}
+            >
+              {TEXT_FONT_ORDER.map((f) => (
+                <option key={f} value={f}>
+                  {TEXT_FONTS[f].label}
+                </option>
+              ))}
+            </select>
+            <div className="stepper" aria-label="Text size">
+              <button aria-label="Smaller" onClick={() => patchDraft({ size: Math.max(8, textEdit.style.size - 2) })}>
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 12h12" /></svg>
+              </button>
+              <span>{textEdit.style.size}</span>
+              <button aria-label="Larger" onClick={() => patchDraft({ size: Math.min(120, textEdit.style.size + 2) })}>
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 12h12M12 6v12" /></svg>
+              </button>
+            </div>
+            <span className="fmt-divider" />
+            <button className={`fmt${textEdit.style.bold ? ' on' : ''}`} aria-label="Bold" onClick={() => patchDraft({ bold: !textEdit.style.bold })}>
+              <b>B</b>
+            </button>
+            <button className={`fmt${textEdit.style.italic ? ' on' : ''}`} aria-label="Italic" onClick={() => patchDraft({ italic: !textEdit.style.italic })}>
+              <i>I</i>
+            </button>
+            <button
+              className={`fmt${textEdit.style.underline ? ' on' : ''}`}
+              aria-label="Underline"
+              onClick={() => patchDraft({ underline: !textEdit.style.underline })}
+            >
+              <u>U</u>
+            </button>
+            <span className="fmt-divider" />
+            {(['left', 'center', 'right'] as const).map((a) => (
+              <button key={a} className={`fmt${textEdit.style.align === a ? ' on' : ''}`} aria-label={`Align ${a}`} onClick={() => patchDraft({ align: a })}>
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d={a === 'left' ? 'M4 6h16M4 10h10M4 14h16M4 18h10' : a === 'center' ? 'M4 6h16M7 10h10M4 14h16M7 18h10' : 'M4 6h16M10 10h10M4 14h16M10 18h10'} />
+                </svg>
+              </button>
+            ))}
+            <span className="fmt-divider" />
+            {PEN_COLORS.slice(0, 6).map((c) => (
+              <button
+                key={c}
+                className={`fmt-color${textEdit.color === c ? ' on' : ''}`}
+                style={{ background: c }}
+                aria-label={`Text colour ${c}`}
+                onClick={() => patchDraft({ color: c })}
+              />
+            ))}
+            <label className="fmt-color custom" aria-label="Custom text colour">
+              <input type="color" value={textEdit.color} onChange={(e) => patchDraft({ color: e.target.value })} />
+            </label>
+            <button
+              className={`fmt${textEdit.style.background ? ' on' : ''}`}
+              aria-label="Highlight behind text"
+              title="Background"
+              onClick={() => patchDraft({ background: textEdit.style.background ? null : '#fff3b0' })}
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="14" rx="2.5" fill="currentColor" fillOpacity="0.18" /><path d="M8 15.5 12 8l4 7.5M9.5 13h5" /></svg>
+            </button>
+            <button className="fmt done" onClick={() => commitText()}>
+              Done
+            </button>
+          </div>
+        )}
+        <textarea
+          ref={textAreaRef}
+          className="textbox-input"
+          aria-label="Text"
+          spellCheck
+          value={textEdit?.content ?? ''}
+          placeholder={textEdit ? 'Type here' : undefined}
+          onChange={(e) => {
+            const content = e.target.value;
+            setTextEdit((d) => (d ? { ...d, content } : d));
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') commitText();
+          }}
+          style={
+            textEdit
+              ? {
+                  fontFamily: TEXT_FONTS[textEdit.style.font].css,
+                  fontSize: textEdit.style.size * textEdit.factor * scale,
+                  fontWeight: textEdit.style.bold ? 700 : 400,
+                  fontStyle: textEdit.style.italic ? 'italic' : 'normal',
+                  color: textEdit.color,
+                  textAlign: textEdit.style.align,
+                  textDecoration: textEdit.style.underline ? 'underline' : undefined,
+                  padding: `${Math.max(2, textEdit.style.size * 0.3) * textEdit.factor * scale}px`,
+                  lineHeight: 1.3,
+                  background: textEdit.style.background ?? undefined,
+                }
+              : undefined
+          }
+        />
+      </div>
     </div>
   );
 }

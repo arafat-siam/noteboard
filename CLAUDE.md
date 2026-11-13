@@ -60,6 +60,14 @@ Verify UI changes in the browser pane (launch config `noteboard-dev`). Synthetic
 - Storage: ink is stored at 0.01 page units / 0.001 pressure (`src/sync/compact.ts`, applied in `applyStrokeChange` and before upload); Drive data files are gzip JSON, and `readJson` still reads old plain-JSON files.
 - "Keep on this iPad only" (`src/sync/localOnly.ts`) is per device (meta `localOnlyIds`, covers folder contents): never pushed, excluded from library.json, existing Drive copies trashed via a removal queue. `src/sync/engine.test.ts` runs the real engine against a fake Drive with two devices — extend it for sync changes.
 - Google scope is `drive.file` only. No secrets in the repo (the OAuth client ID is public by design).
+- Text boxes are strokes with `tool: 'text'` (4 corners like pictures + `text` content/format, laid out in `src/ink/text.ts` and mapped onto the corners), so move/resize/rotate/undo/sync work unchanged. Editing replaces the stroke (new id). The editor's textarea is always in the DOM and focused synchronously in the pointer handler, otherwise iPad Safari won't open the keyboard. The eraser skips text and pictures.
+- Shapes tool (`src/ink/shapeTool.ts`) makes plain pen strokes (dense outline points, `brush: 'fineliner'`). `dash` ('dashed' | 'dotted') and `arrowStart/arrowEnd` are drawn from the centre line as filled M/L/Z paths, shared by screen and PDF export.
+- Tape = `tool: 'tape'` band along its points; tapping (tape tool or finger) peeks under it via `revealedTape` in render.ts (session only, never saved).
+- Pens: 8 types in `src/ink/brushes.ts`; per-pen `penStyle` (opacity, thinning, taper, stabilize) is saved on each stroke so it looks the same everywhere. Unknown brush names draw as fountain pen.
+- Toolbar layout (`usePaletteLayout` in ToolPalette): floating or docked, top/bottom/left/right. Docked bars sit in `.editor-body`'s flex layout; floating ones are fixed.
+- Theme: `src/ui/theme.ts` sets `data-theme` on <html> (index.html applies it before load). All colours are CSS tokens in styles.css; pages stay white. No emoji in the UI: use `src/ui/Icon.tsx`.
+- Sync quick check: `driveChangesToken` meta + Drive changes feed; an idle device makes one small request. A full folder listing still runs on any foreign change, local change, or every 15 min.
+- Logo: `scripts/make-icons.mjs` → `npm run icons` (see docs/CHANGE_LOGO.md). The launch screen in index.html uses `public/icon.svg`.
 - CI annotations (`scripts/ci-run.sh`) are how build errors are read without GitHub login — keep using it for new CI steps.
 
 ## Subagents (.claude/agents)

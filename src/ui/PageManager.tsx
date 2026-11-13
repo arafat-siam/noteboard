@@ -9,6 +9,7 @@ import { templateStyle } from '../ink/templates';
 import { getPdf, renderPdfRegion } from '../pdf/pdf';
 import type { ID, Page } from '../model/types';
 import { sync } from '../sync/instance';
+import { Icon } from './Icon';
 
 /** Thumbnail width in CSS pixels. */
 const THUMB = 150;
@@ -21,6 +22,8 @@ export function PageManager(props: {
   notebookId: ID;
   pageIds: ID[];
   onOpenPage: (pageId: ID) => void;
+  /** Export the selected pages (opens the export dialog). */
+  onExport?: (pageIds: ID[]) => void;
   onClose: () => void;
 }) {
   const { notebookId, pageIds } = props;
@@ -204,6 +207,11 @@ export function PageManager(props: {
           {has ? ' after' : ''}
         </button>
         <button disabled={!has} onClick={() => void duplicate()}>Duplicate</button>
+        {props.onExport && (
+          <button disabled={!has} onClick={() => props.onExport?.(ordered(selected))}>
+            Export{has ? ` (${selected.length})` : ''}
+          </button>
+        )}
         <button onClick={() => void add()}>Add page</button>
         <button className="danger-text" disabled={!has || selected.length >= pageIds.length} onClick={() => void remove()}>
           Delete
@@ -235,7 +243,7 @@ export function PageManager(props: {
             <PageThumbnail pageId={id} />
             <span className="page-thumb-number">{i + 1}</span>
             <span className="page-thumb-check" aria-hidden="true">
-              {selected.includes(id) ? '✓' : ''}
+              {selected.includes(id) && <Icon name="check" size={14} />}
             </span>
           </div>
         ))}

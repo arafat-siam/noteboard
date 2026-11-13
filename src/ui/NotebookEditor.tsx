@@ -5,6 +5,7 @@ import { renameItem } from '../db/library';
 import { addPage, applyStrokeChange, copyPagesTo, deletePage, loadPage, notebookPages, pastePages, setPageTemplate } from '../db/pages';
 import { appendPdf } from '../pdf/pdf';
 import { CopyPageDialog } from './CopyPageDialog';
+import { ExportDialog } from './ExportDialog';
 import { PageManager } from './PageManager';
 import { deferPageLayout, isControl, PAGE_ACTION, relayoutPages, type PageAction } from '../ink/InkPage';
 import { getClip, setClip } from '../ink/clipboard';
@@ -21,8 +22,10 @@ import { sync } from '../sync/instance';
 import { Modal, PromptDialog } from './Dialogs';
 import { SyncBadge } from './SyncBadge';
 import { QuickPalette } from './QuickPalette';
-import { ToolPalette } from './ToolPalette';
-import { DEFAULT_SLOTS, PEN_COLORS, type PenSlot } from '../ink/palette';
+import { ToolPalette, usePaletteLayout } from './ToolPalette';
+import { Icon } from './Icon';
+import { DEFAULT_POINTER, DEFAULT_SHAPE, DEFAULT_SLOTS, DEFAULT_TAPE, DEFAULT_TEXT, PEN_COLORS, type PenSlot } from '../ink/palette';
+import { isBrushKind } from '../ink/brushes';
 import { newId as makeId } from '../model/types';
 
 interface Op {
@@ -37,9 +40,13 @@ function withSlot(s: ToolSettings, id: string): ToolSettings {
   const slot = s.slots.find((x) => x.id === id) ?? s.slots[0];
   if (!slot) return s;
   return slot.kind === 'pen'
-    ? { ...s, activeSlot: slot.id, tool: 'pen', color: slot.color, penSize: slot.size, penBrush: slot.brush }
+    ? { ...s, activeSlot: slot.id, tool: 'pen', color: slot.color, penSize: slot.size, penBrush: isBrushKind(slot.brush) ? slot.brush : 'fountain', penStyle: slot.penStyle }
     : { ...s, activeSlot: slot.id, tool: 'highlighter', highlighterColor: slot.color, highlighterSize: slot.size };
 }
+
+const ALL_TOOLS: ToolKind[] = ['pen', 'highlighter', 'eraser', 'lasso', 'laser', 'text', 'shape', 'tape'];
+/** Tools kept in hand across launches (pens are restored from their slot). */
+const STICKY_TOOLS: ToolKind[] = ['eraser', 'lasso', 'laser', 'text', 'shape', 'tape'];
 
 const DEFAULT_SETTINGS: ToolSettings = withSlot(
   {
@@ -56,6 +63,10 @@ const DEFAULT_SETTINGS: ToolSettings = withSlot(
     hoverPalette: true,
     slots: DEFAULT_SLOTS,
     activeSlot: DEFAULT_SLOTS[0]!.id,
+    text: DEFAULT_TEXT,
+    shape: DEFAULT_SHAPE,
+    tape: DEFAULT_TAPE,
+    pointer: DEFAULT_POINTER,
   },
   DEFAULT_SLOTS[0]!.id,
 );
@@ -63,10 +74,19 @@ const DEFAULT_SETTINGS: ToolSettings = withSlot(
 function loadSettings(): ToolSettings {
   try {
     const saved = JSON.parse(localStorage.getItem('noteboard.tools') ?? '{}') as Partial<ToolSettings>;
-    const merged = { ...DEFAULT_SETTINGS, ...saved };
+    const merged: ToolSettings = {
+      ...DEFAULT_SETTINGS,
+      ...saved,
+      // Settings saved by older versions lack the newer tools: fill in their defaults.
+      text: { ...DEFAULT_TEXT, ...saved.text },
+      shape: { ...DEFAULT_SHAPE, ...saved.shape },
+      tape: { ...DEFAULT_TAPE, ...saved.tape },
+      pointer: { ...DEFAULT_POINTER, ...saved.pointer },
+    };
     if (!Array.isArray(saved.slots) || !saved.slots.length) merged.slots = DEFAULT_SLOTS;
-    // Keep using the eraser/lasso if that was in hand; otherwise restore the pen in hand.
-    return merged.tool === 'eraser' || merged.tool === 'lasso' || merged.tool === 'laser'
+    if (!ALL_TOOLS.includes(merged.tool)) merged.tool = 'pen';
+    // Keep using the eraser/lasso/… if that was in hand; otherwise restore the pen in hand.
+    return STICKY_TOOLS.includes(merged.tool)
       ? { ...withSlot(merged, merged.activeSlot), tool: merged.tool }
       : withSlot(merged, merged.activeSlot);
   } catch {
@@ -81,6 +101,7 @@ export function NotebookEditor({ notebookId, onClose }: { notebookId: string; on
   const pagesById = useRef(new Map<string, Page>()).current;
 
   const [settings, setSettings] = useState<ToolSettings>(loadSettings);
+  const [paletteLayout, setPaletteLayout] = usePaletteLayout();
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
   const previousTool = useRef<ToolKind>('pen');
@@ -102,6 +123,8 @@ export function NotebookEditor({ notebookId, onClose }: { notebookId: string; on
     return () => clearTimeout(timer);
   }, [notice]);
   const [exportOpen, setExportOpen] = useState(false);
+  /** The export dialog (with pages picked in the page manager, if any). */
+  const [exporting, setExporting] = useState<{ picked?: string[] } | null>(null);
   const [showDiagnostics, setShowDiagnostics] = useState(diagnostics.enabled);
   const [palette, setPalette] = useState<{ x: number; y: number } | null>(null);
   const openPalette = useCallback((x: number, y: number) => setPalette({ x, y }), []);
@@ -224,14 +247,15 @@ export function NotebookEditor({ notebookId, onClose }: { notebookId: string; on
   // ---- Keyboard, Pencil gestures --------------------------------------------------------
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.target as HTMLElement).tagName === 'INPUT') return;
+      // Typing into a text box, field or menu is not a shortcut.
+      if ((e.target as HTMLElement | null)?.closest?.('input, textarea, select, [contenteditable="true"]')) return;
       const mod = e.metaKey || e.ctrlKey;
       if (mod && e.key.toLowerCase() === 'z') {
         e.preventDefault();
         if (e.shiftKey) redo();
         else undo();
       } else if (!mod) {
-        const map: Record<string, ToolKind> = { p: 'pen', h: 'highlighter', e: 'eraser', l: 'lasso', k: 'laser' };
+        const map: Record<string, ToolKind> = { p: 'pen', h: 'highlighter', e: 'eraser', l: 'lasso', k: 'laser', t: 'text', s: 'shape', a: 'tape' };
         const tool = map[e.key.toLowerCase()];
         if (tool) selectTool(tool);
       }
@@ -595,34 +619,35 @@ export function NotebookEditor({ notebookId, onClose }: { notebookId: string; on
   return (
     <div className="editor">
       <header className="toolbar editor-top">
-        <button className="text-button" onClick={onClose}>
-          ‹ Library
+        <button className="back-button" onClick={onClose} aria-label="Back to library">
+          <Icon name="chevronLeft" size={22} />
+          <span>Library</span>
         </button>
-        <button className="editor-title" onClick={() => setRenaming(true)}>
+        <button className="editor-title" onClick={() => setRenaming(true)} title="Rename">
           {notebook.name}
         </button>
-        <span className="muted">{pageIds.length} page{pageIds.length === 1 ? '' : 's'}</span>
+        <span className="muted page-count">{pageIds.length} page{pageIds.length === 1 ? '' : 's'}</span>
         <div className="spacer" />
-        <div className="zoom-controls">
+        <div className="zoom-controls" role="group" aria-label="Zoom">
           <button className="tool" aria-label="Zoom out" onClick={() => setZoom((z) => Math.max(0.5, z / 1.25))}>
-            −
+            <Icon name="minus" size={18} />
           </button>
-          <button className="tool text" onClick={() => setZoom(1)}>
+          <button className="tool text" onClick={() => setZoom(1)} title="Reset zoom">
             {Math.round(zoom * 100)}%
           </button>
           <button className="tool" aria-label="Zoom in" onClick={() => setZoom((z) => Math.min(4, z * 1.25))}>
-            +
+            <Icon name="plus" size={18} />
           </button>
         </div>
         <SyncBadge compact />
         <button className="tool icon-tool" aria-label="Insert picture" title="Insert picture" onClick={() => pictureInputRef.current?.click()}>
-          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="14" rx="2.5" /><circle cx="9" cy="10" r="1.8" /><path d="m4 17 5-5 4 4 2.5-2.5L20 18" /></svg>
+          <Icon name="image" size={22} />
         </button>
         <button className="tool icon-tool" aria-label="Pages" title="Pages" onClick={() => setPagesOpen(true)}>
-          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="3.5" width="7" height="8" rx="1.5" /><rect x="13.5" y="3.5" width="7" height="8" rx="1.5" /><rect x="3.5" y="13.5" width="7" height="8" rx="1.5" /><rect x="13.5" y="13.5" width="7" height="8" rx="1.5" /></svg>
+          <Icon name="pages" size={22} />
         </button>
-        <button className="text-button" onClick={() => setExportOpen(true)}>
-          Export ⋯
+        <button className="tool icon-tool" aria-label="Export and more" title="Export and more" onClick={() => setExportOpen(true)}>
+          <Icon name="share" size={22} />
         </button>
         <input
           ref={pictureInputRef}
@@ -638,6 +663,7 @@ export function NotebookEditor({ notebookId, onClose }: { notebookId: string; on
         />
       </header>
 
+      <div className={`editor-body palette-${paletteLayout.style} palette-${paletteLayout.side}`}>
       <ToolPalette
         settings={settings}
         update={update}
@@ -650,6 +676,8 @@ export function NotebookEditor({ notebookId, onClose }: { notebookId: string; on
         redo={redo}
         canUndo={undoStack.length > 0}
         canRedo={redoStack.length > 0}
+        layout={paletteLayout}
+        setLayout={setPaletteLayout}
       />
 
       <div
@@ -692,9 +720,10 @@ export function NotebookEditor({ notebookId, onClose }: { notebookId: string; on
               void addPage(db, notebook.id).then(() => sync.syncSoon());
             }}
           >
-            + Add page
+            <Icon name="plus" size={18} /> Add page
           </button>
         </div>
+      </div>
       </div>
 
       {renaming && (
@@ -711,8 +740,20 @@ export function NotebookEditor({ notebookId, onClose }: { notebookId: string; on
         <Modal title="More" onClose={() => setExportOpen(false)}>
           <label className="field-label">Export</label>
           <div className="menu-list">
-            <button onClick={() => void exportPdf()}>Whole notebook as PDF</button>
-            <button onClick={() => void exportVisiblePagePng()}>Current page as image (PNG)</button>
+            <button onClick={() => void exportPdf()}>
+              <Icon name="share" size={18} /> Whole notebook as PDF
+            </button>
+            <button
+              onClick={() => {
+                setExportOpen(false);
+                setExporting({});
+              }}
+            >
+              <Icon name="pages" size={18} /> Choose pages and format
+            </button>
+            <button onClick={() => void exportVisiblePagePng()}>
+              <Icon name="image" size={18} /> Current page as image (PNG)
+            </button>
           </div>
           <label className="field-label">PDF</label>
           <div className="menu-list">
@@ -781,7 +822,30 @@ export function NotebookEditor({ notebookId, onClose }: { notebookId: string; on
       )}
 
       {pagesOpen && (
-        <PageManager notebookId={notebook.id} pageIds={pageIds} onOpenPage={openPage} onClose={() => setPagesOpen(false)} />
+        <PageManager
+          notebookId={notebook.id}
+          pageIds={pageIds}
+          onOpenPage={openPage}
+          onExport={(ids) => {
+            setPagesOpen(false);
+            setExporting({ picked: ids });
+          }}
+          onClose={() => setPagesOpen(false)}
+        />
+      )}
+
+      {exporting && (
+        <ExportDialog
+          notebook={notebook}
+          pageIds={pageIds}
+          currentIndex={Math.max(0, pageIds.indexOf(visiblePageId() ?? ''))}
+          picked={exporting.picked}
+          onPickPages={() => {
+            setExporting(null);
+            setPagesOpen(true);
+          }}
+          onClose={() => setExporting(null)}
+        />
       )}
 
       {copyingPage && (

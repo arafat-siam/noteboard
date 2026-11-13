@@ -1,15 +1,16 @@
 import { useEffect, useRef } from 'react';
-import type { ToolSettings } from '../ink/InkPage';
+import type { ToolKind, ToolSettings } from '../ink/InkPage';
 import { BRUSHES } from '../ink/brushes';
 import { PenIcon } from './PenIcon';
 import { slotIcon } from './ToolPalette';
+import { Icon } from './Icon';
 
 interface Props {
   x: number;
   y: number;
   settings: ToolSettings;
   selectSlot: (id: string) => void;
-  selectTool: (tool: 'eraser' | 'lasso' | 'laser') => void;
+  selectTool: (tool: ToolKind) => void;
   undo: () => void;
   redo: () => void;
   onClose: () => void;
@@ -17,8 +18,8 @@ interface Props {
 
 /** How long the hovering Pencil rests on an item before it is chosen (no touch needed). */
 const DWELL_MS = 260;
-const RING_RADIUS = 92;
-const DISC_RADIUS = 136;
+const RING_RADIUS = 108;
+const DISC_RADIUS = 152;
 
 type Entry = { key: string; label: string; icon: Parameters<typeof PenIcon>[0]; active: boolean; choose: () => void };
 
@@ -56,14 +57,17 @@ export function QuickPalette({ x, y, settings, selectSlot, selectTool, undo, red
   const entries: Entry[] = [
     ...settings.slots.map((slot) => ({
       key: slot.id,
-      label: slot.kind === 'highlighter' ? 'Highlighter' : BRUSHES[slot.brush].label,
+      label: slot.kind === 'highlighter' ? 'Highlighter' : BRUSHES[slot.brush]?.label ?? 'Pen',
       icon: { kind: slotIcon(slot), color: slot.color },
       active: penInHand && slot.id === settings.activeSlot,
       choose: () => selectSlot(slot.id),
     })),
     { key: 'eraser', label: 'Eraser', icon: { kind: 'eraser', color: '#888' }, active: settings.tool === 'eraser', choose: () => selectTool('eraser') },
     { key: 'lasso', label: 'Lasso', icon: { kind: 'lasso', color: '#888' }, active: settings.tool === 'lasso', choose: () => selectTool('lasso') },
-    { key: 'laser', label: 'Laser pointer', icon: { kind: 'laser', color: '#ff3b30' }, active: settings.tool === 'laser', choose: () => selectTool('laser') },
+    { key: 'text', label: 'Text', icon: { kind: 'text', color: settings.text.color }, active: settings.tool === 'text', choose: () => selectTool('text') },
+    { key: 'shape', label: 'Shapes', icon: { kind: 'shape', color: settings.shape.color }, active: settings.tool === 'shape', choose: () => selectTool('shape') },
+    { key: 'tape', label: 'Tape', icon: { kind: 'tape', color: settings.tape.color }, active: settings.tool === 'tape', choose: () => selectTool('tape') },
+    { key: 'laser', label: 'Laser pointer', icon: { kind: 'laser', color: settings.pointer.laserColor }, active: settings.tool === 'laser', choose: () => selectTool('laser') },
   ];
 
   const pick = (choose: () => void) => {
@@ -110,11 +114,11 @@ export function QuickPalette({ x, y, settings, selectSlot, selectTool, undo, red
       })}
       <div className="quick-center" style={{ left: cx, top: cy }}>
         <button aria-label="Undo" className="quick-action" onClick={undo}>
-          ↶
+          <Icon name="undo" size={20} />
         </button>
         <span className="quick-color" style={{ background: activeColor }} />
         <button aria-label="Redo" className="quick-action" onClick={redo}>
-          ↷
+          <Icon name="redo" size={20} />
         </button>
       </div>
     </div>

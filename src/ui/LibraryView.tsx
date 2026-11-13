@@ -19,11 +19,12 @@ import {
 import { notebookPages } from '../db/pages';
 import { exportNotebookPdf, safeFilename, shareOrDownload } from '../export/exporters';
 import { COVER_COLORS, FOLDER_COLORS, type ID, type LibraryItem } from '../model/types';
-import { ColorRow, FolderGlyph, Modal, MoveDialog, NewNotebookDialog, PromptDialog } from './Dialogs';
+import { ColorRow, Modal, MoveDialog, NewNotebookDialog, PromptDialog } from './Dialogs';
 import { act, pathOf, useLibrary, type LibraryState } from './useLibrary';
 import { importPdf } from '../pdf/pdf';
 import { setLocalOnly } from '../sync/localOnly';
 import { readDragIds, writeDragIds } from './dnd';
+import { Icon, type IconName } from './Icon';
 
 interface Props {
   route: Route;
@@ -160,25 +161,57 @@ export function LibraryView({ route, onNavigate, onOpenNotebook, onToggleSidebar
 
   const selectedIds = [...selected];
 
+  const folders = items.filter((i) => i.kind === 'folder');
+  const notebooks = items.filter((i) => i.kind === 'notebook');
+  const showSections = !query && route.view === 'library' && folders.length > 0 && notebooks.length > 0;
+  const recent =
+    route.view === 'library' && !folderId && !query
+      ? library.visible
+          .filter((i): i is Extract<LibraryItem, { kind: 'notebook' }> => i.kind === 'notebook' && !!i.lastOpenedAt)
+          .sort((a, b) => (b.lastOpenedAt ?? 0) - (a.lastOpenedAt ?? 0))
+          .slice(0, 6)
+      : [];
+
+  const renderTiles = (list: LibraryItem[]) => (
+    <div className={layout === 'grid' ? 'grid' : 'list'}>
+      {list.map((item) => (
+        <Tile
+          key={item.id}
+          item={item}
+          library={library}
+          layout={layout}
+          showPath={!!query || route.view !== 'library'}
+          selecting={selecting}
+          selected={selected.has(item.id)}
+          dropTarget={dropTarget === item.id}
+          onOpen={() => (inTrash ? setMenuFor(item.id) : open(item))}
+          onMenu={() => setMenuFor(item.id)}
+          dragIds={selected.has(item.id) ? selectedIds : [item.id]}
+          dropProps={item.kind === 'folder' && !inTrash ? dropOn(item.id, item.id) : undefined}
+        />
+      ))}
+    </div>
+  );
+
   return (
     <div className="library">
       <header className="toolbar library-toolbar">
-        <button className="icon-button" aria-label="Toggle sidebar" onClick={onToggleSidebar}>
-          ☰
+        <button className="icon-button" aria-label="Show or hide the sidebar" onClick={onToggleSidebar}>
+          <Icon name="menu" size={22} />
         </button>
         <div className="crumbs">
           {crumbs.length > 0 && (
-            <>
+            <div className="crumb-trail">
               <button
                 className={`crumb ${dropTarget === 'crumb-root' ? 'drop-target' : ''}`}
                 onClick={() => onNavigate({ view: 'library', folderId: null })}
                 {...dropOn('crumb-root', null)}
               >
-                Library
+                All notebooks
               </button>
               {crumbs.slice(0, -1).map((f) => (
-                <span key={f.id}>
-                  <span className="crumb-sep">›</span>
+                <span key={f.id} className="crumb-part">
+                  <Icon name="chevronRight" size={14} className="crumb-sep" />
                   <button
                     className={`crumb ${dropTarget === f.id ? 'drop-target' : ''}`}
                     onClick={() => onNavigate({ view: 'library', folderId: f.id })}
@@ -188,28 +221,29 @@ export function LibraryView({ route, onNavigate, onOpenNotebook, onToggleSidebar
                   </button>
                 </span>
               ))}
-              <span className="crumb-sep">›</span>
-            </>
+            </div>
           )}
           <h1>{title}</h1>
         </div>
-        <input
-          className="search"
-          type="search"
-          placeholder="Search notebooks, folders, tags"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-        />
+        <label className="search">
+          <Icon name="search" size={18} />
+          <input type="search" placeholder="Search" aria-label="Search notebooks, folders and tags" value={query} onChange={(e) => setQuery(e.target.value)} />
+        </label>
         {!inTrash && (
           <>
-            <select className="select" value={sort} onChange={(e) => setSort(e.target.value as SortKey)} aria-label="Sort">
+            <select className="select" value={sort} onChange={(e) => setSort(e.target.value as SortKey)} aria-label="Sort by">
               <option value="name">Name</option>
-              <option value="updated">Date modified</option>
+              <option value="updated">Last edited</option>
               <option value="created">Date created</option>
             </select>
-            <button className="icon-button" aria-label="Toggle layout" onClick={() => setLayout(layout === 'grid' ? 'list' : 'grid')}>
-              {layout === 'grid' ? '☷' : '▦'}
-            </button>
+            <div className="view-toggle" role="group" aria-label="View">
+              <button className={layout === 'grid' ? 'on' : ''} aria-label="Grid" aria-pressed={layout === 'grid'} onClick={() => setLayout('grid')}>
+                <Icon name="grid" size={18} />
+              </button>
+              <button className={layout === 'list' ? 'on' : ''} aria-label="List" aria-pressed={layout === 'list'} onClick={() => setLayout('list')}>
+                <Icon name="list" size={18} />
+              </button>
+            </div>
             <button className={`text-button ${selecting ? 'active' : ''}`} onClick={() => { setSelecting(!selecting); setSelected(new Set()); }}>
               {selecting ? 'Done' : 'Select'}
             </button>
@@ -217,11 +251,13 @@ export function LibraryView({ route, onNavigate, onOpenNotebook, onToggleSidebar
         )}
         {route.view === 'library' && !query && (
           <>
-            <button className="text-button" onClick={() => setDialog({ kind: 'new-folder' })}>
-              + Folder
+            <button className="toolbar-button" onClick={() => setDialog({ kind: 'new-folder' })} title="New folder">
+              <Icon name="folderPlus" size={20} />
+              <span>Folder</span>
             </button>
-            <label className={`text-button import-pdf ${importing ? 'busy' : ''}`}>
-              {importing ? 'Importing…' : 'Import PDF'}
+            <label className={`toolbar-button import-pdf ${importing ? 'busy' : ''}`} title="Import a PDF to write on">
+              <Icon name="fileImport" size={20} />
+              <span>{importing ? 'Importing' : 'Import PDF'}</span>
               <input
                 type="file"
                 accept="application/pdf,.pdf"
@@ -245,8 +281,9 @@ export function LibraryView({ route, onNavigate, onOpenNotebook, onToggleSidebar
                 }}
               />
             </label>
-            <button className="primary" onClick={() => setDialog({ kind: 'new-notebook' })}>
-              + Notebook
+            <button className="primary new-notebook" onClick={() => setDialog({ kind: 'new-notebook' })}>
+              <Icon name="plus" size={18} />
+              <span>New notebook</span>
             </button>
           </>
         )}
@@ -271,44 +308,60 @@ export function LibraryView({ route, onNavigate, onOpenNotebook, onToggleSidebar
             Select all
           </button>
           <button disabled={!selected.size} onClick={() => setDialog({ kind: 'move', ids: selectedIds })}>
-            Move to…
+            <Icon name="folder" size={18} /> Move
           </button>
           <button disabled={!selected.size} onClick={() => void act(async () => { for (const id of selectedIds) await setFavorite(db, id, true); })}>
-            ⭐ Favorite
+            <Icon name="star" size={18} /> Favorite
           </button>
           <button
             className="danger"
             disabled={!selected.size}
             onClick={() => void act(() => trashItems(db, selectedIds)).then(() => setSelected(new Set()))}
           >
-            Move to Trash
+            <Icon name="trash" size={18} /> Move to Trash
           </button>
         </div>
       )}
 
       {inTrash && <p className="hint">Items in the Trash are deleted permanently after 30 days.</p>}
 
+      {recent.length > 0 && !selecting && (
+        <section className="library-section recent-strip">
+          <h2 className="section-title">Continue writing</h2>
+          <div className="recent-row">
+            {recent.map((nb) => (
+              <button key={nb.id} className="recent-card" onClick={() => onOpenNotebook(nb.id)} aria-label={`Open ${nb.name}`}>
+                <span className="mini-cover" style={{ ['--cover' as string]: nb.coverColor }} />
+                <span className="recent-text">
+                  <span className="recent-name">{nb.name}</span>
+                  <span className="recent-sub">{relativeTime(nb.lastOpenedAt ?? nb.updatedAt)}</span>
+                </span>
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+
       {items.length === 0 ? (
-        <EmptyState route={route} searching={!!query} />
+        <EmptyState
+          route={route}
+          searching={!!query}
+          onNewNotebook={() => setDialog({ kind: 'new-notebook' })}
+          onNewFolder={() => setDialog({ kind: 'new-folder' })}
+        />
+      ) : showSections ? (
+        <>
+          <section className="library-section">
+            <h2 className="section-title">Folders</h2>
+            {renderTiles(folders)}
+          </section>
+          <section className="library-section">
+            <h2 className="section-title">Notebooks</h2>
+            {renderTiles(notebooks)}
+          </section>
+        </>
       ) : (
-        <div className={layout === 'grid' ? 'grid' : 'list'}>
-          {items.map((item) => (
-            <Tile
-              key={item.id}
-              item={item}
-              library={library}
-              layout={layout}
-              showPath={!!query || route.view !== 'library'}
-              selecting={selecting}
-              selected={selected.has(item.id)}
-              dropTarget={dropTarget === item.id}
-              onOpen={() => (inTrash ? setMenuFor(item.id) : open(item))}
-              onMenu={() => setMenuFor(item.id)}
-              dragIds={selected.has(item.id) ? selectedIds : [item.id]}
-              dropProps={item.kind === 'folder' && !inTrash ? dropOn(item.id, item.id) : undefined}
-            />
-          ))}
-        </div>
+        <section className="library-section">{renderTiles(items)}</section>
       )}
 
       {menuFor && library.byId.get(menuFor) && (
@@ -410,32 +463,48 @@ function Tile(props: {
       <button className="tile-main" onClick={props.onOpen} aria-label={`Open ${item.name}`}>
         <div className="tile-art">
           {item.kind === 'folder' ? (
-            <FolderGlyph color={item.color} size={props.layout === 'grid' ? 96 : 32} />
+            <div className="folder-art" style={{ ['--folder' as string]: item.color }}>
+              <span className="folder-back" />
+              <span className="folder-paper" />
+              <span className="folder-front" />
+            </div>
           ) : (
-            <div className="cover" style={{ background: item.coverColor }}>
-              <span className="cover-title">{item.name}</span>
+            <div className="cover" style={{ ['--cover' as string]: item.coverColor }}>
+              <span className="cover-label">
+                <span className="cover-title">{item.name}</span>
+              </span>
             </div>
           )}
-          {props.selecting && <span className={`check ${props.selected ? 'on' : ''}`}>{props.selected ? '✓' : ''}</span>}
-          {item.favorite && <span className="fav">★</span>}
+          {props.selecting && (
+            <span className={`check ${props.selected ? 'on' : ''}`}>{props.selected && <Icon name="check" size={14} />}</span>
+          )}
+          {item.favorite && (
+            <span className="fav" aria-label="Favorite">
+              <Icon name="star" size={14} filled />
+            </span>
+          )}
         </div>
         <div className="tile-text">
           <div className="tile-name">
             {props.library.localOnly.has(item.id) && (
-              <span className="local-badge" title="Kept on this iPad only — not synced" aria-label="Not synced">
-                📱
+              <span className="local-badge" title="Kept on this iPad only, not synced" aria-label="Not synced">
+                <Icon name="tablet" size={14} />
               </span>
             )}
             {item.name}
           </div>
           <div className="tile-sub">
-            {props.showPath ? pathOf(props.library.byId, item) : item.kind === 'folder' ? `${childCount} item${childCount === 1 ? '' : 's'}` : date}
+            {props.showPath
+              ? pathOf(props.library.byId, item)
+              : item.kind === 'folder'
+                ? `${childCount} item${childCount === 1 ? '' : 's'}`
+                : `${item.pageIds.length} page${item.pageIds.length === 1 ? '' : 's'} · ${date}`}
           </div>
         </div>
       </button>
       {!props.selecting && (
         <button className="tile-more" aria-label={`More actions for ${item.name}`} onClick={props.onMenu}>
-          •••
+          <Icon name="more" size={20} />
         </button>
       )}
     </div>
@@ -492,20 +561,22 @@ function ItemMenu(props: {
                   if (confirm(`Sync “${item.name}” to Google Drive again?`)) void act(() => setLocalOnly(db, item.id, false));
                 })}
               >
-                ☁️ Sync to Google Drive again
+                <Icon name="cloud" size={18} /> Sync to Google Drive again
               </button>
             ) : props.localOnly ? (
-              <button disabled>📱 On this iPad only (set on its folder)</button>
+              <button disabled>
+                <Icon name="tablet" size={18} /> On this iPad only (set on its folder)
+              </button>
             ) : (
               <button
                 onClick={run(() => {
                   const ok = confirm(
-                    `Keep ${what} on this iPad only?\n\n• It won't be uploaded to Google Drive, and any copy already there is removed.\n• It won't appear on your other devices.\n• If this iPad is lost or reset, these notes are gone — export a PDF or backup if they matter.`,
+                    `Keep ${what} on this iPad only?\n\n- It won't be uploaded to Google Drive, and any copy already there is removed.\n- It won't appear on your other devices.\n- If this iPad is lost or reset, these notes are gone. Export a PDF or backup if they matter.`,
                   );
                   if (ok) void act(() => setLocalOnly(db, item.id, true));
                 })}
               >
-                📱 Keep on this iPad only (don't sync)
+                <Icon name="tablet" size={18} /> Keep on this iPad only (don't sync)
               </button>
             )}
             <button className="danger-text" onClick={run(() => void act(() => trashItems(db, [item.id])))}>
@@ -518,15 +589,46 @@ function ItemMenu(props: {
   );
 }
 
-function EmptyState({ route, searching }: { route: Route; searching: boolean }) {
-  const text = searching
-    ? 'Nothing matches your search.'
+function relativeTime(time: number): string {
+  const s = Math.round((Date.now() - time) / 1000);
+  if (s < 60) return 'Just now';
+  if (s < 3600) return `${Math.round(s / 60)} min ago`;
+  if (s < 86400) return `${Math.round(s / 3600)} h ago`;
+  if (s < 86400 * 7) return `${Math.round(s / 86400)} d ago`;
+  return new Date(time).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+}
+
+function EmptyState(props: { route: Route; searching: boolean; onNewNotebook: () => void; onNewFolder: () => void }) {
+  const { route, searching } = props;
+  const [icon, title, text]: [IconName, string, string] = searching
+    ? ['search', 'No results', 'Nothing matches your search. Try a different word or tag.']
     : route.view === 'trash'
-      ? 'Trash is empty.'
+      ? ['trash', 'Trash is empty', 'Deleted notebooks and folders stay here for 30 days.']
       : route.view === 'favorites'
-        ? 'Tap ••• on a notebook or folder and choose “Add to Favorites”.'
+        ? ['star', 'No favorites yet', 'Open the menu on a notebook or folder and choose Add to Favorites.']
         : route.view === 'recents'
-          ? 'Notebooks you open will appear here.'
-          : 'Create a folder or notebook to get started.';
-  return <div className="empty">{text}</div>;
+          ? ['clock', 'Nothing opened yet', 'Notebooks you open will appear here.']
+          : route.view === 'tag'
+            ? ['tag', 'No notebooks with this tag', 'Add tags from a notebook’s menu.']
+            : ['notebook', 'Start writing', 'Create a notebook for handwritten notes, or a folder to keep things organised. You can also import a PDF to write on.'];
+  const canCreate = route.view === 'library' && !searching;
+  return (
+    <div className="empty-state">
+      <div className="empty-icon">
+        <Icon name={icon} size={34} />
+      </div>
+      <h2>{title}</h2>
+      <p>{text}</p>
+      {canCreate && (
+        <div className="empty-actions">
+          <button className="primary" onClick={props.onNewNotebook}>
+            <Icon name="plus" size={18} /> New notebook
+          </button>
+          <button onClick={props.onNewFolder}>
+            <Icon name="folderPlus" size={18} /> New folder
+          </button>
+        </div>
+      )}
+    </div>
+  );
 }

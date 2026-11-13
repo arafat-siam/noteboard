@@ -23,10 +23,12 @@
 import { glideDuration, HoverTracker } from './hoverTracker';
 
 export interface HoverCursorStyle {
-  tool: 'pen' | 'highlighter' | 'eraser' | 'lasso' | 'laser';
+  tool: 'pen' | 'highlighter' | 'eraser' | 'lasso' | 'laser' | 'text' | 'shape' | 'tape';
   /** Diameter in CSS pixels. */
   size: number;
   color: string;
+  /** How pens show: a filled dot (default), a ring, or a crosshair. */
+  variant?: 'dot' | 'ring' | 'crosshair';
 }
 
 /** Set to false to turn off the 120 Hz glide (point 3 above) if it ever misbehaves. */
@@ -88,21 +90,29 @@ function frame(now: number): void {
 /** Feeds the cursor a Pencil hover event; it is drawn on the next frame. */
 export function showHoverCursor(event: PointerEvent, style: HoverCursorStyle): void {
   const cursor = element();
-  if (style.tool === 'lasso') {
+  if (style.tool === 'lasso' || style.tool === 'text') {
     hideHoverCursor();
     return;
   }
 
+  const variant = style.tool === 'shape' ? 'crosshair' : style.tool === 'pen' ? (style.variant ?? 'dot') : '';
   const background =
-    style.tool === 'pen' ? style.color : style.tool === 'laser' ? '#ff3b30' : style.tool === 'highlighter' ? `${style.color}80` : 'transparent';
-  const look = `${style.tool}|${style.size}|${background}`;
+    style.tool === 'pen' && variant === 'dot'
+      ? style.color
+      : style.tool === 'laser'
+        ? style.color
+        : style.tool === 'highlighter' || style.tool === 'tape'
+          ? `${style.color}80`
+          : 'transparent';
+  const look = `${style.tool}|${variant}|${style.size}|${background}|${style.color}`;
   if (look !== appliedLook) {
     appliedLook = look;
     size = style.size;
-    cursor.className = `hover-cursor ${style.tool}`;
+    cursor.className = `hover-cursor ${style.tool}${variant ? ` ${variant}` : ''}`;
     cursor.style.width = `${size}px`;
     cursor.style.height = `${size}px`;
     cursor.style.background = background;
+    cursor.style.color = style.color;
     appliedX = NaN; // the size changed, so the offset did too
   }
 

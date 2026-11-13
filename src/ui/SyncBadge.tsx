@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { signIn, signOut } from '../sync/auth';
 import { sync, useSyncStatus } from '../sync/instance';
+import { Icon } from './Icon';
 
 function ago(time: number | null): string {
   if (!time) return '';
@@ -21,7 +22,7 @@ function SyncControls({ paused, syncing }: { paused: boolean; syncing: boolean }
         disabled={syncing}
         onClick={() => void sync.syncNow(true)}
       >
-        ⟳
+        <Icon name="sync" size={16} />
       </button>
       <button
         className="sync-control"
@@ -29,7 +30,7 @@ function SyncControls({ paused, syncing }: { paused: boolean; syncing: boolean }
         aria-label={paused ? 'Resume automatic sync' : 'Pause automatic sync'}
         onClick={() => sync.setPaused(!paused)}
       >
-        {paused ? '▶' : '⏸'}
+        <Icon name={paused ? 'play' : 'pause'} size={16} />
       </button>
     </span>
   );
@@ -50,34 +51,44 @@ export function SyncBadge({ compact = false }: { compact?: boolean }) {
 
   switch (status.state) {
     case 'not-configured':
-      return compact ? null : <div className="sync-badge muted">Drive sync not set up yet · notes are saved on this iPad</div>;
+      return compact ? null : (
+        <div className="sync-badge muted">
+          <Icon name="tablet" size={16} /> Saved on this iPad (Drive sync not set up)
+        </div>
+      );
     case 'signed-out':
       return (
         <button className="sync-badge action" onClick={() => signIn()}>
-          ☁️ Connect Google Drive
+          <Icon name="cloud" size={16} /> Connect Google Drive
         </button>
       );
     case 'needs-sign-in':
       return (
         <button className="sync-badge warn" onClick={() => signIn()}>
-          ⚠️ Sign in to keep syncing
+          <Icon name="warning" size={16} /> Sign in to keep syncing
         </button>
       );
     case 'syncing':
-      return connected('', '⟳ Syncing…');
+      return connected('', <><Icon name="sync" size={16} className="spin" /> Syncing</>);
     case 'paused':
       return connected(
         'warn',
-        compact ? '⏸ Sync paused' : `⏸ Sync paused${status.lastSyncedAt ? ` · last ${ago(status.lastSyncedAt)}` : ''}`,
+        <>
+          <Icon name="pause" size={16} /> {compact ? 'Paused' : `Sync paused${status.lastSyncedAt ? ` · last ${ago(status.lastSyncedAt)}` : ''}`}
+        </>,
       );
     case 'offline':
-      return connected('muted', 'Offline · will sync later');
+      return connected('muted', <><Icon name="cloudOff" size={16} /> {compact ? 'Offline' : 'Offline · will sync later'}</>);
     case 'error':
-      return connected('warn', <span title={status.message}>⚠️ Sync failed</span>);
+      return connected('warn', <span title={status.message}>
+          <Icon name="warning" size={16} /> Sync failed
+        </span>);
     case 'idle':
       return connected(
         'ok',
-        `✓ Synced ${ago(status.lastSyncedAt)}`,
+        <>
+          <Icon name="cloudCheck" size={16} /> {compact ? 'Synced' : `Synced ${ago(status.lastSyncedAt)}`}
+        </>,
         !compact && (
           <button
             className="link muted"

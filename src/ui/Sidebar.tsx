@@ -1,22 +1,23 @@
-import { useRef, useState, type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import type { Route } from '../App';
 import { db } from '../db/db';
 import { moveItems } from '../db/library';
-import { exportBackup, importBackup, shareOrDownload } from '../export/exporters';
 import type { ID } from '../model/types';
 import { act, useLibrary } from './useLibrary';
 import { FolderGlyph } from './Dialogs';
 import { SyncBadge } from './SyncBadge';
 import { readDragIds } from './dnd';
-import { SecurityDialog } from '../security/SecurityDialog';
 import { lockNow } from '../security/AppLock';
+import { Icon, type IconName } from './Icon';
+import { SettingsDialog } from './SettingsDialog';
+
+const LOGO = `${import.meta.env.BASE_URL}icon.svg`;
 
 export function Sidebar({ route, onNavigate }: { route: Route; onNavigate: (r: Route) => void }) {
   const library = useLibrary();
   const [expanded, setExpanded] = useState<Set<ID>>(new Set());
   const [dropTarget, setDropTarget] = useState<string | null>(null);
-  const fileInput = useRef<HTMLInputElement>(null);
-  const [securityOpen, setSecurityOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const dropProps = (key: string, folderId: ID | null) => ({
     onDragOver: (e: React.DragEvent) => {
@@ -34,12 +35,18 @@ export function Sidebar({ route, onNavigate }: { route: Route; onNavigate: (r: R
 
   const isActive = (r: Route) => JSON.stringify(r) === JSON.stringify(route);
 
-  const navItem = (label: ReactNode, r: Route, extra?: ReactNode) => (
+  const navItem = (icon: IconName, label: string, r: Route, count?: number) => (
     <button className={`nav-item ${isActive(r) ? 'active' : ''}`} onClick={() => onNavigate(r)}>
-      {label}
-      {extra}
+      <Icon name={icon} size={20} />
+      <span className="nav-label">{label}</span>
+      {!!count && <span className="count">{count}</span>}
     </button>
   );
+
+  const counts = {
+    favorites: library?.visible.filter((i) => i.favorite).length ?? 0,
+    notebooks: library?.visible.filter((i) => i.kind === 'notebook').length ?? 0,
+  };
 
   const tree = (parentId: ID | null, depth: number): ReactNode =>
     library?.folders
@@ -51,10 +58,8 @@ export function Sidebar({ route, onNavigate }: { route: Route; onNavigate: (r: R
         return (
           <div key={f.id}>
             <div
-              className={`tree-item ${isActive({ view: 'library', folderId: f.id }) ? 'active' : ''} ${
-                dropTarget === f.id ? 'drop-target' : ''
-              }`}
-              style={{ paddingLeft: 8 + depth * 14 }}
+              className={`tree-item ${isActive({ view: 'library', folderId: f.id }) ? 'active' : ''} ${dropTarget === f.id ? 'drop-target' : ''}`}
+              style={{ paddingLeft: 4 + depth * 14 }}
               {...dropProps(f.id, f.id)}
             >
               <button
@@ -69,10 +74,11 @@ export function Sidebar({ route, onNavigate }: { route: Route; onNavigate: (r: R
                   })
                 }
               >
-                {open ? '▾' : '▸'}
+                <Icon name={open ? 'chevronDown' : 'chevronRight'} size={14} />
               </button>
               <button className="tree-label" onClick={() => onNavigate({ view: 'library', folderId: f.id })}>
-                <FolderGlyph color={f.color} size={16} /> {f.name}
+                <FolderGlyph color={f.color} size={18} />
+                <span>{f.name}</span>
               </button>
             </div>
             {open && tree(f.id, depth + 1)}
@@ -80,59 +86,56 @@ export function Sidebar({ route, onNavigate }: { route: Route; onNavigate: (r: R
         );
       });
 
+  const hasFolders = !!library?.folders.length;
+
   return (
     <aside className="sidebar">
-      <div className="sidebar-title">Noteboard</div>
-      <nav>
+      <div className="brand">
+        <img src={LOGO} alt="" width={34} height={34} />
+        <span>Noteboard</span>
+      </div>
+      <nav className="nav-group" aria-label="Library">
         <div className={`drop-zone ${dropTarget === 'root' ? 'drop-target' : ''}`} {...dropProps('root', null)}>
-          {navItem('📚 Library', { view: 'library', folderId: null })}
+          {navItem('library', 'All notebooks', { view: 'library', folderId: null }, counts.notebooks)}
         </div>
-        {navItem('⭐ Favorites', { view: 'favorites' })}
-        {navItem('🕘 Recents', { view: 'recents' })}
-        {navItem('🗑️ Trash', { view: 'trash' }, library?.trashed.length ? <span className="count">{library.trashed.length}</span> : null)}
+        {navItem('clock', 'Recents', { view: 'recents' })}
+        {navItem('star', 'Favorites', { view: 'favorites' }, counts.favorites)}
+        {navItem('trash', 'Trash', { view: 'trash' }, library?.trashed.length)}
       </nav>
 
-      <div className="sidebar-section">Folders</div>
-      <div className="tree">{tree(null, 0)}</div>
+      {hasFolders && (
+        <>
+          <div className="sidebar-section">Folders</div>
+          <div className="tree">{tree(null, 0)}</div>
+        </>
+      )}
 
       {!!library?.tags.length && (
         <>
           <div className="sidebar-section">Tags</div>
-          <nav>{library.tags.map((tag) => navItem(`# ${tag}`, { view: 'tag', tag }))}</nav>
+          <nav className="nav-group" aria-label="Tags">
+            {library.tags.map((tag) => (
+              <button key={tag} className={`nav-item ${isActive({ view: 'tag', tag }) ? 'active' : ''}`} onClick={() => onNavigate({ view: 'tag', tag })}>
+                <Icon name="tag" size={18} />
+                <span className="nav-label">{tag}</span>
+              </button>
+            ))}
+          </nav>
         </>
       )}
 
       <div className="sidebar-footer">
         <SyncBadge />
-        <div className="backup-row">
-          <button className="link" onClick={() => setSecurityOpen(true)}>
-            Security & PIN
+        <div className="footer-actions">
+          <button className="footer-button" onClick={() => setSettingsOpen(true)}>
+            <Icon name="settings" size={18} /> Settings
           </button>
-          <button className="link" onClick={lockNow}>
-            🔒 Lock
+          <button className="footer-button" onClick={lockNow} aria-label="Lock Noteboard now">
+            <Icon name="lock" size={18} /> Lock
           </button>
-        </div>
-        <div className="backup-row">
-          <button className="link" onClick={() => void exportBackup(db).then((b) => shareOrDownload(b, `Noteboard backup ${new Date().toISOString().slice(0, 10)}.json`))}>
-            Export backup
-          </button>
-          <button className="link" onClick={() => fileInput.current?.click()}>
-            Import backup
-          </button>
-          <input
-            ref={fileInput}
-            type="file"
-            accept="application/json,.json"
-            hidden
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              e.target.value = '';
-              if (file) void act(async () => alert(`Imported ${await importBackup(db, file)} items.`));
-            }}
-          />
         </div>
       </div>
-      {securityOpen && <SecurityDialog onClose={() => setSecurityOpen(false)} />}
+      {settingsOpen && <SettingsDialog onClose={() => setSettingsOpen(false)} />}
     </aside>
   );
 }

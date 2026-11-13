@@ -15,7 +15,7 @@ export interface ShapeVertices {
 
 /** The corners of a straight-edged shape, or null for freehand ink, curves and pictures. */
 export function shapeVertices(stroke: Stroke): ShapeVertices | null {
-  if (stroke.tool === 'image' || stroke.points.length < 6) return null;
+  if (stroke.tool === 'image' || stroke.tool === 'text' || stroke.points.length < 6) return null;
   const pts = strokePoints(stroke);
   let vertices = simplify(pts, 0.75);
   if (vertices.length < 2 || vertices.length > 13) return null;

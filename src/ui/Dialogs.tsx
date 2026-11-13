@@ -3,6 +3,7 @@ import { COVER_COLORS, type ID, type PaperTemplate } from '../model/types';
 import { TEMPLATE_LABELS, templateStyle } from '../ink/templates';
 import type { LibraryState } from './useLibrary';
 import { isWithin } from '../db/library';
+import { Icon } from './Icon';
 
 export function Modal({ title, children, onClose }: { title: string; children: ReactNode; onClose: () => void }) {
   useEffect(() => {
@@ -150,7 +151,7 @@ export function MoveDialog(props: {
     <Modal title={`Move ${movingIds.length} item${movingIds.length === 1 ? '' : 's'}`} onClose={props.onClose}>
       <div className="tree-picker">
         <button className={`tree-row ${target === null ? 'selected' : ''}`} onClick={() => setTarget(null)}>
-          📚 Library
+          <Icon name="library" size={18} /> Library
         </button>
         {renderLevel(null, 1)}
       </div>

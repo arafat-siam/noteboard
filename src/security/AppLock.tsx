@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { db } from '../db/db';
 import { signOut, wasConnected } from '../sync/auth';
 import { PIN_MAX_LENGTH, PIN_MIN_LENGTH, isValidPin, pinLock } from './pin';
+import { Icon } from '../ui/Icon';
 
 const LOCK_EVENT = 'noteboard-lock';
 
@@ -137,7 +138,9 @@ function LockScreen({ mode, onUnlocked }: { mode: 'setup' | 'locked'; onUnlocked
   return (
     <div className="lock-screen">
       <div className="lock-card">
-        <div className="lock-icon">🔒</div>
+        <div className="lock-icon">
+          <Icon name="lock" size={34} />
+        </div>
         <h1>{title}</h1>
         {mode === 'setup' && firstPin === null && (
           <p className="lock-hint">
@@ -159,7 +162,7 @@ function LockScreen({ mode, onUnlocked }: { mode: 'setup' | 'locked'; onUnlocked
             </button>
           ))}
           <button className="keypad-aux" onClick={() => press('del')} aria-label="Delete">
-            ⌫
+            <Icon name="backspace" size={24} />
           </button>
           <button onClick={() => press('0')} disabled={waitMs > 0}>
             0

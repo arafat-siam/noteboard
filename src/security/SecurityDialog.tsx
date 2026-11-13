@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Modal } from '../ui/Dialogs';
 import { PIN_MAX_LENGTH, PIN_MIN_LENGTH, isValidPin, pinLock } from './pin';
 import { lockNow } from './AppLock';
+import { Icon } from '../ui/Icon';
 
 const AUTO_LOCK_OPTIONS: [number, string][] = [
   [0, 'Immediately'],
@@ -94,7 +95,7 @@ export function SecurityDialog({ onClose }: { onClose: () => void }) {
             lockNow();
           }}
         >
-          🔒 Lock now
+          <Icon name="lock" size={18} /> Lock now
         </button>
       </div>
     </Modal>
