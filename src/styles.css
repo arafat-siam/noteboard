@@ -14,7 +14,9 @@
   --radius: 12px;
   --sidebar-width: 270px;
   color-scheme: light dark;
-  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Roboto, sans-serif;
+  font-family:
+    -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto,
+    sans-serif;
   font-size: 15px;
   -webkit-text-size-adjust: 100%;
 }
@@ -64,7 +66,8 @@ body,
 }
 
 body {
-  padding: env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left);
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) 0
+    env(safe-area-inset-left);
 }
 
 button {
@@ -401,7 +404,9 @@ button.link.muted {
   width: 112px;
   height: 146px;
   border-radius: 4px 10px 10px 4px;
-  box-shadow: inset 8px 0 0 rgba(0, 0, 0, 0.18), 0 2px 6px rgba(0, 0, 0, 0.2);
+  box-shadow:
+    inset 8px 0 0 rgba(0, 0, 0, 0.18),
+    0 2px 6px rgba(0, 0, 0, 0.2);
   display: flex;
   align-items: flex-end;
   padding: 10px 8px 10px 16px;
@@ -807,8 +812,14 @@ button.link.muted {
   animation: shake 0.35s;
 }
 @keyframes shake {
-  20%, 60% { transform: translateX(-8px); }
-  40%, 80% { transform: translateX(8px); }
+  20%,
+  60% {
+    transform: translateX(-8px);
+  }
+  40%,
+  80% {
+    transform: translateX(8px);
+  }
 }
 .lock-message {
   min-height: 20px;
@@ -866,7 +877,10 @@ button.link.muted {
   z-index: 40;
   background: rgba(0, 0, 0, 0.78);
   color: #7cf29c;
-  font: 12px/1.45 ui-monospace, Menlo, monospace;
+  font:
+    12px/1.45 ui-monospace,
+    Menlo,
+    monospace;
   padding: 10px 12px;
   border-radius: 10px;
   pointer-events: none;
@@ -886,7 +900,9 @@ button.link.muted {
   will-change: transform;
 }
 .hover-cursor.pen {
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.9), 0 0 0 2px rgba(0, 0, 0, 0.25);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.9),
+    0 0 0 2px rgba(0, 0, 0, 0.25);
 }
 .hover-cursor.highlighter {
   border-radius: 3px;
@@ -907,10 +923,26 @@ button.link.muted {
   pointer-events: auto;
   touch-action: none;
 }
-.selection-handle.nw { left: -11px; top: -11px; cursor: nwse-resize; }
-.selection-handle.ne { right: -11px; top: -11px; cursor: nesw-resize; }
-.selection-handle.se { right: -11px; bottom: -11px; cursor: nwse-resize; }
-.selection-handle.sw { left: -11px; bottom: -11px; cursor: nesw-resize; }
+.selection-handle.nw {
+  left: -11px;
+  top: -11px;
+  cursor: nwse-resize;
+}
+.selection-handle.ne {
+  right: -11px;
+  top: -11px;
+  cursor: nesw-resize;
+}
+.selection-handle.se {
+  right: -11px;
+  bottom: -11px;
+  cursor: nwse-resize;
+}
+.selection-handle.sw {
+  left: -11px;
+  bottom: -11px;
+  cursor: nesw-resize;
+}
 
 .page-placeholder {
   background: #fff;
@@ -940,7 +972,6 @@ button.link.muted {
 .sync-control:disabled {
   opacity: 0.4;
 }
-
 
 /* Copy page dialog / Add PDF */
 .search-input {
@@ -1063,7 +1094,7 @@ button.link.muted {
 }
 .page-thumb.drop-before::before,
 .page-thumb.drop-after::after {
-  content: '';
+  content: "";
   position: absolute;
   top: 6px;
   bottom: 26px;

@@ -6,7 +6,7 @@ import { addPage, applyStrokeChange, copyPagesTo, deletePage, loadPage, notebook
 import { appendPdf } from '../pdf/pdf';
 import { CopyPageDialog } from './CopyPageDialog';
 import { PageManager } from './PageManager';
-import { isControl, PAGE_ACTION, RELAYOUT, type PageAction } from '../ink/InkPage';
+import { deferPageLayout, isControl, PAGE_ACTION, relayoutPages, type PageAction } from '../ink/InkPage';
 import { getClip, setClip } from '../ink/clipboard';
 import { readDropped, resolveDropped } from '../ink/images';
 import { exportNotebookPdf, exportPagePng, safeFilename, shareOrDownload } from '../export/exporters';
@@ -278,7 +278,7 @@ export function NotebookEditor({ notebookId, onClose }: { notebookId: string; on
     // Same frame as the re-render at the new zoom: drop the temporary scale and scroll so the
     // same spot of the same page is under the fingers again — no jump, no shake.
     const wrap = pagesWrapRef.current;
-    if (wrap) wrap.style.transform = '';
+    if (wrap) wrap.style.transform = wrap.style.willChange = '';
     const el = scrollRef.current;
     const pageEl = wrap?.querySelectorAll<HTMLElement>('.ink-page')[target.page];
     if (el && pageEl) {
@@ -286,15 +286,33 @@ export function NotebookEditor({ notebookId, onClose }: { notebookId: string; on
       el.scrollLeft += r.left + target.u * r.width - target.x;
       el.scrollTop += r.top + target.v * r.height - target.y;
     }
-    // Pages work out their visible area again now, before this frame is painted.
-    window.dispatchEvent(new Event(RELAYOUT));
+    // Pages draw themselves at the new zoom now (once, at the final scroll position), before
+    // this frame is painted.
+    relayoutPages();
   }, [zoom]);
   useEffect(() => {
     const el = scrollEl;
     if (!el) return;
     const fingers = new Map<number, { x: number; y: number }>();
     let pan: { x: number; y: number; t: number; vx: number; vy: number; samples: { x: number; y: number; t: number }[] } | null = null;
-    let pinch: { startDist: number; startZoom: number; current: number; midX: number; midY: number } | null = null;
+    let pinch: { startDist: number; startZoom: number; current: number; midX: number; midY: number; origin: string } | null = null;
+    let pinchFrame: number | null = null;
+    /** Shows the pinch's current size: one cheap style change per drawn frame. */
+    const showPinch = () => {
+      if (pinchFrame != null) cancelAnimationFrame(pinchFrame);
+      pinchFrame = null;
+      const wrap = pagesWrapRef.current;
+      if (!wrap || !pinch) return;
+      wrap.style.transformOrigin = pinch.origin;
+      wrap.style.transform = `scale(${pinch.current / pinch.startZoom})`;
+    };
+    const dropPinch = () => {
+      if (pinchFrame != null) cancelAnimationFrame(pinchFrame);
+      pinchFrame = null;
+      pinch = null;
+      const wrap = pagesWrapRef.current;
+      if (wrap) wrap.style.transform = wrap.style.willChange = '';
+    };
     let inertia: number | null = null;
     let tap: { fingers: number; start: number; travel: number } | null = null;
     // Where the view was when the current finger gesture began, so a palm that landed just
@@ -318,24 +336,33 @@ export function NotebookEditor({ notebookId, onClose }: { notebookId: string; on
     const startPinch = () => {
       const rect = el.getBoundingClientRect();
       const [a, b] = pair();
+      const midX = (a.x + b.x) / 2 - rect.left;
+      const midY = (a.y + b.y) / 2 - rect.top;
+      const wrap = pagesWrapRef.current;
       pinch = {
         startDist: Math.max(1, fingerDistance()),
         startZoom: zoomRef.current,
         current: zoomRef.current,
-        midX: (a.x + b.x) / 2 - rect.left,
-        midY: (a.y + b.y) / 2 - rect.top,
+        midX,
+        midY,
+        // The spot between the fingers stays put (the view doesn't scroll during a pinch).
+        origin: wrap ? `${midX + el.scrollLeft - wrap.offsetLeft}px ${midY + el.scrollTop - wrap.offsetTop}px` : '0 0',
       };
+      // Its own layer for the pinch: resizing it is then pure compositing, with no repainting
+      // of paper lines, shadows and labels on every frame.
+      if (wrap) wrap.style.willChange = 'transform';
       pan = null;
     };
     const endPinch = () => {
       if (!pinch) return;
       const { current, startZoom, midX, midY } = pinch;
-      pinch = null;
       const wrap = pagesWrapRef.current;
       if (Math.abs(current - startZoom) < 0.01) {
-        if (wrap) wrap.style.transform = '';
+        dropPinch();
         return;
       }
+      showPinch(); // the final size, in case a frame was still pending
+      pinch = null;
       // Keep the spot between the fingers in place after re-rendering sharply at the new zoom.
       // The scale transform stays on until that re-render is laid out (layout effect above).
       const box = el.getBoundingClientRect();
@@ -356,7 +383,8 @@ export function NotebookEditor({ notebookId, onClose }: { notebookId: string; on
       pendingZoomScroll.current = r
         ? { page, u: (x - r.left) / r.width, v: (y - r.top) / r.height, x, y }
         : null;
-      if (!r && wrap) wrap.style.transform = '';
+      if (r) deferPageLayout();
+      else if (wrap) wrap.style.transform = wrap.style.willChange = '';
       setZoom(current);
     };
 
@@ -371,11 +399,7 @@ export function NotebookEditor({ notebookId, onClose }: { notebookId: string; on
         pan = null;
         stopInertia();
         tap = null;
-        if (pinch) {
-          pinch = null;
-          const wrap = pagesWrapRef.current;
-          if (wrap) wrap.style.transform = '';
-        }
+        if (pinch) dropPinch();
         if (recent && before) {
           if (Math.abs(zoomRef.current - before.zoom) > 0.001) setZoom(before.zoom);
           el.scrollLeft = before.left;
@@ -408,11 +432,8 @@ export function NotebookEditor({ notebookId, onClose }: { notebookId: string; on
 
       if (pinch && fingers.size >= 2) {
         pinch.current = Math.min(4, Math.max(0.5, pinch.startZoom * (fingerDistance() / pinch.startDist)));
-        const wrap = pagesWrapRef.current;
-        if (wrap) {
-          wrap.style.transformOrigin = `${pinch.midX + el.scrollLeft - wrap.offsetLeft}px ${pinch.midY + el.scrollTop - wrap.offsetTop}px`;
-          wrap.style.transform = `scale(${pinch.current / pinch.startZoom})`;
-        }
+        // Both fingers report every frame: apply once per frame, not once per finger.
+        if (pinchFrame == null) pinchFrame = requestAnimationFrame(showPinch);
       } else if (pan) {
         const now = performance.now();
         const dx = p.x - pan.x;
@@ -491,6 +512,7 @@ export function NotebookEditor({ notebookId, onClose }: { notebookId: string; on
     el.addEventListener('pointercancel', onUp);
     return () => {
       stopInertia();
+      if (pinchFrame != null) cancelAnimationFrame(pinchFrame);
       el.removeEventListener('pointerdown', onDown);
       el.removeEventListener('pointermove', onMove);
       el.removeEventListener('pointerup', onUp);

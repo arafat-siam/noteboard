@@ -181,17 +181,52 @@ export function drawPage(
   region: CanvasRegion,
   hidden?: ReadonlySet<string>,
 ): void {
+  drawPageParts(ctx, strokes, region, hidden, [{ x: 0, y: 0, width: ctx.canvas.width, height: ctx.canvas.height }]);
+}
+
+/** A rectangle in canvas pixels. */
+export interface PixelRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * Clears and redraws only the given parts of a region canvas (they must not overlap); the rest
+ * of the canvas is left exactly as it is. Used when the canvas moves along the page while
+ * scrolling: what is already drawn is kept and only the newly uncovered strip is drawn.
+ */
+export function drawPageParts(
+  ctx: CanvasRenderingContext2D,
+  strokes: Stroke[],
+  region: CanvasRegion,
+  hidden: ReadonlySet<string> | undefined,
+  parts: PixelRect[],
+): void {
+  if (!parts.length) return;
+  ctx.save();
   ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+  ctx.beginPath();
+  for (const p of parts) {
+    ctx.clearRect(p.x, p.y, p.width, p.height);
+    ctx.rect(p.x, p.y, p.width, p.height);
+  }
+  // Whole-pixel clip: ink drawn across the edge of a part can't touch what is kept.
+  ctx.clip();
   applyRegion(ctx, region);
-  const right = region.x + region.width;
-  const bottom = region.y + region.height;
-  const visible = (s: Stroke) => {
-    if (hidden?.has(s.id)) return false;
-    const [x0, y0, x1, y1] = cachedBounds(s);
-    return x1 >= region.x && x0 <= right && y1 >= region.y && y0 <= bottom;
-  };
+  const areas = parts.map((p) => [
+    region.x + p.x / region.k,
+    region.y + p.y / region.k,
+    region.x + (p.x + p.width) / region.k,
+    region.y + (p.y + p.height) / region.k,
+  ]);
   // In stacking order (oldest first; see Stroke.createdAt), so layering works for ink and
   // pictures alike. The highlighter blends (multiply), so ink under it stays crisp.
-  for (const s of strokes) if (visible(s)) drawStroke(ctx, s);
+  for (const s of strokes) {
+    if (hidden?.has(s.id)) continue;
+    const [x0, y0, x1, y1] = cachedBounds(s);
+    if (areas.some((a) => x1 >= a[0]! && x0 <= a[2]! && y1 >= a[1]! && y0 <= a[3]!)) drawStroke(ctx, s);
+  }
+  ctx.restore();
 }

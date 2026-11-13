@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { newId, type Page, type Stroke } from '../model/types';
-import { applyRegion, DEFAULT_FILL_OPACITY, drawPage, drawStroke, type CanvasRegion } from './render';
+import { applyRegion, DEFAULT_FILL_OPACITY, drawPage, drawPageParts, drawStroke, type CanvasRegion, type PixelRect } from './render';
 import { adjustShape, polylinePoints, recognizeShape, type ShapeKind } from './shapes';
 import { buildGuides, sameSnap, snapLineEnd, snapToPoint, type SnapGuides, type SnapResult } from './snapping';
 import { pencilHaptic } from '../pencil/haptics';
@@ -142,6 +142,11 @@ const VIEW_MARGIN = 0.3;
 const VIEW_MARGIN_AHEAD = 0.48;
 /** iPad Safari refuses canvases above ~16.7M pixels; stay well under per canvas. */
 const MAX_CANVAS_PIXELS = 10_000_000;
+/**
+ * The canvas is moved along before the visible part reaches its edge, by this fraction of the
+ * screen height, so the newly drawn strip is still off screen.
+ */
+const VIEW_LEAD = 0.1;
 
 /** Menus, buttons and sliders on the page (the Pencil and fingers operate them, not write). */
 export function isControl(target: EventTarget | null): boolean {
@@ -162,6 +167,18 @@ function replaceIds(ids: Set<string>, before: Stroke[], after: Stroke[]): Set<st
 export const PAGE_ACTION = 'noteboard-page-action';
 /** Editor → pages: recompute the visible area now (after a zoom's scroll jump). */
 export const RELAYOUT = 'noteboard-relayout';
+/**
+ * After a pinch, the editor first puts the scroll position back and only then asks the pages to
+ * draw at the new zoom. Without this each page drew twice (new canvases + all ink, both times).
+ */
+let layoutDeferred = false;
+export function deferPageLayout(): void {
+  layoutDeferred = true;
+}
+export function relayoutPages(): void {
+  layoutDeferred = false;
+  window.dispatchEvent(new Event(RELAYOUT));
+}
 export type PageAction = { pageId: string; action: 'insertPictures' | 'paste'; files: Blob[] };
 
 function getLiveContext(canvas: HTMLCanvasElement | null): CanvasRenderingContext2D | null {
@@ -211,6 +228,8 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
   strokesRef.current = page.strokes;
   const [selection, setSelection] = useState<Selection | null>(null);
 
+  const pageWidth = page.width;
+  const pageHeight = page.height;
   const cssWidth = page.width * scale;
   const cssHeight = page.height * scale;
   const dpr = typeof window === 'undefined' ? 1 : window.devicePixelRatio || 1;
@@ -317,33 +336,122 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
       }
 
       const needed = toPage(left, top, right, bottom);
-      const want = scale * dpr;
-      const k = Math.min(want, Math.sqrt(MAX_CANVAS_PIXELS / (needed.width * needed.height)));
-      const current = regionRef.current;
       const visible =
         visibleRight > visibleLeft && visibleBottom > visibleTop
           ? toPage(visibleLeft, visibleTop, visibleRight, visibleBottom)
           : needed;
-      if (!force && current && Math.abs(current.k - k) < 1e-6 && contains(current, visible)) return;
-
-      const region: CanvasRegion = { ...needed, k };
-      regionRef.current = region;
-      const pixelWidth = Math.max(1, Math.ceil(region.width * k));
-      const pixelHeight = Math.max(1, Math.ceil(region.height * k));
-      for (const c of canvases) {
-        c.width = pixelWidth;
-        c.height = pixelHeight;
-        c.style.left = `${region.x * scale}px`;
-        c.style.top = `${region.y * scale}px`;
-        c.style.width = `${(pixelWidth / k) * scale}px`;
-        c.style.height = `${(pixelHeight / k) * scale}px`;
+      // The canvas keeps one size for a given zoom and screen (the screen plus its margins, or
+      // the whole page if that is smaller) and slides along the page. A canvas that never
+      // changes size is never re-created, and what it already shows can be kept when it moves.
+      const width = Math.min(pageWidth, (sr.width * (1 + 2 * VIEW_MARGIN)) / scale);
+      const height = Math.min(pageHeight, (sr.height * (1 + 2 * VIEW_MARGIN)) / scale);
+      const k = Math.min(scale * dpr, Math.sqrt(MAX_CANVAS_PIXELS / (width * height)));
+      const pixelWidth = Math.max(1, Math.ceil(width * k));
+      const pixelHeight = Math.max(1, Math.ceil(height * k));
+      const ink = inkRef.current;
+      const live = liveRef.current;
+      const current = regionRef.current;
+      // The live layer (ink being written) is only needed on a page that is actually on screen;
+      // pages waiting in the margin do without it, which saves a full canvas of memory each.
+      const onScreen = visibleRight > visibleLeft && visibleBottom > visibleTop;
+      const fitLive = (region: CanvasRegion) => {
+        if (!live) return;
+        const w = onScreen || gestureRef.current ? pixelWidth : 0;
+        const h = w ? pixelHeight : 0;
+        if (live.width !== w || live.height !== h) {
+          live.width = w;
+          live.height = h;
+        }
+        live.style.left = `${region.x * scale}px`;
+        live.style.top = `${region.y * scale}px`;
+        live.style.width = `${(pixelWidth / k) * scale}px`;
+        live.style.height = `${(pixelHeight / k) * scale}px`;
+      };
+      const sameSize =
+        !!current && !!ink && Math.abs(current.k - k) < 1e-6 && ink.width === pixelWidth && ink.height === pixelHeight;
+      if (!force && current && sameSize) {
+        // Move on a little before the visible part reaches the canvas edge (in the direction of
+        // scrolling), so the strip that has to be drawn is still off screen.
+        const lead = (sr.height * VIEW_LEAD) / scale;
+        const direction = scrollDirection.current;
+        const y0 = Math.max(0, visible.y - (direction < 0 ? lead : 0));
+        const y1 = Math.min(pageHeight, visible.y + visible.height + (direction > 0 ? lead : 0));
+        if (contains(current, { x: visible.x, y: y0, width: visible.width, height: y1 - y0 })) {
+          if (live && (live.width !== 0) !== onScreen && !gestureRef.current) fitLive(current);
+          return;
+        }
       }
+
+      // On whole canvas pixels, so kept ink lines up exactly after a move.
+      const snap = (v: number) => Math.round(v * k) / k;
+      const region: CanvasRegion = {
+        x: snap(Math.max(0, Math.min(needed.x, pageWidth - width))),
+        y: snap(Math.max(0, Math.min(needed.y, pageHeight - height))),
+        width,
+        height,
+        k,
+      };
+      regionRef.current = region;
       diagnostics.canvasPixels = pixelWidth * pixelHeight;
-      paintInk(true);
+
+      const dx = current ? Math.round((current.x - region.x) * k) : 0;
+      const dy = current ? Math.round((current.y - region.y) * k) : 0;
+      const ctx = ink?.getContext('2d');
+      if (
+        !force &&
+        sameSize &&
+        ctx &&
+        paintedRef.current.region === current &&
+        !gestureRef.current &&
+        !laserRef.current.length &&
+        Math.abs(dx) < pixelWidth &&
+        Math.abs(dy) < pixelHeight
+      ) {
+        // Scrolling: slide the picture inside the canvas and draw only the uncovered strips.
+        ink.style.left = `${region.x * scale}px`;
+        ink.style.top = `${region.y * scale}px`;
+        fitLive(region);
+        ctx.save();
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.globalCompositeOperation = 'copy';
+        ctx.drawImage(ink, dx, dy);
+        ctx.restore();
+        const keptTop = Math.max(0, dy);
+        const keptBottom = pixelHeight + Math.min(0, dy);
+        const parts: PixelRect[] = [];
+        if (dy > 0) parts.push({ x: 0, y: 0, width: pixelWidth, height: dy });
+        else if (dy < 0) parts.push({ x: 0, y: keptBottom, width: pixelWidth, height: -dy });
+        if (dx > 0) parts.push({ x: 0, y: keptTop, width: dx, height: keptBottom - keptTop });
+        else if (dx < 0) parts.push({ x: pixelWidth + dx, y: keptTop, width: -dx, height: keptBottom - keptTop });
+        drawPageParts(ctx, strokesRef.current, region, hiddenRef.current, parts);
+        paintedRef.current.region = region;
+      } else {
+        if (ink) {
+          // Setting a canvas size re-creates (and clears) it: only when the size really changes.
+          if (ink.width !== pixelWidth || ink.height !== pixelHeight) {
+            ink.width = pixelWidth;
+            ink.height = pixelHeight;
+          }
+          ink.style.left = `${region.x * scale}px`;
+          ink.style.top = `${region.y * scale}px`;
+          ink.style.width = `${(pixelWidth / k) * scale}px`;
+          ink.style.height = `${(pixelHeight / k) * scale}px`;
+        }
+        fitLive(region);
+        const liveCtx = live?.width ? live.getContext('2d') : null;
+        liveCtx?.setTransform(1, 0, 0, 1, 0, 0);
+        liveCtx?.clearRect(0, 0, pixelWidth, pixelHeight);
+        paintInk(true);
+      }
       void renderPdf();
     },
-    [scroller, scale, dpr, paintInk, renderPdf],
+    [scroller, scale, dpr, pageWidth, pageHeight, paintInk, renderPdf],
   );
+
+  // Always the layout for the zoom being shown: the editor asks for a relayout from its own
+  // layout effect, before this page's listeners below have been re-attached for the new zoom.
+  const layoutRef = useRef(layout);
+  layoutRef.current = layout;
 
   // Re-open once a PDF that was still syncing arrives on this device.
   const pdfAvailable = useLiveQuery(
@@ -369,7 +477,7 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
 
   // Re-layout when zoom changes (before paint, so nothing flashes) …
   useLayoutEffect(() => {
-    layout(true);
+    if (!layoutDeferred) layout(true);
   }, [layout]);
 
   // … and when scrolling or resizing.
@@ -385,7 +493,7 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
       }
     };
     scroller.addEventListener('scroll', onScroll, { passive: true });
-    const relayout = () => layout(true);
+    const relayout = () => layoutRef.current(true);
     window.addEventListener(RELAYOUT, relayout);
     const observer = new ResizeObserver(() => layout());
     observer.observe(scroller);
@@ -861,7 +969,7 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
           ? settings.highlighterSize * scale
           : Math.max(5, settings.penSize * scale);
     if (tool === 'eraser' || settings.hoverPreview !== false) {
-      showHoverCursor(e.clientX, e.clientY, {
+      showHoverCursor(e.nativeEvent, {
         tool,
         size,
         color: tool === 'highlighter' ? settings.highlighterColor : settings.color,

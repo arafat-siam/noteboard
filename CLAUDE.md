@@ -42,6 +42,9 @@ Verify UI changes in the browser pane (launch config `noteboard-dev`). Synthetic
 - iPad Safari canvas memory is tight: only pages near the viewport keep canvases (see InkPage).
 - iPadOS Scribble delays Pencil touches in web pages; the editor `preventDefault`s stylus touchstart/touchmove (except on buttons/inputs) to opt out. Don't remove it.
 - Pencil hover (`pointermove` with `buttons === 0`) drives the hover cursor and hover-hold quick palette; hovering must never count as pen contact for palm rejection.
+- Hover cursor (`src/ink/hoverCursor.ts` + `hoverTracker.ts`, tested): one element, moved once per frame from filtered samples (never straight from the event handler), only `transform` per frame, and a one-frame CSS glide so the 120 Hz screen gets in-between positions (Safari draws pages at ~60 fps; without it the dot looks doubled). `GLIDE = false` turns the glide off.
+- Page canvases keep one size per zoom/screen and slide along the page; on scroll the drawn ink is shifted inside the canvas and only the uncovered strip is drawn (`drawPageParts`). Don't resize or fully repaint canvases while scrolling. The live canvas exists only on on-screen pages.
+- Testing in the browser pane while it is hidden: `requestAnimationFrame` and `scroll` events don't fire. Replace rAF with a `setTimeout` version and dispatch `scroll` by hand in the test script.
 - Selecting: a finger tap (or long-press) on ink selects it; Pencil taps draw dots. Snapped lines snap to ends/midpoints/perpendicular/parallel/15° angles of straight ink (`src/ink/snapping.ts`, + tests).
 - Apple Pencil Pro haptics: `src/pencil/haptics.ts` posts to the shell's `noteboardHaptic` handler (`PencilHaptics.swift`, UICanvasFeedbackGenerator, iPadOS 17.5+). Safari/Home Screen can't vibrate the Pencil.
 - Laser pointer tool: live layer only, never saved.
