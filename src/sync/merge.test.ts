@@ -134,3 +134,10 @@ describe('locked and grouped items sync', () => {
     expect(mergePage(page({ strokes: [locked] }), page({})).strokes[0]).toMatchObject({ locked: true, group: 'g1' });
   });
 });
+
+describe('links sync', () => {
+  it('keeps an item link through merging', () => {
+    const linked: Stroke = { ...stroke('l', 4), link: { kind: 'url', url: 'https://example.com/' } };
+    expect(mergePage(page({ strokes: [linked] }), page({})).strokes[0]!.link).toEqual({ kind: 'url', url: 'https://example.com/' });
+  });
+});

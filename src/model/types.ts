@@ -20,6 +20,9 @@ export type BrushKind =
   | 'calligraphy'
   | 'crayon';
 
+/** Where an item's link goes: a web address, a page of this notebook, or another notebook. */
+export type StrokeLink = { kind: 'url'; url: string } | { kind: 'page'; pageId: string } | { kind: 'notebook'; notebookId: string };
+
 /** Line style of a stroke (shapes, lines). Missing = solid. */
 export type DashStyle = 'dashed' | 'dotted';
 
@@ -88,6 +91,8 @@ export interface Stroke {
   locked?: boolean;
   /** Items with the same group id select, move and resize together. */
   group?: string;
+  /** Tapping the item's link badge opens this. */
+  link?: StrokeLink;
   /** Text boxes only (tool 'text'): its 4 corners are in `points`, like a picture. */
   text?: TextContent;
   /** Fill inside the shape (closed along its points). Missing = no fill. Strokes are

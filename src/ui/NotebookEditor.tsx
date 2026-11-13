@@ -30,6 +30,7 @@ import { ToolPalette, usePaletteLayout } from './ToolPalette';
 import { Icon } from './Icon';
 import { useAppIsDark } from './theme';
 import { GuideOverlay, toggleGuide } from './GuideOverlay';
+import { FOLLOW_LINK, type FollowRequest } from '../ink/links';
 import { getGuide, onGuideChange, setGuide } from '../ink/guides';
 import { setInkDark } from '../ink/inkTheme';
 import { setNotebookSettings } from '../db/library';
@@ -109,7 +110,16 @@ function loadSettings(): ToolSettings {
   }
 }
 
-export function NotebookEditor({ notebookId, onClose }: { notebookId: string; onClose: () => void }) {
+export function NotebookEditor({
+  notebookId,
+  onClose,
+  onOpenNotebook,
+}: {
+  notebookId: string;
+  onClose: () => void;
+  /** Follow a link to another notebook. */
+  onOpenNotebook?: (id: string) => void;
+}) {
   const notebook = useLiveQuery(() => db.items.get(notebookId), [notebookId]);
   // Only the notebook's page list is watched here; each page loads itself (see PageSlot).
   const pageIds = notebook?.kind === 'notebook' ? notebook.pageIds : [];
@@ -627,6 +637,44 @@ export function NotebookEditor({ notebookId, onClose }: { notebookId: string; on
     return () => window.removeEventListener('paste', onPaste);
   }, []);
 
+  // ---- Links: follow them, with a Back button to where you were ----
+  const [backStack, setBackStack] = useState<number[]>([]);
+  const followRef = useRef<(r: FollowRequest) => void>(() => {});
+  followRef.current = (request: FollowRequest) => {
+    if (request.kind === 'url') {
+      window.open(request.url, '_blank', 'noopener,noreferrer');
+      return;
+    }
+    if (request.kind === 'notebook') {
+      onOpenNotebook?.(request.notebookId);
+      return;
+    }
+    void (async () => {
+      let target = request.kind === 'page' ? request.pageId : undefined;
+      if (request.kind === 'pdfPage') {
+        const pages = await db.pages.where('notebookId').equals(notebookId).toArray();
+        target = pages.find((p) => p.background?.fileId === request.fileId && p.background.pageIndex === request.pageIndex)?.id;
+      }
+      if (!target || !pageIds.includes(target)) {
+        setNotice('That page is no longer in this notebook');
+        return;
+      }
+      const el = scrollRef.current;
+      if (el) setBackStack((s) => [...s.slice(-19), el.scrollTop]);
+      openPage(target);
+    })();
+  };
+  useEffect(() => {
+    const on = (e: Event) => followRef.current((e as CustomEvent<FollowRequest>).detail);
+    window.addEventListener(FOLLOW_LINK, on);
+    return () => window.removeEventListener(FOLLOW_LINK, on);
+  }, []);
+  const goBack = () => {
+    const top = backStack[backStack.length - 1];
+    setBackStack((s) => s.slice(0, -1));
+    if (top !== undefined && scrollRef.current) scrollRef.current.scrollTop = top;
+  };
+
   const openPage = (pageId: string) => {
     setPagesOpen(false);
     requestAnimationFrame(() => {
@@ -903,6 +951,11 @@ export function NotebookEditor({ notebookId, onClose }: { notebookId: string; on
       )}
 
       {showDiagnostics && <DiagnosticsOverlay />}
+      {backStack.length > 0 && (
+        <button className="link-back" onClick={goBack}>
+          <Icon name="chevronLeft" size={18} /> Back
+        </button>
+      )}
       <GuideOverlay scale={scale} />
 
       {palette && (

@@ -44,6 +44,8 @@ import { makeShapeStroke, makeTapeStroke } from './shapeTool';
 import { revealedTape } from './render';
 import { displayColor } from './inkTheme';
 import { DashSample } from '../ui/Icon';
+import { describeLink, followLink, pdfLinks, type PdfLinkArea } from './links';
+import { LinkDialog, LinkGlyph } from '../ui/LinkDialog';
 import { edgeNear, getGuide, projectOnEdge, protractorDegrees, type GuideEdge } from './guides';
 import {
   alignStrokes,
@@ -284,6 +286,8 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
   const pdfDocRef = useRef<PDFDocumentProxy | null>(null);
   const pdfRenderRef = useRef<{ task: RenderTask | null; generation: number }>({ task: null, generation: 0 });
   const [pdfMissing, setPdfMissing] = useState(false);
+  /** Links inside the imported PDF page (tap with a finger to follow). */
+  const [pdfLinkAreas, setPdfLinkAreas] = useState<PdfLinkArea[]>([]);
   // Stable identity (the page object is re-read after every save; the PDF behind it isn't).
   const bgFile = page.background?.fileId;
   const bgIndex = page.background?.pageIndex;
@@ -541,6 +545,7 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
       pdfDocRef.current = doc;
       setPdfMissing(!doc);
       void renderPdf();
+      if (doc) void pdfLinks(doc, background.fileId, background.pageIndex, page.width, page.height).then((areas) => alive && setPdfLinkAreas(areas));
     });
     return () => {
       alive = false;
@@ -1653,6 +1658,13 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
       cancelPress();
       // A quick finger tap that didn't move (moving cancels the press): select the ink under it.
       if (!cancelled && performance.now() - press.t < TAP_MS) {
+        // A link in the imported PDF: follow it.
+        const pdfLink = pdfLinkAreas.find((a) => rectContains(a, press.at));
+        if (pdfLink && background) {
+          if (pdfLink.url) followLink({ kind: 'url', url: pdfLink.url });
+          else if (pdfLink.pageIndex !== undefined) followLink({ kind: 'pdfPage', fileId: background.fileId, pageIndex: pdfLink.pageIndex });
+          return;
+        }
         // Tapping tape peeks under it (like flash cards); tapping ink selects it.
         const tape = tapeAt(press.at);
         const hit = strokeAt(press.at);
@@ -1866,6 +1878,7 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
     paintInk(true);
   };
   const [fillOpacity, setFillOpacity] = useState(DEFAULT_FILL_OPACITY);
+  const [linking, setLinking] = useState(false);
   const [keepAspect, setKeepAspectState] = useState(getKeepAspect);
   /** Which pop-up of the selection menu is open. */
   const [menuPanel, setMenuPanel] = useState<'color' | 'fill' | 'arrange' | 'style' | null>(null);
@@ -2455,6 +2468,10 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
               <span className="sel-label">Colour</span>
             </button>
             )}
+            <button className="sel-btn" aria-label="Link" onClick={() => setLinking(true)}>
+              <LinkGlyph />
+              <span className="sel-label">Link</span>
+            </button>
             {singleText && (
               <button className="sel-btn" aria-label="Edit text" onClick={editSelectedText}>
                 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 6.5V5h14v1.5M12 5v14M9 19h6" /></svg>
@@ -2698,6 +2715,39 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
         </div>
       )}
       <div ref={badgeRef} className="gesture-badge" aria-hidden="true" />
+      {page.strokes.map((s) => {
+        if (!s.link || hiddenRef.current.has(s.id)) return null;
+        const b = strokeBounds(s);
+        return (
+          <button
+            key={`link-${s.id}`}
+            className="link-badge"
+            style={{ left: (b.x + b.width) * scale, top: b.y * scale }}
+            aria-label={`Open link: ${describeLink(s.link)}`}
+            title={describeLink(s.link)}
+            onClick={() => followLink(s.link!)}
+          >
+            <LinkGlyph />
+          </button>
+        );
+      })}
+      {linking && selection && (
+        <LinkDialog
+          notebookId={page.notebookId}
+          link={selectedStrokes().find((s) => s.link)?.link ?? null}
+          onSave={(link) => {
+            const targets = selectedStrokes();
+            replaceSelected(
+              targets,
+              targets.map((s) => {
+                const { link: _old, ...rest } = s;
+                return link ? { ...rest, id: newId(), link } : { ...rest, id: newId() };
+              }),
+            );
+          }}
+          onClose={() => setLinking(false)}
+        />
+      )}
       <div
         ref={textEditorRef}
         className={`text-editor${textEdit ? ' open' : ''}`}

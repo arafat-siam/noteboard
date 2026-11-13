@@ -29,7 +29,7 @@ export function App() {
   };
 
   if (route.view === 'notebook') {
-    return <NotebookEditor notebookId={route.id} onClose={() => setRoute(route.from)} />;
+    return <NotebookEditor key={route.id} notebookId={route.id} onClose={() => setRoute(route.from)} onOpenNotebook={openNotebook} />;
   }
 
   return (

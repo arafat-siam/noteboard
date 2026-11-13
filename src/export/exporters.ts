@@ -8,6 +8,8 @@ import { arrowPath } from '../ink/shapeTool';
 import { drawTextStroke } from '../ink/text';
 import { DARK_PAPER, TEMPLATE_METRICS } from '../ink/templates';
 import { darkVariant, setInkDark } from '../ink/inkTheme';
+import { pdfLinks } from '../ink/links';
+import { strokeBounds } from '../ink/geometry';
 import { imageCorners, preloadImages } from '../ink/images';
 import { mergeLibrary, mergePage } from '../sync/merge';
 import { markLibraryChanged } from '../db/library';
@@ -95,8 +97,10 @@ export async function exportNotebookPdf(
     }
     return src;
   };
+  const placed: { page: Page; pdfPage: PDFPage }[] = [];
   for (const page of pages) {
     const pdfPage = pdf.addPage([page.width * PT, page.height * PT]);
+    placed.push({ page, pdfPage });
     if (page.background) {
       const src = await sourceOf(page.background.fileId);
       if (src) {
@@ -154,8 +158,55 @@ export async function exportNotebookPdf(
       if (arrows) pdfPage.drawSvgPath(arrows, { x: 0, y: page.height * PT, scale: PT, color: strokeColor, opacity, borderWidth: 0 });
     }
   }
+  await addLinkAnnotations(lib, pdf, placed, db);
   const bytes = await pdf.save();
   return new Blob([bytes], { type: 'application/pdf' });
+}
+
+/**
+ * Clickable links in the exported PDF: links on items (web addresses, pages that are part of
+ * the export) and the links that were in the imported PDF pages.
+ */
+async function addLinkAnnotations(
+  lib: typeof import('pdf-lib'),
+  pdf: import('pdf-lib').PDFDocument,
+  placed: { page: Page; pdfPage: PDFPage }[],
+  db: NoteboardDB,
+): Promise<void> {
+  const byPageId = new Map(placed.map((p) => [p.page.id, p.pdfPage]));
+  const byPdfPage = new Map(placed.filter((p) => p.page.background).map((p) => [`${p.page.background!.fileId}|${p.page.background!.pageIndex}`, p.pdfPage]));
+  const add = (pdfPage: PDFPage, page: Page, r: { x: number; y: number; width: number; height: number }, target: { url?: string; to?: PDFPage }) => {
+    const rect = [r.x * PT, (page.height - r.y - r.height) * PT, (r.x + r.width) * PT, (page.height - r.y) * PT];
+    const annot = pdf.context.obj({
+      Type: 'Annot',
+      Subtype: 'Link',
+      Rect: rect,
+      Border: [0, 0, 0],
+      ...(target.url
+        ? { A: { Type: 'Action', S: 'URI', URI: lib.PDFString.of(target.url) } }
+        : { Dest: [target.to!.ref, lib.PDFName.of('Fit')] }),
+    });
+    pdfPage.node.addAnnot(pdf.context.register(annot));
+  };
+  for (const { page, pdfPage } of placed) {
+    for (const s of page.strokes) {
+      if (!s.link) continue;
+      const b = strokeBounds(s);
+      if (s.link.kind === 'url') add(pdfPage, page, b, { url: s.link.url });
+      else if (s.link.kind === 'page' && byPageId.has(s.link.pageId)) add(pdfPage, page, b, { to: byPageId.get(s.link.pageId)! });
+    }
+    if (page.background) {
+      const doc = await getPdf(db, page.background.fileId);
+      if (!doc) continue;
+      for (const area of await pdfLinks(doc, page.background.fileId, page.background.pageIndex, page.width, page.height)) {
+        if (area.url) add(pdfPage, page, area, { url: area.url });
+        else if (area.pageIndex !== undefined) {
+          const to = byPdfPage.get(`${page.background.fileId}|${area.pageIndex}`);
+          if (to) add(pdfPage, page, area, { to });
+        }
+      }
+    }
+  }
 }
 
 /** A text box drawn at 4 pixels per page unit (placed on its corners like a picture). */
