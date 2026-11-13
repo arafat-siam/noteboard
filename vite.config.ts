@@ -2,9 +2,10 @@ import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 
-// Production is served from https://arafat-siam.github.io/noteboard/
+// Production is served from https://arafat-siam.github.io/noteboard/ ; a design preview build
+// (NOTEBOARD_BASE=/noteboard/preview/) from https://arafat-siam.github.io/noteboard/preview/
 export default defineConfig(({ command }) => ({
-  base: command === 'build' ? '/noteboard/' : '/',
+  base: process.env.NOTEBOARD_BASE || (command === 'build' ? '/noteboard/' : '/'),
   plugins: [
     react(),
     VitePWA({
@@ -27,13 +28,13 @@ export default defineConfig(({ command }) => ({
       workbox: {
         globPatterns: ['**/*.{js,mjs,css,html,svg,png,woff2}'],
         // Test builds under /lab/ are separate apps with their own service workers.
-        globIgnores: ['lab/**'],
+        globIgnores: ['lab/**', 'preview/**'],
         // The PDF engine's worker is ~1.4 MB; keep it cached so PDFs open offline.
         maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
         navigateFallback: 'index.html',
         // Opening the shell app download must fetch the zip, not the app page; test builds under
         // /lab/ must load their own page, not this app's.
-        navigateFallbackDenylist: [/\.zip$/, /\/lab\//],
+        navigateFallbackDenylist: [/\.zip$/, /\/lab\//, /\/preview\//],
       },
     }),
   ],

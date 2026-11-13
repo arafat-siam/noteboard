@@ -15,6 +15,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          # Full history, so the redesign branch can be built as the design preview below.
+          fetch-depth: 0
       - uses: actions/setup-node@v5
         with:
           node-version: 22
@@ -32,6 +35,23 @@ jobs:
       - name: Build
         if: success() || failure()
         run: bash scripts/ci-run.sh "Build" npx vite build
+        env:
+          VITE_GOOGLE_CLIENT_ID: ${{ vars.GOOGLE_CLIENT_ID }}
+          VITE_GOOGLE_API_KEY: ${{ vars.GOOGLE_API_KEY }}
+
+      # Design preview: the redesign branch (if there is one) at https://arafat-siam.github.io/noteboard/preview/
+      # It's rebuilt whenever main is published. It shares the app's notes on the device, so it
+      # must not change how notes are stored.
+      - name: Build design preview
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        run: |
+          if git rev-parse --verify --quiet origin/redesign >/dev/null; then
+            git worktree add ../redesign origin/redesign
+            cd ../redesign && npm ci
+            NOTEBOARD_BASE=/noteboard/preview/ bash scripts/ci-run.sh "Preview build" npx vite build --outDir "$GITHUB_WORKSPACE/dist/preview" --emptyOutDir
+          else
+            echo "No redesign branch, so no preview."
+          fi
         env:
           VITE_GOOGLE_CLIENT_ID: ${{ vars.GOOGLE_CLIENT_ID }}
           VITE_GOOGLE_API_KEY: ${{ vars.GOOGLE_API_KEY }}
