@@ -3,6 +3,7 @@ import { db } from '../db/db';
 import { signOut, wasConnected } from '../sync/auth';
 import { PIN_MAX_LENGTH, PIN_MIN_LENGTH, isValidPin, pinLock } from './pin';
 import { Icon } from '../ui/Icon';
+import { lockAllNotebooks } from './notebookLock';
 
 const LOCK_EVENT = 'noteboard-lock';
 
@@ -26,12 +27,12 @@ type LockState = 'setup' | 'locked' | 'unlocked';
 
 /** Covers the app until the PIN is entered; first launch asks the user to create one. */
 export function AppLock({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<LockState>(() => (pinLock.hasPin() ? 'locked' : 'setup'));
+  const [state, setState] = useState<LockState>(() => (pinLock.hasPin() ? 'locked' : pinLock.skipped() ? 'unlocked' : 'setup'));
 
   useEffect(() => {
     let hiddenAt = 0;
     const onVisibility = () => {
-      if (!pinLock.hasPin()) return;
+      if (!pinLock.hasPin() || pinLock.autoLockMinutes() < 0) return;
       if (document.visibilityState === 'hidden') {
         hiddenAt = Date.now();
         // "Immediately": lock before iPadOS takes the app-switcher snapshot.
@@ -49,6 +50,11 @@ export function AppLock({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  // When the whole app locks, every notebook locks too.
+  useEffect(() => {
+    if (state === 'locked') lockAllNotebooks();
+  }, [state]);
+
   const unlocked = state === 'unlocked';
   return (
     <>
@@ -57,12 +63,21 @@ export function AppLock({ children }: { children: ReactNode }) {
           {children}
         </div>
       )}
-      {!unlocked && <LockScreen mode={state} onUnlocked={() => setState('unlocked')} />}
+      {!unlocked && (
+        <LockScreen
+          mode={state}
+          onUnlocked={() => setState('unlocked')}
+          onSkip={() => {
+            pinLock.skipSetup();
+            setState('unlocked');
+          }}
+        />
+      )}
     </>
   );
 }
 
-function LockScreen({ mode, onUnlocked }: { mode: 'setup' | 'locked'; onUnlocked: () => void }) {
+function LockScreen({ mode, onUnlocked, onSkip }: { mode: 'setup' | 'locked'; onUnlocked: () => void; onSkip: () => void }) {
   const [pin, setPin] = useState('');
   const [firstPin, setFirstPin] = useState<string | null>(null);
   const [message, setMessage] = useState('');
@@ -144,7 +159,7 @@ function LockScreen({ mode, onUnlocked }: { mode: 'setup' | 'locked'; onUnlocked
         <h1>{title}</h1>
         {mode === 'setup' && firstPin === null && (
           <p className="lock-hint">
-            {PIN_MIN_LENGTH}–{PIN_MAX_LENGTH} digits. You'll need it every time you open Noteboard. You can change it later.
+            {PIN_MIN_LENGTH}–{PIN_MAX_LENGTH} digits to open Noteboard. You can change it or turn it off later in Settings.
           </p>
         )}
         <div className={`pin-dots ${shake ? 'shake' : ''}`} aria-label={`${pin.length} digits entered`}>
@@ -176,6 +191,11 @@ function LockScreen({ mode, onUnlocked }: { mode: 'setup' | 'locked'; onUnlocked
             OK
           </button>
         </div>
+        {mode === 'setup' && (
+          <button className="link lock-forgot" onClick={onSkip}>
+            Not now (no passcode)
+          </button>
+        )}
         {mode === 'locked' && (
           <button
             className="link lock-forgot"

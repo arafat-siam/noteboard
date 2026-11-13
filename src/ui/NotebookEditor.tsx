@@ -6,6 +6,8 @@ import { addPage, applyStrokeChange, copyPagesTo, setPageSize, deletePage, loadP
 import { appendPdf } from '../pdf/pdf';
 import { CopyPageDialog } from './CopyPageDialog';
 import { ExportDialog } from './ExportDialog';
+import { UnlockNotebook } from './NotebookLockDialogs';
+import { isNotebookUnlocked, notebookClosed } from '../security/notebookLock';
 import { PageSizeDialog } from './PageSizePicker';
 import { describeSize } from '../model/pageSizes';
 import { PageManager } from './PageManager';
@@ -124,6 +126,11 @@ export function NotebookEditor({ notebookId, onClose }: { notebookId: string; on
   const [zoom, setZoom] = useState(1);
   const [containerWidth, setContainerWidth] = useState(800);
   const [renaming, setRenaming] = useState(false);
+  const [, setUnlockTick] = useState(0);
+  // Closing a "lock when closed" notebook locks it again.
+  const notebookRef = useRef(notebook);
+  notebookRef.current = notebook;
+  useEffect(() => () => notebookClosed(notebookRef.current?.kind === 'notebook' ? notebookRef.current : undefined), []);
   const [pageMenu, setPageMenu] = useState<Page | null>(null);
   const [sizingPage, setSizingPage] = useState<Page | null>(null);
   /** Page being copied to another notebook (the picker is open). */
@@ -630,6 +637,10 @@ export function NotebookEditor({ notebookId, onClose }: { notebookId: string; on
         This notebook is no longer available. <button onClick={onClose}>Back to library</button>
       </div>
     );
+  }
+  // Locked notebook: ask for its passcode before showing anything.
+  if (!isNotebookUnlocked(notebook)) {
+    return <UnlockNotebook notebook={notebook} inline onUnlocked={() => setUnlockTick((n) => n + 1)} onCancel={onClose} />;
   }
 
   // Night mode: the notebook's own choice, or follow the app's appearance.

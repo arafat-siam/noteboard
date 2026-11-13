@@ -61,3 +61,24 @@ describe('PinLock', () => {
     expect(lockoutMs(50)).toBe(3_600_000);
   });
 });
+
+describe('passcode on / off', () => {
+  it('can be skipped, turned on, and turned off only with the right PIN', async () => {
+    const store = memoryStore();
+    const lock = new PinLock(store);
+    expect(lock.hasPin()).toBe(false);
+    lock.skipSetup();
+    expect(lock.skipped()).toBe(true);
+    await lock.setPin('2468');
+    expect([lock.hasPin(), lock.skipped()]).toEqual([true, false]);
+    expect((await lock.turnOff('1111')).ok).toBe(false);
+    expect(lock.hasPin()).toBe(true);
+    expect((await lock.turnOff('2468')).ok).toBe(true);
+    expect([lock.hasPin(), lock.skipped()]).toEqual([false, true]);
+  });
+  it('auto-lock can be set to never', () => {
+    const lock = new PinLock(memoryStore());
+    lock.setAutoLockMinutes(-1);
+    expect(lock.autoLockMinutes()).toBe(-1);
+  });
+});

@@ -174,10 +174,23 @@ export interface Notebook extends LibraryBase {
   invertPdf?: boolean;
   /** Size of new pages (page units). Missing = A4 portrait. Each page keeps its own size. */
   pageSize?: { width: number; height: number };
+  /**
+   * Notebook passcode (only a salted PBKDF2 hash). A lock screen on your devices; shared links
+   * of a locked notebook are encrypted with the passcode itself (see share/).
+   */
+  lock?: NotebookLock;
+}
+
+export interface NotebookLock {
+  salt: string;
+  hash: string;
+  iterations: number;
+  /** Lock again: 0 = when the notebook is closed, otherwise after this many minutes. */
+  relockMinutes: number;
 }
 
 /** Notebook settings changed through setNotebookSettings (last change wins when syncing). */
-export type NotebookSettings = Partial<Pick<Notebook, 'pageTheme' | 'invertPdf' | 'pageSize'>>;
+export type NotebookSettings = Partial<Pick<Notebook, 'pageTheme' | 'invertPdf' | 'pageSize' | 'lock'>>;
 
 export type LibraryItem = Folder | Notebook;
 

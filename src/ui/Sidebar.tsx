@@ -8,6 +8,7 @@ import { FolderGlyph } from './Dialogs';
 import { SyncBadge } from './SyncBadge';
 import { readDragIds } from './dnd';
 import { lockNow } from '../security/AppLock';
+import { pinLock } from '../security/pin';
 import { Icon, type IconName } from './Icon';
 import { SettingsDialog } from './SettingsDialog';
 
@@ -130,9 +131,11 @@ export function Sidebar({ route, onNavigate }: { route: Route; onNavigate: (r: R
           <button className="footer-button" onClick={() => setSettingsOpen(true)}>
             <Icon name="settings" size={18} /> Settings
           </button>
-          <button className="footer-button" onClick={lockNow} aria-label="Lock Noteboard now">
-            <Icon name="lock" size={18} /> Lock
-          </button>
+          {pinLock.hasPin() && (
+            <button className="footer-button" onClick={lockNow} aria-label="Lock Noteboard now">
+              <Icon name="lock" size={18} /> Lock
+            </button>
+          )}
         </div>
       </div>
       {settingsOpen && <SettingsDialog onClose={() => setSettingsOpen(false)} />}

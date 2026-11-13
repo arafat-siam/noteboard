@@ -1019,3 +1019,36 @@ button.new-notebook {
   width: 15px;
   height: 11px;
 }
+
+/* ---- Locked notebook ---- */
+.notebook-locked {
+  height: 100%;
+  display: grid;
+  place-items: center;
+  background: var(--bg);
+  padding: 24px;
+}
+.notebook-locked-card {
+  width: min(380px, 100%);
+  display: grid;
+  gap: 8px;
+  text-align: center;
+}
+.notebook-locked-card h1 {
+  margin: 8px 0 0;
+  font-size: 22px;
+}
+.notebook-locked-card .field-label {
+  text-align: left;
+}
+.passcode-field {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.passcode-field .text-input {
+  flex: 1;
+}
+.modal-actions .spacer {
+  flex: 1;
+}

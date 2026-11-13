@@ -19,13 +19,15 @@ import {
 } from '../db/library';
 import { notebookPages } from '../db/pages';
 import { exportNotebookPdf, safeFilename, shareOrDownload } from '../export/exporters';
-import { COVER_COLORS, FOLDER_COLORS, type ID, type LibraryItem } from '../model/types';
+import { COVER_COLORS, FOLDER_COLORS, type ID, type LibraryItem, type Notebook } from '../model/types';
 import { ColorRow, Modal, MoveDialog, NewNotebookDialog, PromptDialog } from './Dialogs';
 import { act, pathOf, useLibrary, type LibraryState } from './useLibrary';
 import { importPdf } from '../pdf/pdf';
 import { setLocalOnly } from '../sync/localOnly';
 import { readDragIds, writeDragIds } from './dnd';
 import { Icon, type IconName } from './Icon';
+import { NotebookLockDialog, UnlockNotebook } from './NotebookLockDialogs';
+import { isNotebookUnlocked } from '../security/notebookLock';
 
 interface Props {
   route: Route;
@@ -41,6 +43,8 @@ type Dialog =
   | { kind: 'tags'; item: LibraryItem }
   | { kind: 'color'; item: LibraryItem }
   | { kind: 'move'; ids: ID[] }
+  | { kind: 'lock'; item: Notebook }
+  | { kind: 'unlock-export'; item: Notebook }
   | null;
 
 function usePersisted<T extends string>(key: string, fallback: T): [T, (v: T) => void] {
@@ -156,6 +160,11 @@ export function LibraryView({ route, onNavigate, onOpenNotebook, onToggleSidebar
 
   const exportPdf = async (item: LibraryItem) => {
     if (item.kind !== 'notebook') return;
+    // A locked notebook can only be exported after its passcode is entered.
+    if (!isNotebookUnlocked(item)) {
+      setDialog({ kind: 'unlock-export', item });
+      return;
+    }
     const blob = await exportNotebookPdf(item, await notebookPages(db, item.id));
     await shareOrDownload(blob, `${safeFilename(item.name)}.pdf`);
   };
@@ -429,6 +438,18 @@ export function LibraryView({ route, onNavigate, onOpenNotebook, onToggleSidebar
           />
         </Modal>
       )}
+      {dialog?.kind === 'lock' && <NotebookLockDialog notebook={dialog.item} onClose={() => setDialog(null)} />}
+      {dialog?.kind === 'unlock-export' && (
+        <UnlockNotebook
+          notebook={dialog.item}
+          onUnlocked={() => {
+            const item = dialog.item;
+            setDialog(null);
+            void exportPdf(item);
+          }}
+          onCancel={() => setDialog(null)}
+        />
+      )}
       {dialog?.kind === 'move' && (
         <MoveDialog
           library={library}
@@ -491,6 +512,11 @@ function Tile(props: {
         </div>
         <div className="tile-text">
           <div className="tile-name">
+            {item.kind === 'notebook' && item.lock && (
+              <span className="local-badge" title="Locked with a passcode" aria-label="Locked">
+                <Icon name="lock" size={14} />
+              </span>
+            )}
             {props.library.localOnly.has(item.id) && (
               <span className="local-badge" title="Kept on this iPad only, not synced" aria-label="Not synced">
                 <Icon name="tablet" size={14} />
@@ -557,6 +583,11 @@ function ItemMenu(props: {
               {item.favorite ? 'Remove from Favorites' : 'Add to Favorites'}
             </button>
             <button onClick={run(() => props.onDialog({ kind: 'color', item }))}>Change color</button>
+            {item.kind === 'notebook' && (
+              <button onClick={run(() => props.onDialog({ kind: 'lock', item }))}>
+                <Icon name="lock" size={18} /> {item.lock ? 'Lock settings' : 'Lock with passcode'}
+              </button>
+            )}
             {item.kind === 'notebook' && <button onClick={run(() => props.onDialog({ kind: 'tags', item }))}>Tags…</button>}
             <button onClick={run(() => props.onDialog({ kind: 'move', ids: [item.id] }))}>Move to…</button>
             {item.kind === 'notebook' && <button onClick={run(() => void props.onExportPdf(item))}>Export as PDF</button>}

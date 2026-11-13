@@ -25,6 +25,7 @@ interface Attempts {
 const PIN_KEY = 'noteboard.pin';
 const ATTEMPTS_KEY = 'noteboard.pin.attempts';
 const AUTOLOCK_KEY = 'noteboard.pin.autolock';
+const SKIPPED_KEY = 'noteboard.pin.skipped';
 const ITERATIONS = 210_000;
 
 export const PIN_MIN_LENGTH = 4;
@@ -50,6 +51,22 @@ function constantTimeEqual(a: string, b: string): boolean {
   return diff === 0;
 }
 
+/** A salted PBKDF2 hash of a secret (notebook passcodes use this too; the secret is never stored). */
+export interface SecretHash {
+  salt: string;
+  hash: string;
+  iterations: number;
+}
+
+export async function hashSecret(secret: string): Promise<SecretHash> {
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  return { salt: toB64(salt), hash: await derive(secret, salt, ITERATIONS), iterations: ITERATIONS };
+}
+
+export async function checkSecret(stored: SecretHash, secret: string): Promise<boolean> {
+  return constantTimeEqual(await derive(secret, fromB64(stored.salt), stored.iterations), stored.hash);
+}
+
 export function isValidPin(pin: string): boolean {
   return new RegExp(`^\\d{${PIN_MIN_LENGTH},${PIN_MAX_LENGTH}}$`).test(pin);
 }
@@ -73,6 +90,7 @@ export class PinLock {
     const stored: StoredPin = { salt: toB64(salt), hash: await derive(pin, salt, ITERATIONS), iterations: ITERATIONS };
     this.store.setItem(PIN_KEY, JSON.stringify(stored));
     this.store.removeItem(ATTEMPTS_KEY);
+    this.store.removeItem(SKIPPED_KEY);
   }
 
   private attempts(): Attempts {
@@ -118,10 +136,29 @@ export class PinLock {
     this.store.removeItem(ATTEMPTS_KEY);
   }
 
-  /** Minutes in the background before the app locks again (0 = immediately). */
+  /** Turns the passcode off (needs the current PIN). Noteboard then opens without asking. */
+  async turnOff(currentPin: string): Promise<VerifyResult> {
+    const result = await this.verify(currentPin);
+    if (result.ok) {
+      this.clear();
+      this.store.setItem(SKIPPED_KEY, '1');
+    }
+    return result;
+  }
+
+  /** The user chose not to use a passcode (first launch "Not now", or turned it off). */
+  skipped(): boolean {
+    return this.store.getItem(SKIPPED_KEY) === '1';
+  }
+
+  skipSetup(): void {
+    this.store.setItem(SKIPPED_KEY, '1');
+  }
+
+  /** Minutes in the background before the app locks again (0 = immediately, -1 = never). */
   autoLockMinutes(): number {
     const value = Number(this.store.getItem(AUTOLOCK_KEY) ?? '1');
-    return Number.isFinite(value) && value >= 0 ? value : 1;
+    return Number.isFinite(value) && value >= -1 ? value : 1;
   }
 
   setAutoLockMinutes(minutes: number): void {
