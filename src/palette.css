@@ -1366,3 +1366,12 @@
 .selection-menu {
   width: max-content;
 }
+
+/* Text formatting bar: placed by JS (InkPage placeFormatBar); wraps on narrow screens. */
+.text-format {
+  bottom: auto;
+  width: max-content;
+  flex-wrap: wrap;
+  justify-content: center;
+  row-gap: 4px;
+}

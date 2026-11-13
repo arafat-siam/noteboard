@@ -244,6 +244,10 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
   const pressRef = useRef<{ id: number; x: number; y: number; at: Point; t: number; timer: number } | null>(null);
   const selectionBoxRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const textEditorRef = useRef<HTMLDivElement>(null);
+  const formatBarRef = useRef<HTMLDivElement>(null);
+  /** A text box is open for typing (mirrors textEdit, which is declared further down). */
+  const [textEditOpen, setTextEditOpen] = useState(false);
   // Imported PDF page under the ink.
   const pdfCanvasRef = useRef<HTMLCanvasElement>(null);
   const pdfDocRef = useRef<PDFDocumentProxy | null>(null);
@@ -941,20 +945,25 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
    * Keeps the selection menu (and its pop-up panel) fully on screen: above the selection if it
    * fits, else below it, else floating inside the visible area. Never under a floating tool bar.
    */
-  const placeMenu = () => {
-    const menu = menuRef.current;
-    const box = selectionBoxRef.current;
-    if (!menu || !box) return;
-    menu.style.transform = '';
-    menu.style.left = '0px';
+  /**
+   * The part of the screen where floating menus may go: the visible page area (without scroll
+   * bars), above the on-screen keyboard, and not under a floating tool bar.
+   */
+  const visibleBounds = () => {
     const view = (scroller ?? document.documentElement).getBoundingClientRect();
-    let top = Math.max(view.top, 0) + 8;
-    // Inner size (without scroll bars): the menu must never make the page scroll sideways.
+    // Inner size (without scroll bars): a menu must never make the page scroll sideways.
     const innerRight = scroller ? view.left + scroller.clientWidth : view.right;
     const innerBottom = scroller ? view.top + scroller.clientHeight : view.bottom;
+    let top = Math.max(view.top, 0) + 8;
     let bottom = Math.min(innerBottom, window.innerHeight) - 8;
     let left = Math.max(view.left, 0) + 8;
     let right = Math.min(innerRight, window.innerWidth) - 8;
+    // The iPad keyboard covers the bottom of the screen without changing the window size.
+    const vv = window.visualViewport;
+    if (vv) {
+      top = Math.max(top, vv.offsetTop + 8);
+      bottom = Math.min(bottom, vv.offsetTop + vv.height - 8);
+    }
     const palette = document.querySelector<HTMLElement>('.tool-palette.floating:not(.minimized)');
     if (palette) {
       const p = palette.getBoundingClientRect();
@@ -963,6 +972,37 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
       else if (palette.classList.contains('side-left')) left = Math.max(left, p.right + 8);
       else if (palette.classList.contains('side-right')) right = Math.min(right, p.left - 8);
     }
+    return { top, bottom, left, right };
+  };
+
+  /** The text formatting bar: above the text box if it fits, else below, else inside the screen. */
+  const placeFormatBar = () => {
+    const bar = formatBarRef.current;
+    const editor = textEditorRef.current;
+    if (!bar || !editor) return;
+    const { top, bottom, left, right } = visibleBounds();
+    bar.style.left = '0px';
+    bar.style.maxWidth = `${Math.max(200, right - left)}px`;
+    const e = editor.getBoundingClientRect();
+    const h = bar.offsetHeight;
+    const above = e.top - h - 10;
+    const below = e.bottom + 10;
+    const y = above >= top ? above : below + h <= bottom ? below : Math.max(top, Math.min(bottom - h, above));
+    bar.style.top = `${y - e.top}px`;
+    const r = bar.getBoundingClientRect();
+    let dx = 0;
+    if (r.right > right) dx = right - r.right;
+    if (r.left + dx < left) dx = left - r.left;
+    bar.style.left = `${dx}px`;
+  };
+
+  const placeMenu = () => {
+    const menu = menuRef.current;
+    const box = selectionBoxRef.current;
+    if (!menu || !box) return;
+    menu.style.transform = '';
+    menu.style.left = '0px';
+    const { top, bottom, left, right } = visibleBounds();
     // Never wider than the visible area (it wraps onto two rows instead).
     menu.style.maxWidth = `${Math.max(200, right - left)}px`;
     const b = box.getBoundingClientRect();
@@ -992,28 +1032,38 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
   };
   const placeMenuRef = useRef(placeMenu);
   placeMenuRef.current = placeMenu;
+  const placeFormatBarRef = useRef(placeFormatBar);
+  placeFormatBarRef.current = placeFormatBar;
   useLayoutEffect(() => {
     if (selection) placeMenu();
+    if (textEditRef.current) placeFormatBar();
   });
-  // Follow scrolling and resizing while something is selected.
+  // Follow scrolling, resizing and the keyboard while something is selected or being typed.
+  const floating = !!selection || !!textEditOpen;
   useEffect(() => {
-    if (!selection) return;
+    if (!floating) return;
     let raf: number | null = null;
     const onMove = () => {
       if (raf == null)
         raf = requestAnimationFrame(() => {
           raf = null;
           placeMenuRef.current();
+          placeFormatBarRef.current();
         });
     };
+    const vv = window.visualViewport;
     scroller?.addEventListener('scroll', onMove, { passive: true });
     window.addEventListener('resize', onMove);
+    vv?.addEventListener('resize', onMove);
+    vv?.addEventListener('scroll', onMove);
     return () => {
       scroller?.removeEventListener('scroll', onMove);
       window.removeEventListener('resize', onMove);
+      vv?.removeEventListener('resize', onMove);
+      vv?.removeEventListener('scroll', onMove);
       if (raf != null) cancelAnimationFrame(raf);
     };
-  }, [selection, scroller]);
+  }, [floating, scroller]);
 
   const requestRender = () => {
     if (frameRef.current == null) frameRef.current = requestAnimationFrame(renderLive);
@@ -1527,9 +1577,11 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
           }
           // Drag sideways to choose the box width; a tap gives the standard width.
           const dx = g.scaleFrom.x - g.moveStart.x;
-          const width = Math.abs(dx) > 40 ? Math.abs(dx) : DEFAULT_TEXT_WIDTH;
-          const x = Math.abs(dx) > 40 ? Math.min(g.moveStart.x, g.scaleFrom.x) : g.moveStart.x;
-          startTextEdit(null, { x: Math.min(x, page.width - 40), y: g.moveStart.y - settings.text.size * 0.9 }, Math.min(width, page.width - x));
+          const width = Math.min(page.width - 16, Math.abs(dx) > 40 ? Math.abs(dx) : DEFAULT_TEXT_WIDTH);
+          const start = Math.abs(dx) > 40 ? Math.min(g.moveStart.x, g.scaleFrom.x) : g.moveStart.x;
+          // Near the right edge the box slides left, so it keeps its width instead of being squeezed.
+          const x = Math.max(8, Math.min(start, page.width - width - 8));
+          startTextEdit(null, { x, y: Math.max(4, g.moveStart.y - settings.text.size * 0.9) }, width);
           break;
         }
         case 'erase':
@@ -1869,6 +1921,7 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
   const [textEdit, setTextEdit] = useState<TextDraft | null>(null);
   const textEditRef = useRef(textEdit);
   textEditRef.current = textEdit;
+  useEffect(() => setTextEditOpen(!!textEdit), [!!textEdit]);
 
   /** Opens the text editor on a box (or a new one at `at`). Focuses synchronously so the iPad keyboard opens. */
   const startTextEdit = (existing: Stroke | null, at?: Point, width?: number) => {
@@ -2313,6 +2366,7 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
       )}
       <div ref={badgeRef} className="gesture-badge" aria-hidden="true" />
       <div
+        ref={textEditorRef}
         className={`text-editor${textEdit ? ' open' : ''}`}
         style={
           textEdit
@@ -2321,7 +2375,7 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
         }
       >
         {textEdit && (
-          <div className="text-format" role="toolbar" aria-label="Text formatting" onPointerDown={(e) => e.preventDefault()}>
+          <div ref={formatBarRef} className="text-format" role="toolbar" aria-label="Text formatting" onPointerDown={(e) => e.preventDefault()}>
             <select
               aria-label="Font"
               value={textEdit.style.font}
