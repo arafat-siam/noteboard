@@ -830,3 +830,16 @@ label.menu-file {
   background: none;
   box-shadow: none;
 }
+
+/* Colour swatches are perfect circles (not stretched by the button style above). */
+.color-dot,
+.fmt-color,
+.selection-menu .sel-color,
+.color-row .color-dot {
+  padding: 0 !important;
+  min-height: 0 !important;
+  min-width: 0;
+  aspect-ratio: 1 / 1;
+  flex: 0 0 auto;
+  border-radius: 50% !important;
+}
