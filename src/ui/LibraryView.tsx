@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Route } from '../App';
 import { db } from '../db/db';
 import {
@@ -483,14 +483,66 @@ function Tile(props: {
   const date = new Date(item.updatedAt).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
   const childCount =
     item.kind === 'folder' ? props.library.visible.filter((i) => i.parentId === item.id).length : 0;
+
+  // Press and hold a notebook or folder to open its menu (right-click on a computer).
+  const press = useRef<{ x: number; y: number; timer: number } | null>(null);
+  const longPressed = useRef(false);
+  const cancelPress = () => {
+    if (press.current) clearTimeout(press.current.timer);
+    press.current = null;
+  };
+  const pressProps = {
+    onPointerDown: (e: React.PointerEvent) => {
+      if (props.selecting || (e.pointerType === 'mouse' && e.button !== 0)) return;
+      longPressed.current = false;
+      cancelPress();
+      press.current = {
+        x: e.clientX,
+        y: e.clientY,
+        timer: window.setTimeout(() => {
+          press.current = null;
+          longPressed.current = true;
+          navigator.vibrate?.(10);
+          props.onMenu();
+        }, 450),
+      };
+    },
+    onPointerMove: (e: React.PointerEvent) => {
+      if (press.current && Math.hypot(e.clientX - press.current.x, e.clientY - press.current.y) > 8) cancelPress();
+    },
+    onPointerUp: cancelPress,
+    onPointerCancel: cancelPress,
+    onPointerLeave: cancelPress,
+    onContextMenu: (e: React.MouseEvent) => {
+      e.preventDefault();
+      if (!props.selecting && !longPressed.current) props.onMenu();
+    },
+  };
+  useEffect(() => cancelPress, []);
+
   return (
     <div
       className={`tile ${props.layout} ${props.selected ? 'selected' : ''} ${props.dropTarget ? 'drop-target' : ''}`}
       draggable={!props.selecting}
-      onDragStart={(e) => writeDragIds(e, props.dragIds)}
+      onDragStart={(e) => {
+        cancelPress();
+        writeDragIds(e, props.dragIds);
+      }}
       {...props.dropProps}
+      {...pressProps}
     >
-      <button className="tile-main" onClick={props.onOpen} aria-label={`Open ${item.name}`}>
+      <button
+        className="tile-main"
+        onClick={() => {
+          // The long press already opened the menu: don't also open the notebook.
+          if (longPressed.current) {
+            longPressed.current = false;
+            return;
+          }
+          props.onOpen();
+        }}
+        aria-label={`Open ${item.name}`}
+      >
         <div className="tile-art">
           {item.kind === 'folder' ? (
             <div className="folder-art" style={{ ['--folder' as string]: item.color }}>

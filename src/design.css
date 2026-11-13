@@ -806,3 +806,27 @@ label.menu-file {
 .scrim {
   background: rgba(28, 37, 46, 0.32) !important;
 }
+
+/* The "…" menu sits next to the name (press and hold a tile also opens it). */
+.tile.grid .tile-text {
+  width: 100%;
+  padding: 8px 28px 0;
+}
+.tile.grid .tile-more {
+  top: auto;
+  bottom: 12px;
+  right: 2px;
+  width: 30px;
+  height: 30px;
+  background: none;
+  box-shadow: none;
+  color: var(--muted);
+}
+.tile.grid .tile-more:hover:not(:disabled) {
+  background: var(--fill);
+  color: var(--text);
+}
+.tile.list .tile-more {
+  background: none;
+  box-shadow: none;
+}
