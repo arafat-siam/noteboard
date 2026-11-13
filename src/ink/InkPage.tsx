@@ -763,8 +763,8 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
     if (!snap) return;
     const px = 1 / scale;
     ctx.save();
-    ctx.strokeStyle = '#2f6fde';
-    ctx.fillStyle = '#2f6fde';
+    ctx.strokeStyle = '#637381';
+    ctx.fillStyle = '#637381';
     ctx.lineWidth = 1.5 * px;
     if (snap.kind === 'end' || snap.kind === 'mid') {
       ctx.beginPath();
@@ -931,7 +931,7 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
     } else if (g.kind === 'lasso' && g.lasso.length > 1) {
       ctx.setLineDash([6 / scale, 5 / scale]);
       ctx.lineWidth = 1.5 / scale;
-      ctx.strokeStyle = '#2f6fde';
+      ctx.strokeStyle = '#637381';
       ctx.beginPath();
       g.lasso.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)));
       ctx.closePath();
@@ -939,7 +939,7 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
     } else if (g.kind === 'move' && selection) {
       if (g.moveGuides.length) {
         ctx.save();
-        ctx.strokeStyle = '#ff2d78';
+        ctx.strokeStyle = '#919eab';
         ctx.lineWidth = 1 / scale;
         ctx.setLineDash([5 / scale, 4 / scale]);
         ctx.beginPath();

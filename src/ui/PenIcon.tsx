@@ -144,7 +144,7 @@ export function PenIcon({ kind, color }: { kind: PenIconKind; color: string }) {
       return (
         <svg viewBox="0 0 30 76" aria-hidden="true">
           <rect x="7" y="28" width="16" height="48" rx="4" fill={body} stroke={edge} />
-          <ellipse cx="15" cy="15" rx="10.5" ry="8.5" fill="none" stroke="#2f6fde" strokeWidth="2.2" strokeDasharray="3.2 2.2" />
+          <ellipse cx="15" cy="15" rx="10.5" ry="8.5" fill="none" stroke="#637381" strokeWidth="2.2" strokeDasharray="3.2 2.2" />
         </svg>
       );
   }
