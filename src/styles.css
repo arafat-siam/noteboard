@@ -1177,3 +1177,12 @@ button.link.muted {
 .page-thumb.selected .page-thumb-check {
   opacity: 1;
 }
+/* The hover pointer must never pick up other styles that share a class name (e.g. "pen"). */
+body > .hover-cursor {
+  position: fixed;
+  left: 0;
+  top: 0;
+  padding: 0;
+  margin: 0;
+  overflow: visible;
+}

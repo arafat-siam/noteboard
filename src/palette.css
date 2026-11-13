@@ -166,7 +166,7 @@
 .pen-tray::-webkit-scrollbar {
   display: none;
 }
-.pen {
+.tool-palette .pen {
   flex-shrink: 0;
   width: 30px;
   height: 76px;
@@ -190,23 +190,23 @@
   display: block;
   filter: drop-shadow(0 1px 1.5px rgba(0, 0, 0, 0.28));
 }
-.pen.active .pen-art {
+.tool-palette .pen.active .pen-art {
   transform: translateY(6px);
 }
-.pen:not(.active):active .pen-art {
+.tool-palette .pen:not(.active):active .pen-art {
   transform: translateY(20px);
 }
 .side-top .pen-art {
   transform: translateY(-26px) rotate(180deg);
 }
-.side-top .pen.active .pen-art {
+.tool-palette.side-top .pen.active .pen-art {
   transform: translateY(-6px) rotate(180deg);
 }
 .side-top .pen-tray {
   align-items: flex-start;
 }
 /* Sideways: pens lie down, pointing into the page. */
-.vertical .pen {
+.tool-palette.vertical .pen {
   width: 72px;
   height: 30px;
 }
@@ -221,19 +221,19 @@
 .side-left .pen-art {
   transform: translateX(-8px) rotate(90deg);
 }
-.side-left .pen.active .pen-art {
+.tool-palette.side-left .pen.active .pen-art {
   transform: translateX(10px) rotate(90deg);
 }
-.side-left .pen:not(.active):active .pen-art {
+.tool-palette.side-left .pen:not(.active):active .pen-art {
   transform: translateX(-2px) rotate(90deg);
 }
 .side-right .pen-art {
   transform: translateX(8px) rotate(-90deg);
 }
-.side-right .pen.active .pen-art {
+.tool-palette.side-right .pen.active .pen-art {
   transform: translateX(-10px) rotate(-90deg);
 }
-.side-right .pen:not(.active):active .pen-art {
+.tool-palette.side-right .pen:not(.active):active .pen-art {
   transform: translateX(2px) rotate(-90deg);
 }
 .tray-divider {
@@ -663,7 +663,7 @@
   padding-top: 96px !important;
 }
 @media (max-width: 700px) {
-  .pen {
+  .tool-palette .pen {
     width: 26px;
   }
   .palette-button {
