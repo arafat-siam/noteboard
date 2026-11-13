@@ -1,0 +1,526 @@
+/*
+ * Noteboard design (iPadOS / Apple Notes / Drawboard inspired). Loaded last: it refines the
+ * look of every screen without changing how anything works.
+ *
+ * Principles: system colours and fonts, grey grouped backgrounds with white content, hairline
+ * separators instead of boxes, plain tinted text buttons, one accent colour, generous touch
+ * targets (44 pt), few shadows.
+ */
+:root {
+  --accent: #007aff;
+  --accent-strong: #0062cc;
+  --accent-soft: rgba(0, 122, 255, 0.12);
+  --bg: #f2f2f7;
+  --surface: #ffffff;
+  --surface-2: #f2f2f7;
+  --surface-3: #e5e5ea;
+  --fill: rgba(118, 118, 128, 0.12);
+  --fill-strong: rgba(118, 118, 128, 0.2);
+  --text: #000000;
+  --muted: rgba(60, 60, 67, 0.6);
+  --border: rgba(60, 60, 67, 0.18);
+  --hairline: rgba(60, 60, 67, 0.29);
+  --danger: #ff3b30;
+  --ok: #34c759;
+  --warn: #ff9500;
+  --desk: #e9e9ee;
+  --shadow-sm: 0 0.5px 0 rgba(0, 0, 0, 0.04), 0 1px 3px rgba(0, 0, 0, 0.08);
+  --shadow-md: 0 8px 28px rgba(0, 0, 0, 0.14), 0 0 0 0.5px rgba(0, 0, 0, 0.06);
+  --radius: 12px;
+  font-size: 16px;
+  letter-spacing: -0.01em;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --accent: #0a84ff;
+    --accent-strong: #409cff;
+    --accent-soft: rgba(10, 132, 255, 0.2);
+    --bg: #000000;
+    --surface: #1c1c1e;
+    --surface-2: #2c2c2e;
+    --surface-3: #3a3a3c;
+    --fill: rgba(118, 118, 128, 0.24);
+    --fill-strong: rgba(118, 118, 128, 0.36);
+    --text: #ffffff;
+    --muted: rgba(235, 235, 245, 0.6);
+    --border: rgba(84, 84, 88, 0.6);
+    --hairline: rgba(84, 84, 88, 0.65);
+    --danger: #ff453a;
+    --desk: #0f0f10;
+  }
+}
+:root[data-theme='dark'] {
+  --accent: #0a84ff;
+  --accent-strong: #409cff;
+  --accent-soft: rgba(10, 132, 255, 0.2);
+  --bg: #000000;
+  --surface: #1c1c1e;
+  --surface-2: #2c2c2e;
+  --surface-3: #3a3a3c;
+  --fill: rgba(118, 118, 128, 0.24);
+  --fill-strong: rgba(118, 118, 128, 0.36);
+  --text: #ffffff;
+  --muted: rgba(235, 235, 245, 0.6);
+  --border: rgba(84, 84, 88, 0.6);
+  --hairline: rgba(84, 84, 88, 0.65);
+  --danger: #ff453a;
+  --desk: #0f0f10;
+}
+
+/* ---- Buttons: tinted text by default, filled only for the main action ---- */
+button {
+  border: none;
+  background: var(--fill);
+  border-radius: 10px;
+  padding: 8px 14px;
+  min-height: 36px;
+  color: var(--accent);
+  font-weight: 500;
+}
+button:active {
+  background: var(--fill-strong);
+}
+button.primary {
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+button.primary:active {
+  background: var(--accent-strong);
+}
+button.danger {
+  background: var(--danger);
+  color: #fff;
+}
+button.link,
+button.text-button {
+  background: none;
+  min-height: 0;
+  color: var(--accent);
+}
+button.icon-button {
+  background: none;
+  color: var(--accent);
+}
+.danger-text {
+  color: var(--danger) !important;
+}
+
+/* ---- Sidebar (iPadOS style: grouped background, filled selection) ---- */
+.sidebar {
+  background: var(--bg);
+  border-right: 0.5px solid var(--hairline);
+}
+.brand {
+  font-size: 22px;
+  padding: 2px 10px 18px;
+}
+.nav-item,
+.tree-label {
+  min-height: 44px;
+  font-size: 16px;
+  font-weight: 400;
+}
+.nav-item .icon,
+.tree-item .folder-glyph {
+  color: var(--accent);
+}
+.nav-item.active,
+.tree-item.active {
+  background: var(--accent);
+  color: #fff;
+}
+.nav-item.active .icon,
+.nav-item.active .count,
+.tree-item.active .tree-label,
+.tree-item.active .disclosure {
+  color: #fff !important;
+}
+.sidebar-section {
+  padding: 22px 12px 6px;
+  font-size: 13px;
+  letter-spacing: 0;
+  text-transform: none;
+  font-weight: 600;
+  color: var(--muted);
+}
+.footer-button {
+  background: var(--surface);
+  color: var(--accent);
+  min-height: 40px;
+}
+.footer-button .icon {
+  color: var(--accent);
+}
+.sync-badge {
+  background: var(--surface);
+}
+
+/* ---- Library: large title, plain toolbar buttons, documents as page thumbnails ---- */
+.main {
+  background: var(--bg);
+}
+.library-toolbar {
+  background: var(--bg);
+  border-bottom: 0.5px solid transparent;
+  padding: 12px 22px 8px;
+  align-items: flex-end;
+}
+.crumbs h1 {
+  font-size: 34px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+.toolbar-button {
+  background: none;
+  color: var(--accent);
+  padding: 0 8px;
+  font-size: 16px;
+}
+.toolbar-button .icon {
+  color: var(--accent);
+}
+.search {
+  background: var(--fill);
+  border: none;
+  height: 36px;
+}
+.search:focus-within {
+  border: none;
+  background: var(--fill);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+.select {
+  background: var(--fill);
+  color: var(--accent);
+  height: 36px;
+}
+.view-toggle {
+  background: var(--fill);
+}
+.view-toggle button {
+  min-height: 0;
+  background: none;
+}
+.view-toggle button.on {
+  background: var(--surface);
+  color: var(--text);
+}
+.section-title {
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--text);
+  margin: 22px 22px 6px;
+}
+.recent-card {
+  border: none;
+  box-shadow: none;
+  background: var(--surface);
+  border-radius: 12px;
+}
+.grid {
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 22px 18px;
+  padding: 10px 22px 28px;
+}
+.tile-main {
+  background: none;
+  padding: 6px;
+}
+.tile.grid .tile-art {
+  height: auto;
+  min-height: 150px;
+  align-items: end;
+}
+.tile.selected .tile-main {
+  background: var(--accent-soft);
+}
+.tile-name {
+  font-size: 15px;
+  font-weight: 600;
+}
+.tile-sub {
+  font-size: 13px;
+}
+.tile.grid .tile-more {
+  background: var(--surface);
+  color: var(--accent);
+  min-height: 0;
+}
+
+/* A document: its first page, a thin colour band on top, a soft edge. */
+.doc-cover {
+  position: relative;
+  border-radius: 6px;
+  overflow: hidden;
+  background: #fff;
+  box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.18), 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+.doc-cover::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 4px;
+  z-index: 1;
+  background: var(--cover);
+}
+.doc-cover .page-thumb-paper {
+  display: block;
+}
+.doc-cover .page-thumb-paper canvas {
+  display: block;
+}
+.doc-locked {
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  background: repeating-linear-gradient(-45deg, var(--surface-2) 0 8px, var(--surface) 8px 16px);
+}
+.tile.list .doc-cover {
+  border-radius: 3px;
+}
+.tile.list {
+  border-bottom: 0.5px solid var(--hairline);
+}
+
+/* ---- Sheets and menus (iPadOS inset-grouped lists) ---- */
+.modal-backdrop {
+  background: rgba(0, 0, 0, 0.3);
+}
+.modal {
+  background: var(--bg);
+  border: none;
+  border-radius: 16px;
+  padding: 0 18px 18px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
+}
+.modal > h2 {
+  margin: 0 -18px 14px;
+  padding: 16px 18px 12px;
+  text-align: center;
+  font-size: 17px;
+  font-weight: 600;
+  border-bottom: 0.5px solid var(--hairline);
+  background: var(--surface);
+  border-radius: 16px 16px 0 0;
+}
+.field-label {
+  font-size: 13px;
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+  margin: 14px 4px 6px;
+}
+.menu-list {
+  gap: 0;
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--surface);
+}
+.menu-list button {
+  border-radius: 0;
+  background: var(--surface);
+  color: var(--text);
+  min-height: 44px;
+  padding: 10px 14px;
+  font-weight: 400;
+  width: 100%;
+}
+.menu-list button + button,
+.menu-list button + label,
+.menu-list label + button {
+  box-shadow: inset 0 0.5px 0 var(--hairline);
+}
+.menu-list button:active {
+  background: var(--fill);
+}
+.menu-list button.selected {
+  color: var(--accent);
+  font-weight: 600;
+}
+.menu-list .icon {
+  color: var(--accent);
+}
+.text-input,
+.hex-field input,
+.range-input,
+.custom-size input {
+  background: var(--surface);
+  border: 0.5px solid var(--hairline);
+}
+.segmented {
+  background: var(--fill);
+  border-radius: 9px;
+  padding: 2px;
+}
+.segmented button {
+  background: none;
+  color: var(--text);
+  min-height: 32px;
+  border-radius: 7px;
+  font-weight: 500;
+}
+.segmented button.on {
+  background: var(--surface);
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.12), 0 0 0 0.5px rgba(0, 0, 0, 0.04);
+}
+.choice,
+.theme-choice,
+.size-chip,
+.type-chip,
+.shape-chip,
+.font-chip {
+  background: var(--surface);
+  color: var(--text);
+}
+.modal-actions {
+  margin-top: 18px;
+}
+
+/* ---- Editor: slim bar, tinted icons ---- */
+.editor-top {
+  background: var(--surface);
+  border-bottom: 0.5px solid var(--hairline);
+  min-height: 50px;
+  padding: 4px 10px;
+}
+.editor-top .tool.icon-tool,
+.zoom-controls .tool {
+  color: var(--accent);
+  min-height: 0;
+  background: none;
+}
+.zoom-controls {
+  background: var(--fill);
+}
+.zoom-controls .tool.text {
+  color: var(--text);
+}
+.editor-top .editor-title {
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--text);
+  min-height: 0;
+}
+.back-button {
+  font-size: 17px;
+  min-height: 0;
+  background: none;
+}
+
+/* Floating tools: a light pill, hairline edge, soft shadow (no blur: it ghosts the Pencil pointer). */
+.tool-palette.floating {
+  border: 0.5px solid var(--hairline);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+}
+.tool-palette.docked.side-bottom,
+.tool-palette.docked.side-top,
+.tool-palette.docked.side-left,
+.tool-palette.docked.side-right {
+  border-color: var(--hairline);
+}
+.palette-button {
+  color: var(--accent);
+  min-height: 0;
+}
+.palette-popover {
+  background: var(--bg);
+  border: 0.5px solid var(--hairline);
+  border-radius: 16px;
+}
+.tool-palette .pen,
+.add-pen,
+.palette-color {
+  min-height: 0;
+}
+
+/* Selection menu: the iOS edit-menu capsule. */
+.selection-menu {
+  border: 0.5px solid var(--hairline);
+  border-radius: 12px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.16);
+}
+.selection-menu .sel-btn {
+  min-height: 0;
+  background: none;
+  color: var(--text);
+}
+.selection-menu .sel-btn.danger {
+  color: var(--danger);
+}
+.selection-menu .sel-panel {
+  border: 0.5px solid var(--hairline);
+  border-radius: 14px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16);
+}
+.selection-menu .sel-arrange button {
+  min-height: 0;
+  color: var(--text);
+}
+
+/* Empty states, toasts */
+.empty-icon {
+  background: var(--surface);
+  color: var(--accent);
+  box-shadow: var(--shadow-sm);
+}
+.toast {
+  border-radius: 12px;
+}
+
+/* Passcode keypad: round keys like the iPad's own. */
+.lock-screen {
+  background: var(--bg);
+}
+.keypad button {
+  background: var(--fill);
+  color: var(--text);
+  font-weight: 400;
+}
+.keypad .keypad-aux {
+  background: none;
+  color: var(--accent);
+}
+.lock-icon {
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+
+/* Cards and tiles are buttons, but their text is normal text. */
+.tile-main,
+.recent-card,
+.viewer-tile,
+.size-chip,
+.choice,
+.theme-choice:not(.on),
+.kind-chip:not(.on),
+.recording-info,
+.share-link-actions button:not(.danger-text),
+.link-pages button:not(.on) {
+  color: var(--text);
+}
+.recent-card .mini-cover {
+  border-radius: 3px;
+}
+.tile.grid .tile-more {
+  top: 4px;
+  right: 4px;
+}
+.menu-list .menu-file,
+label.menu-file {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 10px 14px;
+  border: none;
+  border-radius: 0;
+  background: var(--surface);
+  color: var(--text);
+}
+.modal .segmented + .menu-list,
+.modal .segmented + .field-label {
+  margin-top: 10px;
+}

@@ -8,6 +8,7 @@ import './pencil/bridge';
 import './styles.css';
 import './palette.css';
 import './library.css';
+import './design.css';
 import { applyTheme } from './ui/theme';
 
 applyTheme();

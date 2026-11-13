@@ -28,6 +28,7 @@ import { readDragIds, writeDragIds } from './dnd';
 import { Icon, type IconName } from './Icon';
 import { NotebookLockDialog, UnlockNotebook } from './NotebookLockDialogs';
 import { ShareDialog } from './ShareDialog';
+import { PageThumbnail } from './PageManager';
 import { isNotebookUnlocked } from '../security/notebookLock';
 
 interface Props {
@@ -498,11 +499,7 @@ function Tile(props: {
               <span className="folder-front" />
             </div>
           ) : (
-            <div className="cover" style={{ ['--cover' as string]: item.coverColor }}>
-              <span className="cover-label">
-                <span className="cover-title">{item.name}</span>
-              </span>
-            </div>
+            <NotebookCover notebook={item} size={props.layout === 'grid' ? 132 : 34} />
           )}
           {props.selecting && (
             <span className={`check ${props.selected ? 'on' : ''}`}>{props.selected && <Icon name="check" size={14} />}</span>
@@ -540,6 +537,27 @@ function Tile(props: {
         <button className="tile-more" aria-label={`More actions for ${item.name}`} onClick={props.onMenu}>
           <Icon name="more" size={20} />
         </button>
+      )}
+    </div>
+  );
+}
+
+/**
+ * A notebook shown as its first page (like Drawboard), with its colour as a thin band on top.
+ * Locked notebooks never show their content here.
+ */
+function NotebookCover({ notebook, size }: { notebook: Notebook; size: number }) {
+  const first = notebook.pageIds[0];
+  return (
+    <div className="doc-cover" style={{ ['--cover' as string]: notebook.coverColor, width: size }}>
+      {notebook.lock ? (
+        <div className="doc-locked" style={{ height: size * 1.3 }}>
+          <Icon name="lock" size={size > 60 ? 28 : 14} />
+        </div>
+      ) : first ? (
+        <PageThumbnail pageId={first} width={size} />
+      ) : (
+        <div className="doc-locked" style={{ height: size * 1.3 }} />
       )}
     </div>
   );

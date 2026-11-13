@@ -260,7 +260,7 @@ export function PageManager(props: {
 }
 
 /** A small picture of a page (paper, PDF page, pictures and ink), drawn when it scrolls into view. */
-function PageThumbnail({ pageId }: { pageId: ID }) {
+export function PageThumbnail({ pageId, width: thumbWidth = THUMB }: { pageId: ID; width?: number }) {
   const record = useLiveQuery(() => db.pages.get(pageId), [pageId]);
   const strokeCount = useLiveQuery(() => db.strokes.where('pageId').equals(pageId).count(), [pageId]);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -275,7 +275,7 @@ function PageThumbnail({ pageId }: { pageId: ID }) {
     return () => io.disconnect();
   }, []);
 
-  const k = record ? THUMB / record.width : 1;
+  const k = record ? thumbWidth / record.width : 1;
   const updatedAt = record?.updatedAt;
 
   useEffect(() => {
@@ -314,8 +314,8 @@ function PageThumbnail({ pageId }: { pageId: ID }) {
     // Redraw when the page changes.
   }, [visible, pageId, updatedAt, strokeCount, k, record?.template, record?.background?.fileId]);
 
-  const width = THUMB;
-  const height = record ? record.height * k : THUMB * 1.414;
+  const width = thumbWidth;
+  const height = record ? record.height * k : thumbWidth * 1.414;
   return (
     <div
       ref={holderRef}
