@@ -5,7 +5,7 @@ import { VitePWA } from 'vite-plugin-pwa';
 // Production is served from https://arafat-siam.github.io/noteboard/ ; a design preview build
 // (NOTEBOARD_BASE=/noteboard/preview/) from https://arafat-siam.github.io/noteboard/preview/
 export default defineConfig(({ command }) => ({
-  base: process.env.NOTEBOARD_BASE || (command === 'build' ? '/noteboard/' : '/'),
+  base: (globalThis as { process?: { env: Record<string, string | undefined> } }).process?.env.NOTEBOARD_BASE || (command === 'build' ? '/noteboard/' : '/'),
   plugins: [
     react(),
     VitePWA({
