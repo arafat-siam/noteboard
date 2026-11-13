@@ -1390,3 +1390,77 @@
   color: var(--accent);
   background: var(--accent-soft);
 }
+
+/* ---- Selection: arrange panel, lasso filters ---- */
+.selection-menu .sel-panel.sel-arrange {
+  min-width: 300px;
+  gap: 6px;
+}
+.selection-menu .sel-section {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  padding: 6px 4px 0;
+}
+.selection-menu .sel-grid {
+  display: grid;
+  gap: 4px;
+}
+.selection-menu .sel-grid.two {
+  grid-template-columns: 1fr 1fr;
+}
+.selection-menu .sel-grid.four {
+  grid-template-columns: repeat(4, 1fr);
+}
+.selection-menu .sel-grid.six {
+  grid-template-columns: repeat(6, 1fr);
+}
+.selection-menu .sel-grid button {
+  background: var(--surface-2) !important;
+  text-align: center !important;
+  padding: 8px 4px !important;
+  font-size: 13px !important;
+  justify-content: center;
+}
+.selection-menu .sel-grid svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+}
+.selection-menu .sel-toggle {
+  display: flex !important;
+  justify-content: space-between !important;
+  align-items: center;
+  gap: 10px;
+}
+.kind-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.kind-chip {
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: none;
+  font-size: 13px;
+  gap: 4px;
+  color: var(--muted);
+}
+.kind-chip.on {
+  background: var(--accent-soft);
+  border-color: transparent;
+  color: var(--accent);
+}
+.popover-wide-button {
+  width: 100%;
+  background: var(--surface-2);
+  border: none;
+  border-radius: 10px;
+  padding: 10px;
+}

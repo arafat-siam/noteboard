@@ -4,7 +4,8 @@ import { applyRegion, DEFAULT_FILL_OPACITY, drawPage, drawPageParts, drawStroke,
 import { adjustShape, polylinePoints, recognizeShape, type ShapeKind } from './shapes';
 import { buildGuides, sameSnap, snapLineEnd, snapToPoint, type SnapGuides, type SnapResult } from './snapping';
 import { pencilHaptic } from '../pencil/haptics';
-import { makeImageStroke, onImageLoaded, readDropped, resolveDropped, storeImage } from './images';
+import { makeImageStroke, onImageLoaded, preloadImages, readDropped, resolveDropped, storeImage } from './images';
+import { shareOrDownload } from '../export/exporters';
 import { arrange, type ArrangeAction } from './layers';
 import { getClip, inkForPaste, onClipChange, setClip } from './clipboard';
 import { Slider } from './Slider';
@@ -43,6 +44,23 @@ import { makeShapeStroke, makeTapeStroke } from './shapeTool';
 import { revealedTape } from './render';
 import { displayColor } from './inkTheme';
 import { DashSample } from '../ui/Icon';
+import {
+  alignStrokes,
+  distributeStrokes,
+  expandGroups,
+  flipStrokes,
+  guideTargets,
+  isSelectable,
+  kindOf,
+  regroup,
+  setLocked,
+  snapMove,
+  getKeepAspect,
+  setKeepAspect,
+  type AlignMode,
+  type Guide,
+  type ItemKind,
+} from './selection';
 import type { PDFDocumentProxy, RenderTask } from 'pdfjs-dist';
 import { db } from '../db/db';
 import { useLiveQuery } from 'dexie-react-hooks';
@@ -81,6 +99,8 @@ export interface ToolSettings {
   shape: ShapeToolSettings;
   tape: TapeToolSettings;
   pointer: PointerSettings;
+  /** Lasso: freehand loop or rectangle, and which kinds of items it picks up. */
+  lasso?: { mode: 'free' | 'rect'; kinds: ItemKind[] };
 }
 
 interface Props {
@@ -142,6 +162,9 @@ interface Gesture {
   guides: SnapGuides | null;
   /** What the snapped line is currently snapped to, shown as a guide. */
   snap: SnapResult | null;
+  /** Moving a selection: edges it can line up with, and the guides currently shown. */
+  moveTargets: { xs: number[]; ys: number[] } | null;
+  moveGuides: Guide[];
 }
 
 interface Selection {
@@ -222,7 +245,7 @@ export function relayoutPages(): void {
   layoutDeferred = false;
   window.dispatchEvent(new Event(RELAYOUT));
 }
-export type PageAction = { pageId: string; action: 'insertPictures' | 'paste'; files: Blob[] };
+export type PageAction = { pageId: string; action: 'insertPictures' | 'paste' | 'selectAll'; files: Blob[] };
 
 function getLiveContext(canvas: HTMLCanvasElement | null): CanvasRenderingContext2D | null {
   // Plain context on purpose: the low-latency 'desynchronized' mode changes how Safari composites
@@ -893,6 +916,24 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
       ctx.closePath();
       ctx.stroke();
     } else if (g.kind === 'move' && selection) {
+      if (g.moveGuides.length) {
+        ctx.save();
+        ctx.strokeStyle = '#ff2d78';
+        ctx.lineWidth = 1 / scale;
+        ctx.setLineDash([5 / scale, 4 / scale]);
+        ctx.beginPath();
+        for (const guide of g.moveGuides) {
+          if (guide.axis === 'x') {
+            ctx.moveTo(guide.at, 0);
+            ctx.lineTo(guide.at, page.height);
+          } else {
+            ctx.moveTo(0, guide.at);
+            ctx.lineTo(page.width, guide.at);
+          }
+        }
+        ctx.stroke();
+        ctx.restore();
+      }
       ctx.translate(g.offset.x, g.offset.y);
       for (const s of page.strokes) if (selection.ids.has(s.id)) drawStroke(ctx, s);
       setBoxTransform(`translate(${g.offset.x * scale}px, ${g.offset.y * scale}px)`);
@@ -1086,7 +1127,7 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
 
   /** What the eraser may touch: never pictures or text; only highlighter if so set. */
   const erasable = (s: Stroke) =>
-    s.tool !== 'image' && s.tool !== 'text' && (!settings.eraseHighlighterOnly || s.tool === 'highlighter');
+    !s.locked && s.tool !== 'image' && s.tool !== 'text' && (!settings.eraseHighlighterOnly || s.tool === 'highlighter');
 
   const eraseAt = (g: Gesture, p: Point) => {
     const radius = settings.eraserSize / 2;
@@ -1146,7 +1187,17 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
     const radius = Math.max(5, 12 / scale);
     for (let i = page.strokes.length - 1; i >= 0; i--) {
       const s = page.strokes[i]!;
-      if (strokeHit(s, p, radius)) return s;
+      if (isSelectable(s) && strokeHit(s, p, radius)) return s;
+    }
+    return undefined;
+  };
+
+  /** The topmost locked item under a point (long-press it to unlock). */
+  const lockedAt = (p: Point): Stroke | undefined => {
+    const radius = Math.max(5, 12 / scale);
+    for (let i = page.strokes.length - 1; i >= 0; i--) {
+      const s = page.strokes[i]!;
+      if (s.locked && strokeHit(s, p, radius)) return s;
     }
     return undefined;
   };
@@ -1176,10 +1227,14 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
     return undefined;
   };
 
-  const selectStroke = (s: Stroke) => {
-    const b = strokeBounds(s);
-    setSelection({ ids: new Set([s.id]), bounds: b });
+  /** Selects items (whole groups), or clears the selection when none are left. */
+  const selectIds = (ids: Iterable<string>) => {
+    const all = expandGroups(page.strokes, ids);
+    const picked = page.strokes.filter((x) => all.has(x.id));
+    const bounds = unionRects(picked.map(strokeBounds));
+    setSelection(picked.length && bounds ? { ids: new Set(picked.map((x) => x.id)), bounds } : null);
   };
+  const selectStroke = (s: Stroke) => selectIds([s.id]);
 
   const cancelPress = () => {
     if (pressRef.current) clearTimeout(pressRef.current.timer);
@@ -1272,7 +1327,8 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
           pressRef.current = null;
           const hit = strokeAt(at);
           if (!hit) {
-            setCanvasMenu(at);
+            const locked = lockedAt(at);
+            setCanvasMenu({ ...at, lockedId: locked?.id });
             return;
           }
           selectStroke(hit);
@@ -1325,6 +1381,8 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
       startedAt: performance.now(),
       guides: null,
       snap: null,
+      moveTargets: null,
+      moveGuides: [],
     };
     growDirty(g, p.x, p.y);
 
@@ -1370,6 +1428,7 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
       paintInk(true);
     } else if (selection && settings.tool !== 'eraser' && onSelectionBody(p)) {
       g.kind = 'move';
+      g.moveTargets = guideTargets(page.strokes, selection.ids, page);
       for (const id of selection.ids) hiddenRef.current.add(id);
       paintInk(true);
     } else if (settings.tool === 'laser') {
@@ -1460,13 +1519,23 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
           eraseAt(g, p);
           break;
         case 'lasso':
-          g.lasso.push(p);
+          if (settings.lasso?.mode === 'rect') {
+            const a = g.moveStart;
+            g.lasso = [a, { x: p.x, y: a.y }, p, { x: a.x, y: p.y }];
+          } else g.lasso.push(p);
           break;
         case 'laser':
           laserRef.current[laserRef.current.length - 1]?.push({ ...p, t: performance.now() });
           break;
         case 'move':
-          g.offset = { x: p.x - g.moveStart.x, y: p.y - g.moveStart.y };
+          {
+            const raw = { x: p.x - g.moveStart.x, y: p.y - g.moveStart.y };
+            if (selection && g.moveTargets) {
+              const snapped = snapMove(selection.bounds, raw, g.moveTargets, Math.max(3, 8 / scale));
+              g.offset = snapped.offset;
+              g.moveGuides = snapped.guides;
+            } else g.offset = raw;
+          }
           break;
         case 'shape':
         case 'tape':
@@ -1495,6 +1564,12 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
           };
           g.sx = g.axis.x ? stretch(g.scaleFrom.x, g.anchor.x, p.x) : 1;
           g.sy = g.axis.y ? stretch(g.scaleFrom.y, g.anchor.y, p.y) : 1;
+          // Corner handles keep the proportions (unless turned off in Arrange).
+          if (g.axis.x && g.axis.y && getKeepAspect()) {
+            const k = Math.max(Math.abs(g.sx), Math.abs(g.sy));
+            g.sx = Math.sign(g.sx || 1) * k;
+            g.sy = Math.sign(g.sy || 1) * k;
+          }
           break;
         }
         case 'vertex': {
@@ -1541,7 +1616,10 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
         const tape = tapeAt(press.at);
         const hit = strokeAt(press.at);
         if (tape && (!hit || hit.id === tape.id || hit.createdAt < tape.createdAt)) toggleTape(tape);
-        else if (hit) selectStroke(hit);
+        else if (hit && selection && !selection.ids.has(hit.id)) {
+          // Something is already selected: a finger tap adds to it (tap empty paper to clear).
+          selectIds([...selection.ids, hit.id]);
+        } else if (hit) selectStroke(hit);
       }
     }
     if (e.pointerType === 'pen') notePen(false);
@@ -1670,9 +1748,11 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
             if (hit) selectStroke(hit);
             break;
           }
-          const picked = page.strokes.filter((s) => strokeInLasso(s, g.lasso));
-          const bounds = unionRects(picked.map(strokeBounds));
-          if (picked.length && bounds) setSelection({ ids: new Set(picked.map((s) => s.id)), bounds });
+          const kinds = settings.lasso?.kinds;
+          const picked = page.strokes.filter(
+            (s) => isSelectable(s) && (!kinds?.length || kinds.includes(kindOf(s))) && strokeInLasso(s, g.lasso),
+          );
+          if (picked.length) selectIds(picked.map((s) => s.id));
           break;
         }
         case 'move': {
@@ -1745,6 +1825,7 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
     paintInk(true);
   };
   const [fillOpacity, setFillOpacity] = useState(DEFAULT_FILL_OPACITY);
+  const [keepAspect, setKeepAspectState] = useState(getKeepAspect);
   /** Which pop-up of the selection menu is open. */
   const [menuPanel, setMenuPanel] = useState<'color' | 'fill' | 'arrange' | 'style' | null>(null);
   const onlyPictures = !!selection && page.strokes.every((s) => !selection.ids.has(s.id) || s.tool === 'image');
@@ -1798,7 +1879,8 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
   }, [selection]);
 
   // ---- Copy / cut / paste, layering, pictures ------------------------------------------------
-  const [canvasMenu, setCanvasMenu] = useState<Point | null>(null);
+  /** Long-press menu on the paper (with the locked item under the finger, if any). */
+  const [canvasMenu, setCanvasMenu] = useState<(Point & { lockedId?: string }) | null>(null);
   const [clipKind, setClipKind] = useState(() => getClip()?.kind ?? null);
   useEffect(() => onClipChange(() => setClipKind(getClip()?.kind ?? null)), []);
   const imageInputRef = useRef<HTMLInputElement>(null);
@@ -1911,7 +1993,8 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
     const onAction = (e: Event) => {
       const detail = (e as CustomEvent<PageAction>).detail;
       if (detail.pageId !== page.id) return;
-      if (detail.action === 'insertPictures') void insertPictures(detail.files, null);
+      if (detail.action === 'selectAll') selectAllOnPage();
+      else if (detail.action === 'insertPictures') void insertPictures(detail.files, null);
       else if (detail.action === 'paste') {
         if (detail.files.length) void insertPictures(detail.files, null);
         else if (!pasteInk(visibleCenter())) void pasteFromSystem(visibleCenter());
@@ -2082,6 +2165,125 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
     if (selectedPens[0]) setLineWidth(selectedPens[0].size);
   }, [selectedPens[0]?.size]);
 
+  /** Replaces the selected items with changed copies (one undo step) and keeps them selected. */
+  const replaceSelected = (targets: Stroke[], next: Stroke[], keepSelected = true) => {
+    if (!next.length) return;
+    hiddenRef.current = new Set(targets.map((s) => s.id));
+    paintInk(true);
+    paintNow(next);
+    onChange(page.id, next, targets.map((s) => s.id));
+    keepPanelRef.current = true;
+    if (!keepSelected) {
+      setSelection(null);
+      return;
+    }
+    const bounds = unionRects(next.map(strokeBounds));
+    if (bounds) setSelection({ ids: new Set(next.map((s) => s.id)), bounds });
+  };
+  const alignSelection = (mode: AlignMode) => {
+    const targets = selectedStrokes();
+    const { before, after } = alignStrokes(targets, mode);
+    replaceSelectedPartial(targets, before, after);
+  };
+  const distributeSelection = (axis: 'horizontal' | 'vertical') => {
+    const targets = selectedStrokes();
+    const { before, after } = distributeStrokes(targets, axis);
+    replaceSelectedPartial(targets, before, after);
+  };
+  /** Like replaceSelected when only some of the selected items changed. */
+  const replaceSelectedPartial = (all: Stroke[], changed: Stroke[], next: Stroke[]) => {
+    if (!next.length) return;
+    hiddenRef.current = new Set(changed.map((s) => s.id));
+    paintInk(true);
+    paintNow(next);
+    onChange(page.id, next, changed.map((s) => s.id));
+    keepPanelRef.current = true;
+    const kept = all.filter((s) => !changed.includes(s));
+    const items = [...kept, ...next];
+    const bounds = unionRects(items.map(strokeBounds));
+    if (bounds) setSelection({ ids: new Set(items.map((s) => s.id)), bounds });
+  };
+  const flipSelection = (axis: 'horizontal' | 'vertical') => {
+    const targets = selectedStrokes();
+    replaceSelected(targets, flipStrokes(targets, axis));
+  };
+  const selectedGroups = new Set(selectedStrokes().map((s) => s.group).filter(Boolean));
+  const canGroup = !!selection && selection.ids.size > 1 && !(selectedGroups.size === 1 && selectedStrokes().every((s) => s.group));
+  const groupSelection = () => {
+    const targets = selectedStrokes();
+    replaceSelected(targets, regroup(targets, newId()));
+  };
+  const ungroupSelection = () => {
+    const targets = selectedStrokes();
+    replaceSelected(targets, regroup(targets, null));
+  };
+  const lockSelection = () => {
+    const targets = selectedStrokes();
+    replaceSelected(targets, setLocked(targets, true), false);
+  };
+  /** Unlocks a locked item (and the rest of its group) and selects it. */
+  const unlockItem = (id: string) => {
+    const item = page.strokes.find((s) => s.id === id);
+    if (!item) return;
+    const targets = page.strokes.filter((s) => s.id === id || (item.group && s.group === item.group && s.locked));
+    const next = setLocked(targets, false);
+    onChange(page.id, next, targets.map((s) => s.id));
+    const bounds = unionRects(next.map(strokeBounds));
+    if (bounds) setSelection({ ids: new Set(next.map((s) => s.id)), bounds });
+    onRequestSelect?.();
+  };
+  const selectAllOnPage = () => {
+    const ids = page.strokes.filter(isSelectable).map((s) => s.id);
+    if (ids.length) {
+      selectIds(ids);
+      onRequestSelect?.();
+    }
+  };
+  /** Puts a picture of the selection on the clipboard (or the share sheet). */
+  const copySelectionAsImage = async () => {
+    const strokes = selectedStrokes();
+    const b = unionRects(strokes.map(strokeBounds));
+    if (!b) return;
+    const k = 3;
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.ceil(b.width * k));
+    canvas.height = Math.max(1, Math.ceil(b.height * k));
+    const ctx = canvas.getContext('2d')!;
+    await preloadImages(strokes);
+    drawPage(ctx, strokes, { x: b.x, y: b.y, width: b.width, height: b.height, k });
+    const blob = await new Promise<Blob | null>((r) => canvas.toBlob(r, 'image/png'));
+    if (!blob) return;
+    try {
+      await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+    } catch {
+      await shareOrDownload(blob, 'Selection.png');
+    }
+    setMenuPanel(null);
+  };
+
+  // Keyboard (Magic Keyboard / Smart Keyboard): arrows nudge, Delete removes, Esc deselects.
+  const keyActionsRef = useRef<(e: KeyboardEvent) => void>(() => {});
+  keyActionsRef.current = (e: KeyboardEvent) => {
+    if (!selection || (e.target as HTMLElement | null)?.closest?.('input, textarea, select')) return;
+    const step = e.shiftKey ? 10 : 1;
+    const move: Record<string, [number, number]> = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] };
+    if (move[e.key]) {
+      e.preventDefault();
+      const [dx, dy] = move[e.key]!;
+      const targets = selectedStrokes();
+      replaceSelected(targets, targets.map((s) => ({ ...translateStroke(s, dx, dy, newId()), createdAt: s.createdAt })));
+    } else if (e.key === 'Delete' || e.key === 'Backspace') {
+      e.preventDefault();
+      deleteSelection();
+    } else if (e.key === 'Escape') setSelection(null);
+  };
+  useEffect(() => {
+    if (!selection) return;
+    const onKey = (e: KeyboardEvent) => keyActionsRef.current(e);
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [!!selection]);
+
   const deleteSelection = () => {
     if (!selection) return;
     onChange(page.id, [], [...selection.ids]);
@@ -2149,8 +2351,29 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
           role="menu"
           style={{ left: canvasMenu.x * scale, top: canvasMenu.y * scale }}
         >
+          {canvasMenu.lockedId && (
+            <button
+              role="menuitem"
+              onClick={() => {
+                const id = canvasMenu.lockedId!;
+                setCanvasMenu(null);
+                unlockItem(id);
+              }}
+            >
+              Unlock
+            </button>
+          )}
           <button role="menuitem" onClick={() => void paste(canvasMenu)}>
             Paste{clipKind === 'ink' ? '' : ' picture'}
+          </button>
+          <button
+            role="menuitem"
+            onClick={() => {
+              setCanvasMenu(null);
+              selectAllOnPage();
+            }}
+          >
+            Select all
           </button>
           <button
             role="menuitem"
@@ -2244,16 +2467,70 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
               <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="11" height="11" rx="2.5" /><rect x="9" y="9" width="11" height="11" rx="2.5" /><path d="M14.5 12.5v4M12.5 14.5h4" /></svg>
               <span className="sel-label">Duplicate</span>
             </button>
+            <button className="sel-btn" aria-label="Lock" title="Lock so it can't be selected or moved" onClick={lockSelection}>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 10.5h11a1.5 1.5 0 0 1 1.5 1.5v7a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 5 19v-7a1.5 1.5 0 0 1 1.5-1.5zM8.5 10.5V7.5a3.5 3.5 0 0 1 7 0v3" /></svg>
+              <span className="sel-label">Lock</span>
+            </button>
             <button className="sel-btn danger" aria-label="Delete" onClick={deleteSelection}>
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4.5h6V7M6.5 7l1 13h9l1-13M10 11v5.5M14 11v5.5" /></svg>
               <span className="sel-label">Delete</span>
             </button>
             {menuPanel === 'arrange' && (
               <div className="sel-panel sel-arrange" role="group" aria-label="Arrange">
-                <button onClick={() => arrangeSelection('front')}>Bring to Front</button>
-                <button onClick={() => arrangeSelection('forward')}>Bring Forward</button>
-                <button onClick={() => arrangeSelection('backward')}>Send Backward</button>
-                <button onClick={() => arrangeSelection('back')}>Send to Back</button>
+                <div className="sel-section">Layer</div>
+                <div className="sel-grid four">
+                  <button onClick={() => arrangeSelection('front')}>To front</button>
+                  <button onClick={() => arrangeSelection('forward')}>Forward</button>
+                  <button onClick={() => arrangeSelection('backward')}>Backward</button>
+                  <button onClick={() => arrangeSelection('back')}>To back</button>
+                </div>
+                {selection.ids.size > 1 && (
+                  <>
+                    <div className="sel-section">Align</div>
+                    <div className="sel-grid six">
+                      {(
+                        [
+                          ['left', 'M5 4v16M8 8h10M8 15h6'],
+                          ['center', 'M12 4v16M6 8h12M8 15h8'],
+                          ['right', 'M19 4v16M6 8h10M10 15h6'],
+                          ['top', 'M4 5h16M8 8v10M15 8v6'],
+                          ['middle', 'M4 12h16M8 6v12M15 8v8'],
+                          ['bottom', 'M4 19h16M8 6v10M15 10v6'],
+                        ] as [AlignMode, string][]
+                      ).map(([mode, d]) => (
+                        <button key={mode} aria-label={`Align ${mode}`} title={`Align ${mode}`} onClick={() => alignSelection(mode)}>
+                          <svg viewBox="0 0 24 24" aria-hidden="true"><path d={d} /></svg>
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+                {selection.ids.size > 2 && (
+                  <div className="sel-grid two">
+                    <button onClick={() => distributeSelection('horizontal')}>Space across</button>
+                    <button onClick={() => distributeSelection('vertical')}>Space down</button>
+                  </div>
+                )}
+                <div className="sel-section">Transform</div>
+                <div className="sel-grid two">
+                  <button onClick={() => flipSelection('horizontal')}>Flip horizontal</button>
+                  <button onClick={() => flipSelection('vertical')}>Flip vertical</button>
+                  {canGroup && <button onClick={groupSelection}>Group</button>}
+                  {selectedGroups.size > 0 && <button onClick={ungroupSelection}>Ungroup</button>}
+                </div>
+                <button
+                  className="sel-toggle"
+                  role="switch"
+                  aria-checked={keepAspect}
+                  onClick={() => {
+                    setKeepAspect(!keepAspect);
+                    setKeepAspectState(!keepAspect);
+                  }}
+                >
+                  <span>Keep proportions when resizing</span>
+                  <span className={`switch ${keepAspect ? 'on' : ''}`} />
+                </button>
+                <button onClick={() => void copySelectionAsImage()}>Copy as image</button>
               </div>
             )}
             {menuPanel === 'style' && selectedPens.length > 0 && (

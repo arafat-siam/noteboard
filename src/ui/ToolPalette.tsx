@@ -18,6 +18,7 @@ import { Slider } from '../ink/Slider';
 import { drawStroke } from '../ink/render';
 import { SHAPE_TOOLS } from '../ink/shapeTool';
 import { TEXT_FONT_ORDER, TEXT_FONTS } from '../ink/text';
+import { ITEM_KINDS } from '../ink/selection';
 import type { PenStyle, Stroke } from '../model/types';
 import { DashSample, Icon, ShapeGlyph } from './Icon';
 import { PenIcon, type PenIconKind } from './PenIcon';
@@ -83,6 +84,8 @@ interface Props {
   canRedo: boolean;
   layout: PaletteLayout;
   setLayout: (layout: PaletteLayout) => void;
+  /** Select everything on the page on screen. */
+  onSelectAll?: () => void;
 }
 
 type Popover = 'slot' | 'eraser' | 'lasso' | 'text' | 'shape' | 'tape' | 'laser' | 'more';
@@ -430,9 +433,51 @@ export function ToolPalette(props: Props) {
       </div>
     );
   } else if (popover === 'lasso') {
+    const lasso = settings.lasso ?? { mode: 'free' as const, kinds: [] };
     content = (
       <div className="palette-popover" role="dialog" aria-label="Lasso">
         <div className="popover-title">Lasso</div>
+        <Segmented
+          value={lasso.mode}
+          options={[
+            { value: 'free', label: 'Freehand' },
+            { value: 'rect', label: 'Rectangle' },
+          ]}
+          onChange={(v) => update({ lasso: { ...lasso, mode: v } })}
+        />
+        <div className="field-caption">Select only</div>
+        <div className="kind-chips">
+          {ITEM_KINDS.map(({ kind, label }) => {
+            const on = !lasso.kinds.length || lasso.kinds.includes(kind);
+            return (
+              <button
+                key={kind}
+                className={`kind-chip ${on ? 'on' : ''}`}
+                aria-pressed={on}
+                onClick={() => {
+                  const current = lasso.kinds.length ? lasso.kinds : ITEM_KINDS.map((k) => k.kind);
+                  const next = on ? current.filter((k) => k !== kind) : [...current, kind];
+                  // All (or none) ticked means "everything".
+                  update({ lasso: { ...lasso, kinds: next.length === ITEM_KINDS.length || !next.length ? [] : next } });
+                }}
+              >
+                {on && <Icon name="check" size={14} />}
+                {label}
+              </button>
+            );
+          })}
+        </div>
+        {props.onSelectAll && (
+          <button
+            className="popover-wide-button"
+            onClick={() => {
+              setPopover(null);
+              props.onSelectAll?.();
+            }}
+          >
+            Select all on this page
+          </button>
+        )}
         <p className="popover-hint">
           Circle anything, or tap it, to select it. Drag to move, pull a handle to resize, use the round handle to rotate.
           The menu above the selection changes colour, line style, fill and layering. Tip: tap ink with a finger to select it

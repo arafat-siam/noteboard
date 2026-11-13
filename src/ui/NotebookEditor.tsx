@@ -731,6 +731,7 @@ export function NotebookEditor({ notebookId, onClose }: { notebookId: string; on
         canRedo={redoStack.length > 0}
         layout={paletteLayout}
         setLayout={setPaletteLayout}
+        onSelectAll={() => pageAction({ action: 'selectAll', files: [] })}
       />
 
       <div

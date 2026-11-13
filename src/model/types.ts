@@ -84,6 +84,10 @@ export interface Stroke {
   /** Arrowheads at the start / end of an open line. */
   arrowStart?: boolean;
   arrowEnd?: boolean;
+  /** Locked (Drawboard-style): not selectable, movable or erasable until unlocked. */
+  locked?: boolean;
+  /** Items with the same group id select, move and resize together. */
+  group?: string;
   /** Text boxes only (tool 'text'): its 4 corners are in `points`, like a picture. */
   text?: TextContent;
   /** Fill inside the shape (closed along its points). Missing = no fill. Strokes are

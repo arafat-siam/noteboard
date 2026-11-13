@@ -124,3 +124,13 @@ describe('notebook settings sync', () => {
     expect(mergeLibrary([remote], [local]).merged[0]).toMatchObject({ pageTheme: 'dark' });
   });
 });
+
+describe('locked and grouped items sync', () => {
+  it('keeps lock and group flags, and an unlock (new id) replaces the locked copy', () => {
+    const locked: Stroke = { ...stroke('x', 3), locked: true, group: 'g1' };
+    const unlocked: Stroke = { ...stroke('y', 3), group: 'g1' };
+    const merged = mergePage(page({ strokes: [locked] }), page({ strokes: [unlocked], deletedStrokeIds: ['x'] }));
+    expect(merged.strokes.map((s) => [s.id, !!s.locked, s.group])).toEqual([['y', false, 'g1']]);
+    expect(mergePage(page({ strokes: [locked] }), page({})).strokes[0]).toMatchObject({ locked: true, group: 'g1' });
+  });
+});
