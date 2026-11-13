@@ -9,6 +9,7 @@ import { ExportDialog } from './ExportDialog';
 import { UnlockNotebook } from './NotebookLockDialogs';
 import { isNotebookUnlocked, notebookClosed } from '../security/notebookLock';
 import { PageSizeDialog } from './PageSizePicker';
+import { ShareDialog } from './ShareDialog';
 import { describeSize } from '../model/pageSizes';
 import { PageManager } from './PageManager';
 import { deferPageLayout, isControl, PAGE_ACTION, relayoutPages, type PageAction } from '../ink/InkPage';
@@ -149,6 +150,7 @@ export function NotebookEditor({
   useEffect(() => () => notebookClosed(notebookRef.current?.kind === 'notebook' ? notebookRef.current : undefined), []);
   const [pageMenu, setPageMenu] = useState<Page | null>(null);
   const [sizingPage, setSizingPage] = useState<Page | null>(null);
+  const [sharing, setSharing] = useState(false);
   /** Page being copied to another notebook (the picker is open). */
   const [copyingPage, setCopyingPage] = useState<Page | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -882,6 +884,17 @@ export function NotebookEditor({
               <Icon name={notebook.invertPdf ? 'check' : 'image'} size={18} /> {notebook.invertPdf ? 'PDF pages are inverted in night mode' : 'Invert PDF pages in night mode'}
             </button>
           </div>
+          <label className="field-label">Share</label>
+          <div className="menu-list">
+            <button
+              onClick={() => {
+                setExportOpen(false);
+                setSharing(true);
+              }}
+            >
+              <Icon name="link" size={18} /> Share a view-only link
+            </button>
+          </div>
           <label className="field-label">Export</label>
           <div className="menu-list">
             <button onClick={() => void exportPdf()}>
@@ -951,6 +964,7 @@ export function NotebookEditor({
       )}
 
       {showDiagnostics && <DiagnosticsOverlay />}
+      {sharing && <ShareDialog item={notebook} onClose={() => setSharing(false)} />}
       {backStack.length > 0 && (
         <button className="link-back" onClick={goBack}>
           <Icon name="chevronLeft" size={18} /> Back

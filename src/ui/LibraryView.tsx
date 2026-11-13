@@ -27,6 +27,7 @@ import { setLocalOnly } from '../sync/localOnly';
 import { readDragIds, writeDragIds } from './dnd';
 import { Icon, type IconName } from './Icon';
 import { NotebookLockDialog, UnlockNotebook } from './NotebookLockDialogs';
+import { ShareDialog } from './ShareDialog';
 import { isNotebookUnlocked } from '../security/notebookLock';
 
 interface Props {
@@ -44,6 +45,7 @@ type Dialog =
   | { kind: 'color'; item: LibraryItem }
   | { kind: 'move'; ids: ID[] }
   | { kind: 'lock'; item: Notebook }
+  | { kind: 'share'; item: LibraryItem }
   | { kind: 'unlock-export'; item: Notebook }
   | null;
 
@@ -439,6 +441,7 @@ export function LibraryView({ route, onNavigate, onOpenNotebook, onToggleSidebar
         </Modal>
       )}
       {dialog?.kind === 'lock' && <NotebookLockDialog notebook={dialog.item} onClose={() => setDialog(null)} />}
+      {dialog?.kind === 'share' && <ShareDialog item={dialog.item} onClose={() => setDialog(null)} />}
       {dialog?.kind === 'unlock-export' && (
         <UnlockNotebook
           notebook={dialog.item}
@@ -583,6 +586,9 @@ function ItemMenu(props: {
               {item.favorite ? 'Remove from Favorites' : 'Add to Favorites'}
             </button>
             <button onClick={run(() => props.onDialog({ kind: 'color', item }))}>Change color</button>
+            <button onClick={run(() => props.onDialog({ kind: 'share', item }))}>
+              <Icon name="link" size={18} /> Share link
+            </button>
             {item.kind === 'notebook' && (
               <button onClick={run(() => props.onDialog({ kind: 'lock', item }))}>
                 <Icon name="lock" size={18} /> {item.lock ? 'Lock settings' : 'Lock with passcode'}

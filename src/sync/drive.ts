@@ -20,6 +20,13 @@ const UPLOAD = 'https://www.googleapis.com/upload/drive/v3';
 const FILE_FIELDS = 'id,name,modifiedTime,appProperties';
 const ROOT_FOLDER_NAME = 'Noteboard';
 
+/** Reads a publicly shared file without signing in (needs the app's public API key). */
+export async function downloadPublic(fileId: string, apiKey: string): Promise<Uint8Array> {
+  const res = await fetch(`${API}/files/${encodeURIComponent(fileId)}?alt=media&key=${encodeURIComponent(apiKey)}`);
+  if (!res.ok) throw new DriveError(res.status === 404 ? 'This link no longer works. The owner may have stopped sharing it.' : `Could not open the shared notes (error ${res.status}).`, res.status);
+  return new Uint8Array(await res.arrayBuffer());
+}
+
 export class DriveClient {
   constructor(private readonly token: string) {}
 
@@ -166,6 +173,38 @@ export class DriveClient {
       if (body.newStartPageToken) next = body.newStartPageToken;
     }
     return { files, removed, next };
+  }
+
+  /** Finds (or creates) the top-level "Noteboard shared links" folder (copies made for sharing). */
+  async ensureSharesFolder(): Promise<string> {
+    const q = "mimeType='application/vnd.google-apps.folder' and appProperties has { key='noteboardShares' and value='1' } and trashed=false";
+    const found = await this.request(`${API}/files?${new URLSearchParams({ q, fields: 'files(id)', spaces: 'drive' })}`);
+    const files = ((await found.json()) as { files: { id: string }[] }).files;
+    if (files[0]) return files[0].id;
+    const created = await this.request(`${API}/files?fields=id`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'Noteboard shared links', mimeType: 'application/vnd.google-apps.folder', appProperties: { noteboardShares: '1' } }),
+    });
+    return ((await created.json()) as { id: string }).id;
+  }
+
+  /** Anyone with the link can view this file (no Google account needed). */
+  async makePublic(fileId: string): Promise<void> {
+    await this.request(`${API}/files/${fileId}/permissions?fields=id`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ role: 'reader', type: 'anyone' }),
+    });
+  }
+
+  /** Deletes a file for good (used for shared copies: the link stops working at once). */
+  async deleteFile(fileId: string): Promise<void> {
+    try {
+      await this.request(`${API}/files/${fileId}`, { method: 'DELETE' });
+    } catch (error) {
+      if (!(error instanceof DriveError && error.status === 404)) throw error;
+    }
   }
 
   /** Moves a file to the Drive trash (recoverable by the user for 30 days). */

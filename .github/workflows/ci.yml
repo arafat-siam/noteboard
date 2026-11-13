@@ -34,6 +34,7 @@ jobs:
         run: bash scripts/ci-run.sh "Build" npx vite build
         env:
           VITE_GOOGLE_CLIENT_ID: ${{ vars.GOOGLE_CLIENT_ID }}
+          VITE_GOOGLE_API_KEY: ${{ vars.GOOGLE_API_KEY }}
 
       # The Noteboard Shell app, downloadable at https://arafat-siam.github.io/noteboard/NoteboardShell.swiftpm.zip
       - name: Package shell app

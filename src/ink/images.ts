@@ -236,3 +236,15 @@ export function drawImageStroke(ctx: CanvasRenderingContext2D, stroke: Stroke): 
 export function imageFileIds(strokes: Stroke[]): ID[] {
   return [...new Set(strokes.flatMap((s) => (s.image ? [s.image.fileId] : [])))];
 }
+
+/** Supplies a picture that isn't in this device's database (shared-link viewer). */
+export async function provideImage(fileId: ID, blob: Blob): Promise<void> {
+  if (decoded.get(fileId)?.bitmap) return;
+  try {
+    const bitmap = await createImageBitmap(blob);
+    decoded.set(fileId, { bitmap, loading: null });
+    window.dispatchEvent(new CustomEvent(LOADED, { detail: fileId }));
+  } catch {
+    /* unreadable picture: a grey placeholder stays */
+  }
+}

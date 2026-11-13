@@ -2,6 +2,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './App';
 import { AppLock } from './security/AppLock';
+import { ShareViewer } from './ui/ShareViewer';
 import { bounceToShellApp, getToken, handleRedirect, isConfigured, signIn, wasConnected } from './sync/auth';
 import './pencil/bridge';
 import './styles.css';
@@ -33,6 +34,18 @@ window.addEventListener('hashchange', () => {
 });
 
 function start(): void {
+  // A shared link (#/s/<id>): the read-only viewer, open to anyone (no app passcode, no sync).
+  const shared = /^#\/s\/([\w-]+)/.exec(location.hash);
+  if (shared) {
+    createRoot(document.getElementById('root')!).render(
+      <StrictMode>
+        <ShareViewer fileId={shared[1]!} />
+      </StrictMode>,
+    );
+    hideSplash();
+    return;
+  }
+
   // Opened inside the Noteboard Shell's sign-in sheet: pass Google's answer back to the app.
   if (bounceToShellApp()) return;
 

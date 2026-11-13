@@ -59,6 +59,17 @@ async function fakeFetch(input: RequestInfo | URL, init: RequestInit = {}): Prom
     });
     return json({ changes, newStartPageToken: String(changeLog.length) });
   }
+  if (path.endsWith('/permissions') && method === 'POST') {
+    const fileId = path.split('/').slice(-2)[0]!;
+    const f = files.get(fileId);
+    if (!f) return new Response('not found', { status: 404 });
+    f.appProperties = { ...f.appProperties, public: '1' };
+    return json({ id: 'anyone' });
+  }
+  if (method === 'DELETE') {
+    const fileId = path.split('/').pop()!;
+    return files.delete(fileId) ? new Response(null, { status: 204 }) : new Response('not found', { status: 404 });
+  }
   if (path.endsWith('/files') && method === 'GET') {
     const q = url.searchParams.get('q') ?? '';
     if (q.includes('in parents')) folderLists++;
@@ -276,6 +287,39 @@ describe('Drive changes feed', () => {
     // … and B notices through the changes feed and pulls it.
     await engineB.run(drive);
     expect((await loadPage(b, nb.pageIds[0]!))?.strokes.map((s) => s.id).sort()).toEqual(['m1', 'm2']);
+  });
+});
+
+describe('sharing by link', () => {
+  it('shares a locked notebook encrypted, opens it with the passcode, and can stop sharing', async () => {
+    const { createShare, stopShare, readManifest, openLocked, listShares } = await import('../share/share');
+    const { makeNotebookLock } = await import('../security/notebookLock');
+    const { setNotebookSettings } = await import('../db/library');
+    const { WrongPasscodeError } = await import('../share/seal');
+    const a = new NoteboardDB(`sh-${crypto.randomUUID()}`);
+    const nb = await createNotebook(a, 'Secret diary', null);
+    await applyStrokeChange(a, nb.pageIds[0]!, [stroke('ink-1')], []);
+    await setNotebookSettings(a, nb.id, { lock: await makeNotebookLock('river stone 9') });
+    const drive = new DriveClient('test-token');
+
+    await expect(createShare(a, drive, nb.id, new Map())).rejects.toThrow(/passcode/);
+    const record = await createShare(a, drive, nb.id, new Map([[nb.id, 'river stone 9']]));
+    expect(record.link).toContain(`#/s/${record.manifestId}`);
+    const manifestFile = files.get(record.manifestId)!;
+    expect(manifestFile.appProperties.public).toBe('1');
+
+    const manifest = await readManifest(manifestFile.data);
+    const entry = manifest.notebooks[0]!;
+    expect(entry.locked).toBe(true);
+    expect(JSON.stringify(manifest)).not.toContain('ink-1');
+    if (!entry.locked) throw new Error('expected locked');
+    await expect(openLocked(entry, 'wrong')).rejects.toBeInstanceOf(WrongPasscodeError);
+    const content = await openLocked(entry, 'river stone 9');
+    expect(content.pages[0]!.strokes.map((s) => s.id)).toEqual(['ink-1']);
+
+    await stopShare(a, drive, record.manifestId);
+    expect(files.has(record.manifestId)).toBe(false);
+    expect(await listShares(a)).toEqual([]);
   });
 });
 
