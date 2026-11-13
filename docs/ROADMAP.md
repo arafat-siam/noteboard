@@ -25,6 +25,11 @@
 - [x] Toolbar floating or docked, on any side; Light / Dark / Automatic appearance; launch screen with logo
 - [x] Export chosen pages (range or picked in Pages) as PDF or PNG images
 - [x] Drive changes feed: idle devices check with one small request; pages transfer 4 at a time
+- [x] Night mode pages (ink colours flip automatically), page sizes A3–A5/Letter/… portrait or landscape
+- [x] Optional app passcode, per-notebook passcode locks (kept when shared)
+- [x] Selection: lock items, rectangle lasso, filters, groups, align/distribute/flip, smart guides
+- [x] Ruler and protractor; links (PDF, pages, notebooks, web); view-only share links; audio recording with synced playback
+- [ ] Redesign: on the preview at /noteboard/preview/ until approved
 
 ## Missing compared with pro note apps (GoodNotes, Notability, Drawboard, Noteshelf)
 Rough priority order (★ = biggest gap).

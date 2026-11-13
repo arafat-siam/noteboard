@@ -68,6 +68,15 @@ Verify UI changes in the browser pane (launch config `noteboard-dev`). Synthetic
 - Theme: `src/ui/theme.ts` sets `data-theme` on <html> (index.html applies it before load). All colours are CSS tokens in styles.css; pages stay white. No emoji in the UI: use `src/ui/Icon.tsx`.
 - Sync quick check: `driveChangesToken` meta + Drive changes feed; an idle device makes one small request. A full folder listing still runs on any foreign change, local change, or every 15 min.
 - Logo: `scripts/make-icons.mjs` → `npm run icons` (see docs/CHANGE_LOGO.md). The launch screen in index.html uses `public/icon.svg`.
+- Night mode pages (`src/ink/inkTheme.ts`): per notebook `pageTheme`; ink is *displayed* with flipped lightness, stored colours never change. Renderer opacities multiply (`globalAlpha *=`), never assign.
+- Page sizes (`src/model/pageSizes.ts`): each page has its own width/height; `setPageSize` scales ink by replacing strokes (tombstones). Notebook `pageSize` = size of new pages.
+- Locks: app passcode is optional (`pinLock.skipped()`), notebook `lock` = PBKDF2 hash only; unlocked notebooks are kept in memory (`src/security/notebookLock.ts`).
+- Selection (`src/ink/selection.ts`): `locked` items aren't selectable/erasable (long-press to unlock); `group` ids select together; align/distribute/flip/regroup always create new strokes.
+- Ruler/protractor (`src/ink/guides.ts`): client-pixel overlay, never saved; strokes starting near an edge are projected onto it.
+- Links: `stroke.link` (url/page/notebook) + PDF link annotations (`src/ink/links.ts`); exported PDFs keep them.
+- Sharing (`src/share/`): view-only snapshot in a separate Drive folder, public via permission; locked notebooks are AES-GCM sealed with the passcode. Viewer route `#/s/<id>` needs `GOOGLE_API_KEY` (docs/SHARING_SETUP.md).
+- Audio (`src/ink/recording.ts`, `RecordingsPanel`): notebook `recordings` (merge = union minus `deletedRecordingIds`), audio in files table, ink stamped with `audio: {rec, t}`.
+- Design preview: branch `redesign` is built into `/noteboard/preview/` whenever main deploys. Restore point of the old look: tag `ui-v1`.
 - CI annotations (`scripts/ci-run.sh`) are how build errors are read without GitHub login — keep using it for new CI steps.
 
 ## Subagents (.claude/agents)
