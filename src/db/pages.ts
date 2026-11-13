@@ -1,6 +1,7 @@
+import { scaleStrokeXY } from '../ink/geometry';
 import type { NoteboardDB, PageRecord, StoredStroke } from './db';
 import { markLibraryChanged, blankPage } from './library';
-import type { ID, Page, PaperTemplate, Stroke } from '../model/types';
+import { newId, type ID, type Page, type PaperTemplate, type Stroke } from '../model/types';
 import { compactStroke } from '../sync/compact';
 
 // Pages are stored in two parts: the page record (template, tombstones, background...) in
@@ -166,7 +167,9 @@ export async function addPage(db: NoteboardDB, notebookId: ID, afterPageId?: ID)
     if (!notebook || notebook.kind !== 'notebook') return undefined;
     const lastId = afterPageId ?? notebook.pageIds[notebook.pageIds.length - 1];
     const previous = lastId ? await db.pages.get(lastId) : undefined;
-    const page = blankPage(notebookId, previous?.template ?? notebook.template);
+    // A new page continues the paper and size of the page before it.
+    const size = previous ? { width: previous.width, height: previous.height } : notebook.pageSize;
+    const page = blankPage(notebookId, previous?.template ?? notebook.template, Date.now(), size);
     const index = afterPageId ? notebook.pageIds.indexOf(afterPageId) + 1 : notebook.pageIds.length;
     notebook.pageIds = [...notebook.pageIds.slice(0, index), page.id, ...notebook.pageIds.slice(index)];
     notebook.updatedAt = Date.now();
@@ -191,6 +194,32 @@ export async function deletePage(db: NoteboardDB, notebookId: ID, pageId: ID): P
 
 export async function setPageTemplate(db: NoteboardDB, pageId: ID, template: PaperTemplate): Promise<void> {
   await db.pages.update(pageId, { template, updatedAt: Date.now(), dirty: 1 });
+}
+
+/**
+ * Changes the size of pages (pages showing an imported PDF keep the PDF's size). Ink keeps its
+ * place unless `scaleContent`, which shrinks or grows everything to fit the new page.
+ */
+export async function setPageSize(
+  db: NoteboardDB,
+  pageIds: ID[],
+  size: { width: number; height: number },
+  scaleContent = false,
+): Promise<number> {
+  let changed = 0;
+  for (const id of pageIds) {
+    const page = await loadPage(db, id);
+    if (!page || page.background) continue;
+    if (page.width === size.width && page.height === size.height) continue;
+    if (scaleContent && page.strokes.length) {
+      const k = Math.min(size.width / page.width, size.height / page.height);
+      const scaled = page.strokes.map((s) => ({ ...scaleStrokeXY(s, { x: 0, y: 0 }, k, k, newId()), createdAt: s.createdAt }));
+      await applyStrokeChange(db, id, scaled, page.strokes.map((s) => s.id));
+    }
+    await db.pages.update(id, { width: size.width, height: size.height, updatedAt: Date.now(), dirty: 1 });
+    changed++;
+  }
+  return changed;
 }
 
 /** Pages of a notebook in display order. Missing pages (not downloaded yet) are skipped. */

@@ -31,13 +31,18 @@ function cleanName(name: string): string {
   return trimmed.slice(0, 120);
 }
 
-export function blankPage(notebookId: ID, template: PaperTemplate, now = Date.now()): Page {
+export function blankPage(
+  notebookId: ID,
+  template: PaperTemplate,
+  now = Date.now(),
+  size: { width: number; height: number } = { width: PAGE_WIDTH, height: PAGE_HEIGHT },
+): Page {
   return {
     id: newId(),
     notebookId,
     template,
-    width: PAGE_WIDTH,
-    height: PAGE_HEIGHT,
+    width: size.width,
+    height: size.height,
     strokes: [],
     deletedStrokeIds: [],
     updatedAt: now,
@@ -72,10 +77,11 @@ export async function createNotebook(
   parentId: ID | null,
   template: PaperTemplate = 'ruled',
   coverColor: string = COVER_COLORS[0]!,
+  size?: { width: number; height: number },
 ): Promise<Notebook> {
   const now = Date.now();
   const id = newId();
-  const page = blankPage(id, template, now);
+  const page = blankPage(id, template, now, size);
   const notebook: Notebook = {
     kind: 'notebook',
     id,

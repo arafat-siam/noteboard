@@ -172,10 +172,12 @@ export interface Notebook extends LibraryBase {
   pageTheme?: 'light' | 'dark';
   /** In night mode, also invert imported PDF pages (white PDFs become dark). */
   invertPdf?: boolean;
+  /** Size of new pages (page units). Missing = A4 portrait. Each page keeps its own size. */
+  pageSize?: { width: number; height: number };
 }
 
 /** Notebook settings changed through setNotebookSettings (last change wins when syncing). */
-export type NotebookSettings = Partial<Pick<Notebook, 'pageTheme' | 'invertPdf'>>;
+export type NotebookSettings = Partial<Pick<Notebook, 'pageTheme' | 'invertPdf' | 'pageSize'>>;
 
 export type LibraryItem = Folder | Notebook;
 

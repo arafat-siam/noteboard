@@ -941,3 +941,81 @@ button.new-notebook {
   font-size: 11px;
   color: var(--muted);
 }
+
+/* ---- Page size picker ---- */
+.size-picker {
+  display: grid;
+  gap: 12px;
+}
+.size-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
+  gap: 8px;
+}
+.size-chip {
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 6px;
+  border-radius: 12px;
+  background: var(--surface-2);
+  border: 1.5px solid transparent;
+  font-size: 13px;
+}
+.size-chip small {
+  color: var(--muted);
+  font-size: 11px;
+}
+.size-chip.on {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.size-chip.on .size-name {
+  color: var(--accent);
+  font-weight: 600;
+}
+.size-shape {
+  height: 34px;
+  max-width: 50px;
+  border-radius: 3px;
+  background: var(--paper);
+  box-shadow: 0 0 0 1px var(--border), 0 1px 2px rgba(0, 0, 0, 0.15);
+}
+.size-shape.custom {
+  width: 26px;
+  border: 1.5px dashed var(--muted);
+  background: none;
+  box-shadow: none;
+}
+.custom-size {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.custom-size label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+}
+.custom-size input {
+  width: 80px;
+  font: inherit;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 8px;
+}
+.orientation-icon {
+  display: inline-block;
+  border: 1.5px solid currentColor;
+  border-radius: 2px;
+}
+.orientation-icon.portrait {
+  width: 11px;
+  height: 15px;
+}
+.orientation-icon.landscape {
+  width: 15px;
+  height: 11px;
+}

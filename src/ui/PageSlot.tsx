@@ -22,6 +22,8 @@ interface Props {
   onPageMenu: (page: Page) => void;
   /** Latest copy of every loaded page, for undo (which needs the strokes being erased). */
   registry: Map<string, Page>;
+  /** The page's size, known before its ink loads (keeps scrolling steady). */
+  size?: { width: number; height: number };
 }
 
 /**
@@ -101,7 +103,7 @@ export const PageSlot = memo(function PageSlot(props: Props) {
     // Still loading (or not downloaded yet): keep the page's space so scrolling doesn't jump.
     return (
       <div className="page-slot">
-        <div className="page-placeholder" style={{ width: PAGE_WIDTH * props.scale, height: PAGE_HEIGHT * props.scale }} />
+        <div className="page-placeholder" style={{ width: (props.size?.width ?? PAGE_WIDTH) * props.scale, height: (props.size?.height ?? PAGE_HEIGHT) * props.scale }} />
       </div>
     );
   }

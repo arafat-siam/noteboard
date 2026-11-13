@@ -1,11 +1,13 @@
 import { useLiveQuery } from 'dexie-react-hooks';
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { db } from '../db/db';
 import { renameItem } from '../db/library';
-import { addPage, applyStrokeChange, copyPagesTo, deletePage, loadPage, notebookPages, pastePages, setPageTemplate } from '../db/pages';
+import { addPage, applyStrokeChange, copyPagesTo, setPageSize, deletePage, loadPage, notebookPages, pastePages, setPageTemplate } from '../db/pages';
 import { appendPdf } from '../pdf/pdf';
 import { CopyPageDialog } from './CopyPageDialog';
 import { ExportDialog } from './ExportDialog';
+import { PageSizeDialog } from './PageSizePicker';
+import { describeSize } from '../model/pageSizes';
 import { PageManager } from './PageManager';
 import { deferPageLayout, isControl, PAGE_ACTION, relayoutPages, type PageAction } from '../ink/InkPage';
 import { getClip, setClip } from '../ink/clipboard';
@@ -123,6 +125,7 @@ export function NotebookEditor({ notebookId, onClose }: { notebookId: string; on
   const [containerWidth, setContainerWidth] = useState(800);
   const [renaming, setRenaming] = useState(false);
   const [pageMenu, setPageMenu] = useState<Page | null>(null);
+  const [sizingPage, setSizingPage] = useState<Page | null>(null);
   /** Page being copied to another notebook (the picker is open). */
   const [copyingPage, setCopyingPage] = useState<Page | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -204,7 +207,22 @@ export function NotebookEditor({ notebookId, onClose }: { notebookId: string; on
     return () => observer.disconnect();
   }, [scrollEl]);
 
-  const fitScale = Math.min((containerWidth - 32) / PAGE_WIDTH, 1.6);
+  // Page sizes (small records, no ink). As one string, so saving ink doesn't re-render the editor.
+  const sizeKey = useLiveQuery(
+    async () =>
+      (await db.pages.where('notebookId').equals(notebookId).toArray()).map((p) => `${p.id}:${p.width}:${p.height}`).join('|'),
+    [notebookId],
+  );
+  const pageSizes = useMemo(() => {
+    const map = new Map<string, { width: number; height: number }>();
+    for (const part of (sizeKey ?? '').split('|')) {
+      const [id, w, h] = part.split(':');
+      if (id && w && h) map.set(id, { width: Number(w), height: Number(h) });
+    }
+    return map;
+  }, [sizeKey]);
+  const widest = Math.max(PAGE_WIDTH, ...pageIds.map((id) => pageSizes.get(id)?.width ?? PAGE_WIDTH));
+  const fitScale = Math.min((containerWidth - 32) / widest, 1.6);
   const scale = Math.max(0.01, fitScale * zoom);
 
   // ---- Editing & undo ----------------------------------------------------------------
@@ -626,9 +644,8 @@ export function NotebookEditor({ notebookId, onClose }: { notebookId: string; on
 
   const exportVisiblePagePng = async () => {
     setExportOpen(false);
-    const el = scrollRef.current;
-    const index = el ? Math.min(pageIds.length - 1, Math.floor(el.scrollTop / (notebookPageHeight(scale) + 24))) : 0;
-    const pageId = pageIds[Math.max(0, index)];
+    const pageId = visiblePageId();
+    const index = Math.max(0, pageIds.indexOf(pageId ?? ''));
     const page = pageId ? await loadPage(db, pageId) : undefined;
     if (page) await shareOrDownload(await exportPagePng(page), `${safeFilename(notebook.name)} p${index + 1}.png`);
   };
@@ -737,6 +754,7 @@ export function NotebookEditor({ notebookId, onClose }: { notebookId: string; on
               onRequestSelect={requestSelect}
               onPageMenu={setPageMenu}
               registry={pagesById}
+              size={pageSizes.get(pageId)}
               dark={darkPages}
               invertPdf={darkPages && !!notebook.invertPdf}
             />
@@ -892,6 +910,24 @@ export function NotebookEditor({ notebookId, onClose }: { notebookId: string; on
         />
       )}
 
+      {sizingPage && (
+        <PageSizeDialog
+          current={sizingPage}
+          isPdfPage={!!sizingPage.background}
+          onApply={(size, all, scaleContent) => {
+            void (async () => {
+              const ids = all ? pageIds : [sizingPage.id];
+              const n = await setPageSize(db, ids, size, scaleContent);
+              // New pages added after this continue with the new size.
+              if (all) await setNotebookSettings(db, notebook.id, { pageSize: size });
+              sync.syncSoon();
+              setNotice(n ? `Changed ${n} page${n === 1 ? '' : 's'} to ${describeSize(size)}` : 'Nothing to change');
+            })();
+          }}
+          onClose={() => setSizingPage(null)}
+        />
+      )}
+
       {copyingPage && (
         <CopyPageDialog
           currentNotebookId={notebook.id}
@@ -927,6 +963,17 @@ export function NotebookEditor({ notebookId, onClose }: { notebookId: string; on
                 {TEMPLATE_LABELS[t]}
               </button>
             ))}
+          </div>
+          <label className="field-label">Size</label>
+          <div className="menu-list">
+            <button
+              onClick={() => {
+                setSizingPage(pageMenu);
+                setPageMenu(null);
+              }}
+            >
+              <Icon name="pages" size={18} /> {describeSize(pageMenu)}
+            </button>
           </div>
           <div className="menu-list">
             <button
@@ -1027,6 +1074,3 @@ function DiagnosticsOverlay() {
   );
 }
 
-function notebookPageHeight(scale: number) {
-  return 1123 * scale + 40;
-}

@@ -4,6 +4,8 @@ import { TEMPLATE_LABELS, templateStyle } from '../ink/templates';
 import type { LibraryState } from './useLibrary';
 import { isWithin } from '../db/library';
 import { Icon } from './Icon';
+import { PageSizePicker } from './PageSizePicker';
+import { dimsFor, type PageDims } from '../model/pageSizes';
 
 export function Modal({ title, children, onClose }: { title: string; children: ReactNode; onClose: () => void }) {
   useEffect(() => {
@@ -59,15 +61,16 @@ export function PromptDialog(props: {
 }
 
 export function NewNotebookDialog(props: {
-  onCreate: (name: string, template: PaperTemplate, color: string) => void;
+  onCreate: (name: string, template: PaperTemplate, color: string, size: PageDims) => void;
   onClose: () => void;
 }) {
   const [name, setName] = useState('Untitled Notebook');
   const [template, setTemplate] = useState<PaperTemplate>('ruled');
   const [color, setColor] = useState(COVER_COLORS[0]!);
+  const [size, setSize] = useState<PageDims>(() => dimsFor('a4', 'portrait'));
   const create = () => {
     if (!name.trim()) return;
-    props.onCreate(name, template, color);
+    props.onCreate(name, template, color, size);
     props.onClose();
   };
   return (
@@ -90,6 +93,8 @@ export function NewNotebookDialog(props: {
           </button>
         ))}
       </div>
+      <label className="field-label">Page size</label>
+      <PageSizePicker value={size} onChange={setSize} />
       <label className="field-label">Cover</label>
       <ColorRow colors={COVER_COLORS} value={color} onChange={setColor} />
       <div className="modal-actions">

@@ -11,6 +11,7 @@ import {
   restoreItem,
   setColor,
   setFavorite,
+  setNotebookSettings,
   setTags,
   sortItems,
   trashItems,
@@ -388,8 +389,12 @@ export function LibraryView({ route, onNavigate, onOpenNotebook, onToggleSidebar
       )}
       {dialog?.kind === 'new-notebook' && (
         <NewNotebookDialog
-          onCreate={(name, template, color) =>
-            void act(async () => onOpenNotebook((await createNotebook(db, name, folderId, template, color)).id))
+          onCreate={(name, template, color, size) =>
+            void act(async () => {
+              const nb = await createNotebook(db, name, folderId, template, color, size);
+              await setNotebookSettings(db, nb.id, { pageSize: size });
+              onOpenNotebook(nb.id);
+            })
           }
           onClose={() => setDialog(null)}
         />
