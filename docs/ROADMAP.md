@@ -29,7 +29,7 @@
 - [x] Optional app passcode, per-notebook passcode locks (kept when shared)
 - [x] Selection: lock items, rectangle lasso, filters, groups, align/distribute/flip, smart guides
 - [x] Ruler and protractor; links (PDF, pages, notebooks, web); view-only share links; audio recording with synced playback
-- [ ] Redesign (neutral, minimal): on the preview at /noteboard/preview/ until approved
+- [x] Neutral, minimal design (restore point of the earlier look: git tag ui-v1)
 
 ## Missing compared with pro note apps (GoodNotes, Notability, Drawboard, Noteshelf)
 Rough priority order (★ = biggest gap).
