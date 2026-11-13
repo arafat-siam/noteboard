@@ -12,6 +12,7 @@ import {
   type Notebook,
   type Page,
   type PaperTemplate,
+  type NotebookSettings,
 } from '../model/types';
 
 export const TRASH_RETENTION_DAYS = 30;
@@ -128,6 +129,18 @@ export function setColor(db: NoteboardDB, id: ID, color: string): Promise<void> 
   return updateItem(db, id, (item) => {
     if (item.kind === 'folder') item.color = color;
     else item.coverColor = color;
+  });
+}
+
+/** Changes notebook settings; `undefined` removes a setting (back to the default). */
+export function setNotebookSettings(db: NoteboardDB, id: ID, patch: NotebookSettings): Promise<void> {
+  return updateItem(db, id, (item) => {
+    if (item.kind !== 'notebook') return;
+    const target = item as unknown as Record<string, unknown>;
+    for (const [key, value] of Object.entries(patch)) {
+      if (value === undefined) delete target[key];
+      else target[key] = value;
+    }
   });
 }
 

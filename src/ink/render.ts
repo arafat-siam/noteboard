@@ -5,6 +5,7 @@ import { resolveBrush, type BrushStyle } from './brushes';
 import { drawImageStroke } from './images';
 import { drawTextStroke } from './text';
 import { arrowPath, dashPath, tapePath } from './shapeTool';
+import { displayColor, inkIsDark } from './inkTheme';
 
 /** Items laid out on 4 corner points (pictures and text boxes) rather than drawn as ink. */
 export const isBoxItem = (s: Pick<Stroke, 'tool'>) => s.tool === 'image' || s.tool === 'text';
@@ -229,30 +230,34 @@ export function drawStroke(ctx: CanvasRenderingContext2D, stroke: Stroke, live =
     if (area) {
       ctx.save();
       ctx.globalAlpha = stroke.fillOpacity ?? DEFAULT_FILL_OPACITY;
-      ctx.fillStyle = stroke.fill;
+      ctx.fillStyle = displayColor(stroke.fill);
       ctx.fill(new Path2D(area));
       ctx.restore();
     }
   }
   ctx.save();
   const brush = brushOf(stroke);
+  // Highlighter: multiply on white paper (ink under it stays crisp); on dark paper multiply
+  // would vanish, so it glows instead.
+  const dark = inkIsDark();
   if (!brush) {
-    ctx.globalAlpha = 0.35;
-    ctx.globalCompositeOperation = 'multiply';
+    ctx.globalAlpha = dark ? 0.45 : 0.35;
+    if (!dark) ctx.globalCompositeOperation = 'multiply';
   } else {
     ctx.globalAlpha = brush.opacity;
   }
-  ctx.fillStyle = (brush?.grain && !stroke.dash && grainPattern(ctx, stroke.color, brush.grain)) || stroke.color;
+  const color = brush ? displayColor(stroke.color) : stroke.color;
+  ctx.fillStyle = (brush?.grain && !stroke.dash && grainPattern(ctx, color, brush.grain)) || color;
   ctx.fill(path);
   if (brush?.calligraphy && !stroke.dash) {
     // Hairline where the stroke runs along the nib (the outline has no width there).
-    ctx.strokeStyle = stroke.color;
+    ctx.strokeStyle = color;
     ctx.lineWidth = Math.max(0.35, stroke.size * 0.12);
     ctx.lineJoin = 'round';
     ctx.stroke(path);
   }
   if (stroke.arrowStart || stroke.arrowEnd) {
-    ctx.fillStyle = stroke.color;
+    ctx.fillStyle = color;
     ctx.fill(new Path2D(arrowPath(stroke)));
   }
   ctx.restore();

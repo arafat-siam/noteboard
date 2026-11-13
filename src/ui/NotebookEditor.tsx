@@ -24,6 +24,11 @@ import { SyncBadge } from './SyncBadge';
 import { QuickPalette } from './QuickPalette';
 import { ToolPalette, usePaletteLayout } from './ToolPalette';
 import { Icon } from './Icon';
+import { useAppIsDark } from './theme';
+import { setInkDark } from '../ink/inkTheme';
+import { setNotebookSettings } from '../db/library';
+import { act } from './useLibrary';
+import type { NotebookSettings } from '../model/types';
 import { DEFAULT_POINTER, DEFAULT_SHAPE, DEFAULT_SLOTS, DEFAULT_TAPE, DEFAULT_TEXT, PEN_COLORS, type PenSlot } from '../ink/palette';
 import { isBrushKind } from '../ink/brushes';
 import { newId as makeId } from '../model/types';
@@ -106,6 +111,9 @@ export function NotebookEditor({ notebookId, onClose }: { notebookId: string; on
 
   const [settings, setSettings] = useState<ToolSettings>(loadSettings);
   const [paletteLayout, setPaletteLayout] = usePaletteLayout();
+  const appDark = useAppIsDark();
+  // Leaving the editor: thumbnails and exports elsewhere draw in normal colours again.
+  useEffect(() => () => void setInkDark(false), []);
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
   const previousTool = useRef<ToolKind>('pen');
@@ -606,6 +614,11 @@ export function NotebookEditor({ notebookId, onClose }: { notebookId: string; on
     );
   }
 
+  // Night mode: the notebook's own choice, or follow the app's appearance.
+  const darkPages = notebook.pageTheme ? notebook.pageTheme === 'dark' : appDark;
+  setInkDark(darkPages); // read while pages draw (idempotent)
+  const setPageLook = (patch: NotebookSettings) => void act(() => setNotebookSettings(db, notebook.id, patch));
+
   const exportPdf = async () => {
     setExportOpen(false);
     await shareOrDownload(await exportNotebookPdf(notebook, await notebookPages(db, notebook.id)), `${safeFilename(notebook.name)}.pdf`);
@@ -644,6 +657,14 @@ export function NotebookEditor({ notebookId, onClose }: { notebookId: string; on
           </button>
         </div>
         <SyncBadge compact />
+        <button
+          className={`tool icon-tool${darkPages ? ' on' : ''}`}
+          aria-label={darkPages ? 'Light pages' : 'Night mode (dark pages)'}
+          title={darkPages ? 'Light pages' : 'Night mode'}
+          onClick={() => setPageLook({ pageTheme: darkPages ? 'light' : 'dark' })}
+        >
+          <Icon name={darkPages ? 'sun' : 'moon'} size={22} />
+        </button>
         <button className="tool icon-tool" aria-label="Insert picture" title="Insert picture" onClick={() => pictureInputRef.current?.click()}>
           <Icon name="image" size={22} />
         </button>
@@ -716,6 +737,8 @@ export function NotebookEditor({ notebookId, onClose }: { notebookId: string; on
               onRequestSelect={requestSelect}
               onPageMenu={setPageMenu}
               registry={pagesById}
+              dark={darkPages}
+              invertPdf={darkPages && !!notebook.invertPdf}
             />
           ))}
           <button
@@ -742,6 +765,23 @@ export function NotebookEditor({ notebookId, onClose }: { notebookId: string; on
 
       {exportOpen && (
         <Modal title="More" onClose={() => setExportOpen(false)}>
+          <label className="field-label">Page appearance</label>
+          <div className="segmented" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
+            {([
+              [undefined, 'Follow app'],
+              ['light', 'Light'],
+              ['dark', 'Night'],
+            ] as const).map(([value, label]) => (
+              <button key={label} className={notebook.pageTheme === value ? 'on' : ''} onClick={() => setPageLook({ pageTheme: value })}>
+                {label}
+              </button>
+            ))}
+          </div>
+          <div className="menu-list">
+            <button onClick={() => setPageLook({ invertPdf: notebook.invertPdf ? undefined : true })}>
+              <Icon name={notebook.invertPdf ? 'check' : 'image'} size={18} /> {notebook.invertPdf ? 'PDF pages are inverted in night mode' : 'Invert PDF pages in night mode'}
+            </button>
+          </div>
           <label className="field-label">Export</label>
           <div className="menu-list">
             <button onClick={() => void exportPdf()}>

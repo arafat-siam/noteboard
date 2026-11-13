@@ -59,3 +59,17 @@ export function useTheme(): [ThemeChoice, (c: ThemeChoice) => void] {
   }, []);
   return [choice, setTheme];
 }
+
+/** True when the app is currently shown dark (chosen, or following a dark iPad). */
+export function useAppIsDark(): boolean {
+  const [choice] = useTheme();
+  const query = () => window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false;
+  const [systemDark, setSystemDark] = useState(query);
+  useEffect(() => {
+    const mq = window.matchMedia?.('(prefers-color-scheme: dark)');
+    const on = () => setSystemDark(mq.matches);
+    mq?.addEventListener?.('change', on);
+    return () => mq?.removeEventListener?.('change', on);
+  }, []);
+  return choice === 'dark' || (choice === 'system' && systemDark);
+}

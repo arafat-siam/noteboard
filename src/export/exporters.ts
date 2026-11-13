@@ -6,7 +6,8 @@ import type { LibraryItem, Notebook, Page, PaperTemplate, Stroke } from '../mode
 import { brushOf, DEFAULT_FILL_OPACITY, drawPage, fillSvgPath, strokeSvgPath } from '../ink/render';
 import { arrowPath } from '../ink/shapeTool';
 import { drawTextStroke } from '../ink/text';
-import { TEMPLATE_METRICS } from '../ink/templates';
+import { DARK_PAPER, TEMPLATE_METRICS } from '../ink/templates';
+import { darkVariant, setInkDark } from '../ink/inkTheme';
 import { imageCorners, preloadImages } from '../ink/images';
 import { mergeLibrary, mergePage } from '../sync/merge';
 import { markLibraryChanged } from '../db/library';
@@ -21,21 +22,22 @@ function hexToRgb(hex: string) {
   return rgb(((v >> 16) & 255) / 255, ((v >> 8) & 255) / 255, (v & 255) / 255);
 }
 
-function drawTemplatePdf(pdfPage: PDFPage, template: PaperTemplate, width: number, height: number) {
+function drawTemplatePdf(pdfPage: PDFPage, template: PaperTemplate, width: number, height: number, dark = false) {
   const m = TEMPLATE_METRICS;
-  const color = hexToRgb(m.lineColor);
+  if (dark) pdfPage.drawRectangle({ x: 0, y: 0, width: width * PT, height: height * PT, color: hexToRgb(DARK_PAPER.paper) });
+  const color = hexToRgb(dark ? DARK_PAPER.line : m.lineColor);
   const h = height * PT;
   const line = (x1: number, y1: number, x2: number, y2: number, c = color) =>
     pdfPage.drawLine({ start: { x: x1 * PT, y: h - y1 * PT }, end: { x: x2 * PT, y: h - y2 * PT }, thickness: 0.6, color: c });
 
   if (template === 'ruled') {
     for (let y = m.ruledSpacing; y < height; y += m.ruledSpacing) line(0, y, width, y);
-    line(m.ruledMargin, 0, m.ruledMargin, height, hexToRgb(m.marginColor));
+    line(m.ruledMargin, 0, m.ruledMargin, height, hexToRgb(dark ? DARK_PAPER.margin : m.marginColor));
   } else if (template === 'grid') {
     for (let y = m.gridSpacing; y < height; y += m.gridSpacing) line(0, y, width, y);
     for (let x = m.gridSpacing; x < width; x += m.gridSpacing) line(x, 0, x, height);
   } else if (template === 'dotted') {
-    const dot = hexToRgb('#8fa9c2');
+    const dot = hexToRgb(dark ? DARK_PAPER.dot : '#8fa9c2');
     for (let y = m.dotSpacing / 2; y < height; y += m.dotSpacing) {
       for (let x = m.dotSpacing / 2; x < width; x += m.dotSpacing) {
         pdfPage.drawCircle({ x: x * PT, y: h - y * PT, size: 0.9, color: dot });
@@ -45,7 +47,17 @@ function drawTemplatePdf(pdfPage: PDFPage, template: PaperTemplate, width: numbe
 }
 
 /** Vector PDF: ink stays sharp at any zoom and prints cleanly. */
-export async function exportNotebookPdf(notebook: Notebook, pages: Page[], db: NoteboardDB = defaultDb): Promise<Blob> {
+/**
+ * Vector PDF. `dark`: night-mode pages (dark paper, light ink), as shown on screen in night mode.
+ */
+export async function exportNotebookPdf(
+  notebook: Notebook,
+  pages: Page[],
+  db: NoteboardDB = defaultDb,
+  options: { dark?: boolean } = {},
+): Promise<Blob> {
+  const dark = !!options.dark;
+  const ink = (c: string) => hexToRgb(dark ? darkVariant(c) : c);
   // pdf-lib is large; load it only when the user exports.
   const lib = await import('pdf-lib');
   rgb = lib.rgb;
@@ -92,7 +104,7 @@ export async function exportNotebookPdf(notebook: Notebook, pages: Page[], db: N
         if (embedded) pdfPage.drawPage(embedded, { x: 0, y: 0, width: page.width * PT, height: page.height * PT });
       }
     } else {
-      drawTemplatePdf(pdfPage, page.template, page.width, page.height);
+      drawTemplatePdf(pdfPage, page.template, page.width, page.height, dark);
     }
     // Stacking order, like on screen (pictures and ink layered as arranged).
     const ordered = [...page.strokes].sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id));
@@ -103,7 +115,7 @@ export async function exportNotebookPdf(notebook: Notebook, pages: Page[], db: N
             ? stroke.image
               ? await pictureOf(stroke.image.fileId)
               : null
-            : await textImage(stroke).then(async (png) => (png ? pdf.embedPng(await png.arrayBuffer()) : null));
+            : await textImage(stroke, dark).then(async (png) => (png ? pdf.embedPng(await png.arrayBuffer()) : null));
         if (!embedded) continue;
         const [tl, tr, , bl] = imageCorners(stroke) as [{ x: number; y: number }, { x: number; y: number }, unknown, { x: number; y: number }];
         const width = Math.hypot(tr.x - tl.x, tr.y - tl.y) * PT;
@@ -127,7 +139,7 @@ export async function exportNotebookPdf(notebook: Notebook, pages: Page[], db: N
             x: 0,
             y: page.height * PT,
             scale: PT,
-            color: hexToRgb(stroke.fill),
+            color: ink(stroke.fill),
             opacity: stroke.fillOpacity ?? DEFAULT_FILL_OPACITY,
             borderWidth: 0,
           });
@@ -136,9 +148,10 @@ export async function exportNotebookPdf(notebook: Notebook, pages: Page[], db: N
       const path = strokeSvgPath(stroke);
       if (!path) continue;
       const opacity = stroke.tool === 'highlighter' ? 0.35 : stroke.tool === 'tape' ? 1 : (brushOf(stroke)?.opacity ?? 1);
-      pdfPage.drawSvgPath(path, { x: 0, y: page.height * PT, scale: PT, color: hexToRgb(stroke.color), opacity, borderWidth: 0 });
+      const strokeColor = stroke.tool === 'pen' ? ink(stroke.color) : hexToRgb(stroke.color);
+      pdfPage.drawSvgPath(path, { x: 0, y: page.height * PT, scale: PT, color: strokeColor, opacity, borderWidth: 0 });
       const arrows = arrowPath(stroke);
-      if (arrows) pdfPage.drawSvgPath(arrows, { x: 0, y: page.height * PT, scale: PT, color: hexToRgb(stroke.color), opacity, borderWidth: 0 });
+      if (arrows) pdfPage.drawSvgPath(arrows, { x: 0, y: page.height * PT, scale: PT, color: strokeColor, opacity, borderWidth: 0 });
     }
   }
   const bytes = await pdf.save();
@@ -146,7 +159,7 @@ export async function exportNotebookPdf(notebook: Notebook, pages: Page[], db: N
 }
 
 /** A text box drawn at 4 pixels per page unit (placed on its corners like a picture). */
-async function textImage(stroke: Stroke): Promise<Blob | null> {
+async function textImage(stroke: Stroke, dark = false): Promise<Blob | null> {
   const t = stroke.text;
   if (!t) return null;
   const k = 4;
@@ -155,17 +168,19 @@ async function textImage(stroke: Stroke): Promise<Blob | null> {
   canvas.height = Math.max(1, Math.ceil(t.height * k));
   const ctx = canvas.getContext('2d')!;
   ctx.scale(k, k);
+  const previous = setInkDark(dark);
   drawTextStroke(ctx, { ...stroke, points: [0, 0, 0, t.width, 0, 0, t.width, t.height, 0, 0, t.height, 0] });
+  setInkDark(previous);
   return new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
 }
 
 /** High-resolution PNG of one page, including the paper template. */
-export async function exportPagePng(page: Page, pixelScale = 2, db: NoteboardDB = defaultDb): Promise<Blob> {
+export async function exportPagePng(page: Page, pixelScale = 2, db: NoteboardDB = defaultDb, dark = false): Promise<Blob> {
   const canvas = document.createElement('canvas');
   canvas.width = Math.round(page.width * pixelScale);
   canvas.height = Math.round(page.height * pixelScale);
   const ctx = canvas.getContext('2d')!;
-  ctx.fillStyle = '#fff';
+  ctx.fillStyle = dark ? DARK_PAPER.paper : '#fff';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   if (page.background) {
     const doc = await getPdf(db, page.background.fileId);
@@ -177,7 +192,7 @@ export async function exportPagePng(page: Page, pixelScale = 2, db: NoteboardDB 
     }
   }
   const m = TEMPLATE_METRICS;
-  ctx.strokeStyle = m.lineColor;
+  ctx.strokeStyle = dark ? DARK_PAPER.line : m.lineColor;
   ctx.lineWidth = pixelScale * 0.8;
   ctx.beginPath();
   if (page.template === 'ruled') {
@@ -200,7 +215,10 @@ export async function exportPagePng(page: Page, pixelScale = 2, db: NoteboardDB 
   const ink = document.createElement('canvas');
   ink.width = canvas.width;
   ink.height = canvas.height;
+  // Exports draw in the requested colours, whatever the screen is showing.
+  const previous = setInkDark(dark);
   drawPage(ink.getContext('2d')!, page.strokes, { x: 0, y: 0, width: page.width, height: page.height, k: pixelScale });
+  setInkDark(previous);
   ctx.drawImage(ink, 0, 0);
   return new Promise((resolve, reject) =>
     canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('Could not create image.'))), 'image/png'),

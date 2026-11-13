@@ -6,6 +6,7 @@ import { getClip, onClipChange, setClip } from '../ink/clipboard';
 import { preloadImages } from '../ink/images';
 import { drawPage } from '../ink/render';
 import { templateStyle } from '../ink/templates';
+import { inkIsDark } from '../ink/inkTheme';
 import { getPdf, renderPdfRegion } from '../pdf/pdf';
 import type { ID, Page } from '../model/types';
 import { sync } from '../sync/instance';
@@ -319,7 +320,7 @@ function PageThumbnail({ pageId }: { pageId: ID }) {
     <div
       ref={holderRef}
       className="page-thumb-paper"
-      style={{ width, height, ...(record && !record.background ? templateStyle(record.template, k) : { background: '#fff' }) }}
+      style={{ width, height, ...(record && !record.background ? templateStyle(record.template, k, inkIsDark()) : { background: inkIsDark() ? '#1c1d21' : '#fff' }) }}
     >
       <canvas ref={canvasRef} style={{ width, height }} />
     </div>

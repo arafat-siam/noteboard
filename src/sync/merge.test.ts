@@ -110,3 +110,17 @@ describe('new kinds of items survive merging and compacting', () => {
     expect(compactStroke(text).text).toEqual(text.text);
   });
 });
+
+describe('notebook settings sync', () => {
+  it('the newer page look (night mode, PDF invert) wins and is kept', () => {
+    const base = {
+      kind: 'notebook' as const, id: 'n', parentId: null, name: 'N', coverColor: '#000', template: 'ruled' as const,
+      pageIds: ['p'], deletedPageIds: [], tags: [], lastOpenedAt: null, createdAt: 1, updatedAt: 1,
+      trashedAt: null, favorite: false, deleted: false,
+    };
+    const local = { ...base, updatedAt: 5, pageTheme: 'dark' as const, invertPdf: true };
+    const remote = { ...base, updatedAt: 3 };
+    expect(mergeLibrary([local], [remote]).merged[0]).toMatchObject({ pageTheme: 'dark', invertPdf: true });
+    expect(mergeLibrary([remote], [local]).merged[0]).toMatchObject({ pageTheme: 'dark' });
+  });
+});

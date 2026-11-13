@@ -1,5 +1,6 @@
 import { newId, type Stroke, type TextContent, type TextFont } from '../model/types';
 import type { Point } from './geometry';
+import { displayColor } from './inkTheme';
 
 /**
  * Text boxes. The text is laid out in its own box (width × height page units) and that box is
@@ -138,14 +139,14 @@ export function drawTextStroke(ctx: CanvasRenderingContext2D, stroke: Stroke): v
   ctx.save();
   ctx.transform((tr.x - tl.x) / w, (tr.y - tl.y) / w, (bl.x - tl.x) / h, (bl.y - tl.y) / h, tl.x, tl.y);
   if (t.background) {
-    ctx.fillStyle = t.background;
+    ctx.fillStyle = displayColor(t.background);
     ctx.beginPath();
     ctx.roundRect?.(0, 0, w, h, Math.min(8, t.size * 0.3)) ?? ctx.rect(0, 0, w, h);
     ctx.fill();
   }
   const pad = paddingFor(t.size);
   ctx.font = cssFont(t);
-  ctx.fillStyle = stroke.color;
+  ctx.fillStyle = displayColor(stroke.color);
   ctx.textBaseline = 'alphabetic';
   const align = t.align ?? 'left';
   ctx.textAlign = align;

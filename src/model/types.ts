@@ -168,7 +168,14 @@ export interface Notebook extends LibraryBase {
   deletedPageIds: ID[];
   tags: string[];
   lastOpenedAt: number | null;
+  /** Page look: night mode ('dark'), always light, or missing = follow the app's appearance. */
+  pageTheme?: 'light' | 'dark';
+  /** In night mode, also invert imported PDF pages (white PDFs become dark). */
+  invertPdf?: boolean;
 }
+
+/** Notebook settings changed through setNotebookSettings (last change wins when syncing). */
+export type NotebookSettings = Partial<Pick<Notebook, 'pageTheme' | 'invertPdf'>>;
 
 export type LibraryItem = Folder | Notebook;
 

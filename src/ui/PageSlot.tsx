@@ -11,6 +11,10 @@ interface Props {
   total: number;
   scale: number;
   settings: ToolSettings;
+  /** Night mode: dark paper, light ink. */
+  dark: boolean;
+  /** In night mode, invert imported PDF pages too. */
+  invertPdf: boolean;
   scroller: HTMLElement | null;
   onChange: (pageId: string, added: Stroke[], removedIds: string[]) => void;
   onHoverHold: (clientX: number, clientY: number) => void;
@@ -109,6 +113,8 @@ export const PageSlot = memo(function PageSlot(props: Props) {
         scale={props.scale}
         settings={props.settings}
         scroller={props.scroller}
+        dark={props.dark}
+        invertPdf={props.invertPdf}
         onChange={props.onChange}
         onHoverHold={props.onHoverHold}
         onRequestSelect={props.onRequestSelect}

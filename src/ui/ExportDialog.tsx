@@ -27,6 +27,7 @@ export function ExportDialog(props: {
   const [which, setWhich] = useState<Which>(props.picked?.length ? 'picked' : 'all');
   const [range, setRange] = useState(`${props.currentIndex + 1}`);
   const [format, setFormat] = useState<'pdf' | 'png'>('pdf');
+  const [dark, setDark] = useState(notebook.pageTheme === 'dark');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -58,10 +59,10 @@ export function ExportDialog(props: {
       const base = safeFilename(notebook.name);
       const suffix = which === 'all' ? '' : ` ${describePages(list)}`;
       if (format === 'pdf') {
-        await shareOrDownload(await exportNotebookPdf(notebook, pages), `${base}${suffix}.pdf`);
+        await shareOrDownload(await exportNotebookPdf(notebook, pages, undefined, { dark }), `${base}${suffix}.pdf`);
       } else {
         const files = [];
-        for (const [n, page] of pages.entries()) files.push({ blob: await exportPagePng(page), name: `${base} p${list[n]! + 1}.png` });
+        for (const [n, page] of pages.entries()) files.push({ blob: await exportPagePng(page, 2, undefined, dark), name: `${base} p${list[n]! + 1}.png` });
         await shareOrDownloadAll(files);
       }
       props.onClose();
@@ -114,6 +115,15 @@ export function ExportDialog(props: {
           </button>
           <button className={format === 'png' ? 'on' : ''} onClick={() => setFormat('png')}>
             Images (PNG)
+          </button>
+        </div>
+        <div className="field-label">Pages look</div>
+        <div className="segmented">
+          <button className={!dark ? 'on' : ''} onClick={() => setDark(false)}>
+            Light
+          </button>
+          <button className={dark ? 'on' : ''} onClick={() => setDark(true)}>
+            Night (dark pages)
           </button>
         </div>
         {error && <p className="form-error">{error}</p>}

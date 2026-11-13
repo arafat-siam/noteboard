@@ -41,6 +41,7 @@ import type { DashStyle, PenStyle, TextContent } from '../model/types';
 import { boxCorners, DEFAULT_TEXT_WIDTH, makeTextStroke, retextStroke, TEXT_FONT_ORDER, TEXT_FONTS } from './text';
 import { makeShapeStroke, makeTapeStroke } from './shapeTool';
 import { revealedTape } from './render';
+import { displayColor } from './inkTheme';
 import { DashSample } from '../ui/Icon';
 import type { PDFDocumentProxy, RenderTask } from 'pdfjs-dist';
 import { db } from '../db/db';
@@ -94,6 +95,10 @@ interface Props {
   onHoverHold?: (clientX: number, clientY: number) => void;
   /** A finger long-press selected ink: switch to the lasso tool so the selection can be edited. */
   onRequestSelect?: () => void;
+  /** Night mode: dark paper, ink shown with flipped lightness (see inkTheme.ts). */
+  dark?: boolean;
+  /** In night mode, imported PDF pages are inverted too. */
+  invertPdf?: boolean;
 }
 
 interface Gesture {
@@ -231,7 +236,7 @@ const contains = (outer: Rect, inner: Rect) =>
   inner.x + inner.width <= outer.x + outer.width + 0.5 &&
   inner.y + inner.height <= outer.y + outer.height + 0.5;
 
-export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold, onRequestSelect }: Props) {
+export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold, onRequestSelect, dark = false, invertPdf = false }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const inkRef = useRef<HTMLCanvasElement>(null);
   const liveRef = useRef<HTMLCanvasElement>(null);
@@ -560,6 +565,16 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
   useEffect(() => {
     if (settings.tool === 'eraser') setSelection(null);
   }, [settings.tool]);
+
+  // Night mode switched: redraw the ink in its new colours.
+  const firstDark = useRef(true);
+  useEffect(() => {
+    if (firstDark.current) {
+      firstDark.current = false;
+      return;
+    }
+    paintInk(true);
+  }, [dark, paintInk]);
 
   useEffect(() => {
     setSelection((sel) => {
@@ -1200,8 +1215,8 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
               : tool === 'tape'
                 ? settings.tape.color
                 : tool === 'shape'
-                  ? settings.shape.color
-                  : settings.color,
+                  ? displayColor(settings.shape.color)
+                  : displayColor(settings.color),
       });
     } else {
       hideHoverCursor();
@@ -2089,8 +2104,8 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
   return (
     <div
       ref={containerRef}
-      className="ink-page"
-      style={{ width: cssWidth, height: cssHeight, ...templateStyle(page.template, scale) }}
+      className={`ink-page${dark ? ' night' : ''}${invertPdf ? ' invert-pdf' : ''}`}
+      style={{ width: cssWidth, height: cssHeight, ...templateStyle(page.template, scale, dark) }}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={(e) => finish(e, false)}
@@ -2465,12 +2480,12 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
                   fontSize: textEdit.style.size * textEdit.factor * scale,
                   fontWeight: textEdit.style.bold ? 700 : 400,
                   fontStyle: textEdit.style.italic ? 'italic' : 'normal',
-                  color: textEdit.color,
+                  color: displayColor(textEdit.color),
                   textAlign: textEdit.style.align,
                   textDecoration: textEdit.style.underline ? 'underline' : undefined,
                   padding: `${Math.max(2, textEdit.style.size * 0.3) * textEdit.factor * scale}px`,
                   lineHeight: 1.3,
-                  background: textEdit.style.background ?? undefined,
+                  background: textEdit.style.background ? displayColor(textEdit.style.background) : undefined,
                 }
               : undefined
           }
