@@ -93,6 +93,8 @@ export interface Stroke {
   group?: string;
   /** Tapping the item's link badge opens this. */
   link?: StrokeLink;
+  /** Written while recording: which recording, and when (ms into it). Replays with the audio. */
+  audio?: { rec: ID; t: number };
   /** Text boxes only (tool 'text'): its 4 corners are in `points`, like a picture. */
   text?: TextContent;
   /** Fill inside the shape (closed along its points). Missing = no fill. Strokes are
@@ -188,6 +190,19 @@ export interface Notebook extends LibraryBase {
    * of a locked notebook are encrypted with the passcode itself (see share/).
    */
   lock?: NotebookLock;
+  /** Audio recordings made in this notebook (the audio itself is in the files table). */
+  recordings?: Recording[];
+  /** Deleted recordings, so another device doesn't bring them back. */
+  deletedRecordingIds?: ID[];
+}
+
+export interface Recording {
+  id: ID;
+  /** The audio file (files table; synced as file_<id>.m4a / .webm). */
+  fileId: ID;
+  name: string;
+  createdAt: number;
+  durationMs: number;
 }
 
 export interface NotebookLock {

@@ -43,6 +43,7 @@ import { boxCorners, DEFAULT_TEXT_WIDTH, makeTextStroke, retextStroke, TEXT_FONT
 import { makeShapeStroke, makeTapeStroke } from './shapeTool';
 import { revealedTape } from './render';
 import { displayColor } from './inkTheme';
+import { audioStamp, getPlayback, onRecordingChange, seekRecording } from './recording';
 import { DashSample } from '../ui/Icon';
 import { describeLink, followLink, pdfLinks, type PdfLinkArea } from './links';
 import { LinkDialog, LinkGlyph } from '../ui/LinkDialog';
@@ -596,6 +597,18 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
   useEffect(() => {
     if (settings.tool === 'eraser') setSelection(null);
   }, [settings.tool]);
+
+  // Playback moved on: ink appears as the recording reaches it.
+  useEffect(() => {
+    let last = '';
+    return onRecordingChange(() => {
+      const p = getPlayback();
+      const key = p ? `${p.rec}|${Math.floor(p.t / 250)}` : '';
+      if (key === last) return;
+      last = key;
+      if (p ? page.strokes.some((s) => s.audio?.rec === p.rec) : true) paintInk(true);
+    });
+  });
 
   // Night mode switched: redraw the ink in its new colours.
   const firstDark = useRef(true);
@@ -1665,6 +1678,15 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
           else if (pdfLink.pageIndex !== undefined) followLink({ kind: 'pdfPage', fileId: background.fileId, pageIndex: pdfLink.pageIndex });
           return;
         }
+        // Playing a recording: tapping ink written during it jumps the audio there.
+        const playing = getPlayback();
+        if (playing) {
+          const timed = strokeAt(press.at);
+          if (timed?.audio?.rec === playing.rec) {
+            seekRecording(playing.rec, Math.max(0, timed.audio.t - 1500));
+            return;
+          }
+        }
         // Tapping tape peeks under it (like flash cards); tapping ink selects it.
         const tape = tapeAt(press.at);
         const hit = strokeAt(press.at);
@@ -1688,7 +1710,9 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
       switch (g.kind) {
         case 'ink': {
           if (g.points.length === 3) g.points.push(g.points[0]! + 0.1, g.points[1]! + 0.1, g.points[2]!); // a dot
-          const stroke = { ...liveStroke(g, false), id: newId() };
+          // Written while recording: remember the moment, for synced playback.
+          const stamp = audioStamp();
+          const stroke: Stroke = { ...liveStroke(g, false), id: newId(), ...(stamp ? { audio: stamp } : {}) };
           const ctx = inkRef.current?.getContext('2d');
           const region = regionRef.current;
           if (ctx && region) {

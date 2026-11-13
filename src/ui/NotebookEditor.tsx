@@ -10,6 +10,7 @@ import { UnlockNotebook } from './NotebookLockDialogs';
 import { isNotebookUnlocked, notebookClosed } from '../security/notebookLock';
 import { PageSizeDialog } from './PageSizePicker';
 import { ShareDialog } from './ShareDialog';
+import { RecordingsButton } from './RecordingsPanel';
 import { describeSize } from '../model/pageSizes';
 import { PageManager } from './PageManager';
 import { deferPageLayout, isControl, PAGE_ACTION, relayoutPages, type PageAction } from '../ink/InkPage';
@@ -749,6 +750,7 @@ export function NotebookEditor({
         >
           <Icon name={darkPages ? 'sun' : 'moon'} size={22} />
         </button>
+        <RecordingsButton notebook={notebook} />
         <button
           className={`tool icon-tool${guideKind === 'ruler' ? ' on' : ''}`}
           aria-label="Ruler"

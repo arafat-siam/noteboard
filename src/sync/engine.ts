@@ -49,6 +49,9 @@ const FILE_PREFIX = 'file_';
 function extensionFor(mime: string): string {
   if (mime === 'application/pdf') return '.pdf';
   if (mime === 'image/jpeg') return '.jpg';
+  if (mime.startsWith('audio/mp4')) return '.m4a';
+  if (mime.startsWith('audio/webm')) return '.webm';
+  if (mime.startsWith('audio/ogg')) return '.ogg';
   const sub = /^image\/([a-z0-9.+-]+)$/.exec(mime)?.[1];
   return sub ? `.${sub.replace('svg+xml', 'svg')}` : '';
 }

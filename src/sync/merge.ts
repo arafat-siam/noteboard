@@ -68,6 +68,17 @@ export function mergeLibrary(local: LibraryItem[], remote: LibraryItem[]): Libra
       const pageIds = [...new Set([...winner.pageIds, ...loser.pageIds])].filter((id) => !removed.has(id));
       // lastOpenedAt is a local convenience; keep this device's value.
       winner = { ...winner, pageIds, deletedPageIds, lastOpenedAt: l.lastOpenedAt };
+      // Recordings made on either device are kept (newer name wins); deleted ones stay deleted.
+      if (l.recordings || r.recordings || l.deletedRecordingIds || r.deletedRecordingIds) {
+        const gone = new Set([...(l.deletedRecordingIds ?? []), ...(r.deletedRecordingIds ?? [])]);
+        const byId = new Map<string, NonNullable<typeof l.recordings>[number]>();
+        for (const rec of [...(loser.recordings ?? []), ...(winner.recordings ?? [])]) if (!gone.has(rec.id)) byId.set(rec.id, rec);
+        winner = {
+          ...winner,
+          recordings: [...byId.values()].sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id)),
+          deletedRecordingIds: [...gone].sort(),
+        };
+      }
     }
     if ((l.deleted || r.deleted) && !winner.deleted) {
       winner = { ...winner, deleted: true, updatedAt: Math.max(l.updatedAt, r.updatedAt) };

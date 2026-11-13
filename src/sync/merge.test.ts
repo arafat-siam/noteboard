@@ -141,3 +141,26 @@ describe('links sync', () => {
     expect(mergePage(page({ strokes: [linked] }), page({})).strokes[0]!.link).toEqual({ kind: 'url', url: 'https://example.com/' });
   });
 });
+
+describe('recordings sync', () => {
+  const nb = (over: Record<string, unknown>) => ({
+    kind: 'notebook' as const, id: 'n', parentId: null, name: 'N', coverColor: '#000', template: 'ruled' as const,
+    pageIds: ['p'], deletedPageIds: [], tags: [], lastOpenedAt: null, createdAt: 1, updatedAt: 1,
+    trashedAt: null, favorite: false, deleted: false, ...over,
+  });
+  const rec = (id: string, createdAt: number, name = id) => ({ id, fileId: `f-${id}`, name, createdAt, durationMs: 1000 });
+
+  it('keeps recordings made on both devices and honours deletions', () => {
+    const local = nb({ updatedAt: 5, recordings: [rec('a', 1), rec('b', 2, 'Lecture')] });
+    const remote = nb({ updatedAt: 3, recordings: [rec('a', 1), rec('c', 3)], deletedRecordingIds: ['b'] });
+    const merged = mergeLibrary([local], [remote]).merged[0] as unknown as { recordings: { id: string }[] };
+    expect(merged.recordings.map((r) => r.id)).toEqual(['a', 'c']);
+  });
+
+  it('does not churn notebooks without recordings', () => {
+    const a = nb({ updatedAt: 2 });
+    const result = mergeLibrary([a], [{ ...a }]);
+    expect([result.localChanged, result.remoteChanged]).toEqual([false, false]);
+    expect('recordings' in result.merged[0]!).toBe(false);
+  });
+});

@@ -6,6 +6,7 @@ import { drawImageStroke } from './images';
 import { drawTextStroke } from './text';
 import { arrowPath, dashPath, tapePath } from './shapeTool';
 import { displayColor, inkIsDark } from './inkTheme';
+import { getPlayback } from './recording';
 
 /** Items laid out on 4 corner points (pictures and text boxes) rather than drawn as ink. */
 export const isBoxItem = (s: Pick<Stroke, 'tool'>) => s.tool === 'image' || s.tool === 'text';
@@ -196,10 +197,10 @@ function drawTape(ctx: CanvasRenderingContext2D, stroke: Stroke, path: Path2D): 
   ctx.save();
   if (revealedTape.has(stroke.id)) {
     // Peeking: a faint outline shows where the tape is; tap again to cover up.
-    ctx.globalAlpha = 0.14;
+    ctx.globalAlpha *= 0.14;
     ctx.fillStyle = stroke.color;
     ctx.fill(path);
-    ctx.globalAlpha = 0.7;
+    ctx.globalAlpha *= 5;
     ctx.strokeStyle = stroke.color;
     ctx.lineWidth = 1;
     ctx.setLineDash([4, 3]);
@@ -212,6 +213,19 @@ function drawTape(ctx: CanvasRenderingContext2D, stroke: Stroke, path: Path2D): 
 }
 
 export function drawStroke(ctx: CanvasRenderingContext2D, stroke: Stroke, live = false): void {
+  // Playing a recording: ink written later than the current moment is shown faded.
+  const playback = getPlayback();
+  if (playback && stroke.audio?.rec === playback.rec && stroke.audio.t > playback.t) {
+    ctx.save();
+    ctx.globalAlpha *= 0.16;
+    drawStrokeNow(ctx, stroke, live);
+    ctx.restore();
+    return;
+  }
+  drawStrokeNow(ctx, stroke, live);
+}
+
+function drawStrokeNow(ctx: CanvasRenderingContext2D, stroke: Stroke, live: boolean): void {
   if (stroke.tool === 'image') {
     drawImageStroke(ctx, stroke);
     return;
@@ -229,7 +243,7 @@ export function drawStroke(ctx: CanvasRenderingContext2D, stroke: Stroke, live =
     const area = fillSvgPath(stroke);
     if (area) {
       ctx.save();
-      ctx.globalAlpha = stroke.fillOpacity ?? DEFAULT_FILL_OPACITY;
+      ctx.globalAlpha *= stroke.fillOpacity ?? DEFAULT_FILL_OPACITY;
       ctx.fillStyle = displayColor(stroke.fill);
       ctx.fill(new Path2D(area));
       ctx.restore();
@@ -241,10 +255,10 @@ export function drawStroke(ctx: CanvasRenderingContext2D, stroke: Stroke, live =
   // would vanish, so it glows instead.
   const dark = inkIsDark();
   if (!brush) {
-    ctx.globalAlpha = dark ? 0.45 : 0.35;
+    ctx.globalAlpha *= dark ? 0.45 : 0.35;
     if (!dark) ctx.globalCompositeOperation = 'multiply';
   } else {
-    ctx.globalAlpha = brush.opacity;
+    ctx.globalAlpha *= brush.opacity;
   }
   const color = brush ? displayColor(stroke.color) : stroke.color;
   ctx.fillStyle = (brush?.grain && !stroke.dash && grainPattern(ctx, color, brush.grain)) || color;

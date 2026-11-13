@@ -13,6 +13,7 @@ import {
   type Page,
   type PaperTemplate,
   type NotebookSettings,
+  type Recording,
 } from '../model/types';
 
 export const TRASH_RETENTION_DAYS = 30;
@@ -346,4 +347,42 @@ export async function createNotebookFromPages(
     await markLibraryChanged(db);
   });
   return notebook;
+}
+
+/** Saves a finished recording: the audio goes to the files table (synced), the entry to the notebook. */
+export async function addRecording(
+  db: NoteboardDB,
+  notebookId: ID,
+  audio: Blob,
+  durationMs: number,
+  name: string,
+  /** The id the ink written during the recording was stamped with. */
+  id: ID = newId(),
+): Promise<Recording> {
+  const fileId = newId();
+  const recording: Recording = { id, fileId, name, createdAt: Date.now(), durationMs };
+  await db.files.put({ id: fileId, name: `${name}.audio`, mime: audio.type || 'audio/mp4', size: audio.size, data: audio, createdAt: Date.now(), uploaded: 0 });
+  await updateItem(db, notebookId, (item) => {
+    if (item.kind === 'notebook') item.recordings = [...(item.recordings ?? []), recording];
+  });
+  return recording;
+}
+
+export function renameRecording(db: NoteboardDB, notebookId: ID, recordingId: ID, name: string): Promise<void> {
+  const clean = name.trim().slice(0, 120) || 'Recording';
+  return updateItem(db, notebookId, (item) => {
+    if (item.kind === 'notebook') item.recordings = (item.recordings ?? []).map((r) => (r.id === recordingId ? { ...r, name: clean } : r));
+  });
+}
+
+/** Removes a recording (ink keeps its stamps; they're simply ignored). */
+export async function deleteRecording(db: NoteboardDB, notebookId: ID, recordingId: ID): Promise<void> {
+  let fileId: ID | undefined;
+  await updateItem(db, notebookId, (item) => {
+    if (item.kind !== 'notebook') return;
+    fileId = item.recordings?.find((r) => r.id === recordingId)?.fileId;
+    item.recordings = (item.recordings ?? []).filter((r) => r.id !== recordingId);
+    item.deletedRecordingIds = [...new Set([...(item.deletedRecordingIds ?? []), recordingId])];
+  });
+  if (fileId) await db.files.delete(fileId);
 }
