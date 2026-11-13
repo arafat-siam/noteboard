@@ -1464,3 +1464,113 @@
   border-radius: 10px;
   padding: 10px;
 }
+
+/* ---- Ruler and protractor ---- */
+.guide-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 33;
+  pointer-events: none;
+}
+.ruler,
+.protractor {
+  position: absolute;
+  left: 0;
+  top: 0;
+  pointer-events: auto;
+  touch-action: none;
+  cursor: grab;
+}
+.ruler {
+  transform-origin: center;
+  border-radius: 6px;
+  background: rgba(236, 238, 244, 0.82);
+  border: 1px solid rgba(60, 64, 80, 0.35);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.18);
+  color: #3a3f4c;
+}
+.ruler-ticks {
+  position: absolute;
+  left: 0;
+  top: 0;
+}
+.ruler-ticks line,
+.protractor-svg line {
+  stroke: currentColor;
+  stroke-width: 1;
+}
+.ruler-ticks text,
+.protractor-svg text {
+  fill: currentColor;
+  font: 600 10px -apple-system, system-ui, sans-serif;
+  text-anchor: middle;
+}
+.ruler-angle {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  translate: -50% -10%;
+  padding: 2px 8px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.75);
+  font: 600 13px -apple-system, system-ui, sans-serif;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+.guide-close,
+.guide-rotate {
+  position: absolute;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  padding: 0;
+  border: none;
+  display: grid;
+  place-items: center;
+  background: rgba(255, 255, 255, 0.85);
+  color: #3a3f4c;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+  touch-action: none;
+}
+.ruler .guide-close {
+  left: 8px;
+  bottom: 8px;
+}
+.ruler .guide-rotate {
+  right: 8px;
+  bottom: 8px;
+  cursor: grab;
+}
+.protractor {
+  color: #3a3f4c;
+}
+.protractor-body {
+  fill: rgba(236, 238, 244, 0.8);
+  stroke: rgba(60, 64, 80, 0.45);
+  stroke-width: 1;
+}
+.protractor-svg circle {
+  fill: currentColor;
+}
+.protractor-angle {
+  top: auto;
+  bottom: 30px;
+  translate: -50% 0;
+}
+.protractor .guide-close {
+  left: 4px;
+  bottom: 0;
+}
+.protractor .guide-rotate {
+  right: 4px;
+  bottom: 0;
+}
+:root[data-theme='dark'] .ruler,
+:root[data-theme='dark'] .protractor-body {
+  background: rgba(58, 60, 68, 0.85);
+  fill: rgba(58, 60, 68, 0.85);
+}
+:root[data-theme='dark'] .ruler,
+:root[data-theme='dark'] .protractor {
+  color: #e8e9ee;
+}

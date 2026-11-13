@@ -29,6 +29,8 @@ import { QuickPalette } from './QuickPalette';
 import { ToolPalette, usePaletteLayout } from './ToolPalette';
 import { Icon } from './Icon';
 import { useAppIsDark } from './theme';
+import { GuideOverlay, toggleGuide } from './GuideOverlay';
+import { getGuide, onGuideChange, setGuide } from '../ink/guides';
 import { setInkDark } from '../ink/inkTheme';
 import { setNotebookSettings } from '../db/library';
 import { act } from './useLibrary';
@@ -116,6 +118,10 @@ export function NotebookEditor({ notebookId, onClose }: { notebookId: string; on
   const [settings, setSettings] = useState<ToolSettings>(loadSettings);
   const [paletteLayout, setPaletteLayout] = usePaletteLayout();
   const appDark = useAppIsDark();
+  const [guideKind, setGuideKind] = useState(() => getGuide()?.kind ?? null);
+  useEffect(() => onGuideChange(() => setGuideKind(getGuide()?.kind ?? null)), []);
+  // The ruler is put away when leaving the notebook.
+  useEffect(() => () => setGuide(null), []);
   // Leaving the editor: thumbnails and exports elsewhere draw in normal colours again.
   useEffect(() => () => void setInkDark(false), []);
   const settingsRef = useRef(settings);
@@ -693,6 +699,22 @@ export function NotebookEditor({ notebookId, onClose }: { notebookId: string; on
         >
           <Icon name={darkPages ? 'sun' : 'moon'} size={22} />
         </button>
+        <button
+          className={`tool icon-tool${guideKind === 'ruler' ? ' on' : ''}`}
+          aria-label="Ruler"
+          title="Ruler"
+          onClick={() => toggleGuide('ruler')}
+        >
+          <Icon name="ruler" size={22} />
+        </button>
+        <button
+          className={`tool icon-tool${guideKind === 'protractor' ? ' on' : ''}`}
+          aria-label="Protractor"
+          title="Protractor"
+          onClick={() => toggleGuide('protractor')}
+        >
+          <Icon name="protractor" size={22} />
+        </button>
         <button className="tool icon-tool" aria-label="Insert picture" title="Insert picture" onClick={() => pictureInputRef.current?.click()}>
           <Icon name="image" size={22} />
         </button>
@@ -881,6 +903,7 @@ export function NotebookEditor({ notebookId, onClose }: { notebookId: string; on
       )}
 
       {showDiagnostics && <DiagnosticsOverlay />}
+      <GuideOverlay scale={scale} />
 
       {palette && (
         <QuickPalette

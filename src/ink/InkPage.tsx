@@ -44,6 +44,7 @@ import { makeShapeStroke, makeTapeStroke } from './shapeTool';
 import { revealedTape } from './render';
 import { displayColor } from './inkTheme';
 import { DashSample } from '../ui/Icon';
+import { edgeNear, getGuide, projectOnEdge, protractorDegrees, type GuideEdge } from './guides';
 import {
   alignStrokes,
   distributeStrokes,
@@ -165,6 +166,8 @@ interface Gesture {
   /** Moving a selection: edges it can line up with, and the guides currently shown. */
   moveTargets: { xs: number[]; ys: number[] } | null;
   moveGuides: Guide[];
+  /** Drawing along the ruler's edge or the protractor's arc (client px). */
+  guideEdge: GuideEdge | null;
 }
 
 interface Selection {
@@ -1383,6 +1386,7 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
       snap: null,
       moveTargets: null,
       moveGuides: [],
+      guideEdge: null,
     };
     growDirty(g, p.x, p.y);
 
@@ -1449,8 +1453,26 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
         eraseAt(g, p);
       }
     }
+    // Started next to the ruler or protractor: the stroke follows its edge.
+    const drawingGuide = getGuide();
+    if (g.kind === 'ink' && drawingGuide) {
+      const edge = edgeNear(drawingGuide, { x: e.clientX, y: e.clientY });
+      if (edge) {
+        g.guideEdge = edge;
+        g.holdSince = Infinity; // no hold-to-snap shapes along a ruler
+        const q = guidedPoint(g, e.clientX, e.clientY);
+        g.points = [q.x, q.y, pressureOf(native)];
+      }
+    }
     gestureRef.current = g;
     requestRender();
+  };
+
+  /** A client point moved onto the guide edge, in page units. */
+  const guidedPoint = (g: Gesture, clientX: number, clientY: number): Point => {
+    const inset = ((settings.tool === 'highlighter' ? settings.highlighterSize : settings.penSize) * scale) / 2;
+    const q = g.guideEdge ? projectOnEdge(g.guideEdge, { x: clientX, y: clientY }, inset) : { x: clientX, y: clientY };
+    return { x: (q.x - g.origin.left) / scale, y: (q.y - g.origin.top) / scale };
   };
 
   const onPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
@@ -1506,6 +1528,12 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
               for (const q of pts) growDirty(g, q.x, q.y);
               g.needsDraw = true;
             }
+            break;
+          }
+          if (g.guideEdge) {
+            const q = guidedPoint(g, ev.clientX, ev.clientY);
+            g.points.push(q.x, q.y, pressureOf(ev));
+            growDirty(g, q.x, q.y);
             break;
           }
           g.points.push(p.x, p.y, pressureOf(ev));
@@ -1592,6 +1620,19 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
     }
     if (g.kind === 'ink' && g.snapped) {
       g.lastSampleAt = performance.now();
+    } else if (g.kind === 'ink' && g.guideEdge) {
+      // Along a guide: show the length (ruler) or angle (protractor) instead of predicting.
+      g.predicted = [];
+      g.needsDraw = true;
+      g.lastSampleAt = performance.now();
+      const n = g.points.length;
+      const last = { x: g.points[n - 3]!, y: g.points[n - 2]! };
+      const guide = getGuide();
+      const text =
+        guide?.kind === 'protractor'
+          ? `${protractorDegrees(guide, { x: g.origin.left + last.x * scale, y: g.origin.top + last.y * scale })}°`
+          : `${(Math.hypot(last.x - g.points[0]!, last.y - g.points[1]!) * (25.4 / 96) / 10).toFixed(1)} cm`;
+      showBadge(text, last.x * scale, last.y * scale - 36);
     } else if (g.kind === 'ink') {
       const predicted = native.getPredictedEvents?.() ?? [];
       g.predicted = predicted.flatMap((ev) => {
