@@ -108,6 +108,7 @@ export function ZoomWindow(props: {
       createdAt: Date.now(),
       ...(highlighter ? {} : { brush: settings.penBrush }),
       ...(!highlighter && settings.penStyle && Object.keys(settings.penStyle).length ? { penStyle: settings.penStyle } : {}),
+      ...(!highlighter && settings.penDash ? { dash: settings.penDash } : {}),
     };
   };
   const drawLive = () => {

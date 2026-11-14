@@ -529,9 +529,20 @@ export function ToolPalette(props: Props) {
             color: activeSlot.color,
             size: activeSlot.size,
             hasPressure: true,
-            ...(isHighlighter ? {} : { brush: activeSlot.brush, penStyle: activeSlot.penStyle }),
+            ...(isHighlighter ? {} : { brush: activeSlot.brush, penStyle: activeSlot.penStyle, ...(activeSlot.dash ? { dash: activeSlot.dash } : {}) }),
           }}
         />
+        {!isHighlighter && (
+          <Segmented
+            value={activeSlot.dash ?? null}
+            options={[
+              { value: null, label: <><DashSample dash={null} /><span>Solid</span></> },
+              { value: 'dashed', label: <><DashSample dash="dashed" /><span>Dashed</span></> },
+              { value: 'dotted', label: <><DashSample dash="dotted" /><span>Dotted</span></> },
+            ]}
+            onChange={(v) => props.updateSlot({ dash: v ?? undefined })}
+          />
+        )}
         <ColorPicker colors={isHighlighter ? HIGHLIGHTER_COLORS : PEN_COLORS} value={activeSlot.color} onChange={(c) => props.updateSlot({ color: c })} />
         <SliderRow
           label="Thickness"

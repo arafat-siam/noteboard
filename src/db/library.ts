@@ -37,6 +37,7 @@ export function blankPage(
   template: PaperTemplate,
   now = Date.now(),
   size: { width: number; height: number } = { width: PAGE_WIDTH, height: PAGE_HEIGHT },
+  paper?: string,
 ): Page {
   return {
     id: newId(),
@@ -44,6 +45,7 @@ export function blankPage(
     template,
     width: size.width,
     height: size.height,
+    ...(paper && paper.toLowerCase() !== '#ffffff' ? { paper } : {}),
     strokes: [],
     deletedStrokeIds: [],
     updatedAt: now,
@@ -79,10 +81,12 @@ export async function createNotebook(
   template: PaperTemplate = 'ruled',
   coverColor: string = COVER_COLORS[0]!,
   size?: { width: number; height: number },
+  extra: { paper?: string; cover?: boolean; pageTheme?: 'light' | 'dark' } = {},
 ): Promise<Notebook> {
   const now = Date.now();
   const id = newId();
-  const page = blankPage(id, template, now, size);
+  const paper = extra.paper && extra.paper.toLowerCase() !== '#ffffff' ? extra.paper : undefined;
+  const page = blankPage(id, template, now, size, paper);
   const notebook: Notebook = {
     kind: 'notebook',
     id,
@@ -99,6 +103,10 @@ export async function createNotebook(
     trashedAt: null,
     favorite: false,
     deleted: false,
+    ...(size ? { pageSize: size } : {}),
+    ...(paper ? { paper } : {}),
+    ...(extra.cover ? { cover: true } : {}),
+    ...(extra.pageTheme ? { pageTheme: extra.pageTheme } : {}),
   };
   await db.transaction('rw', db.items, db.pages, db.strokes, db.meta, async () => {
     await db.items.add(notebook);

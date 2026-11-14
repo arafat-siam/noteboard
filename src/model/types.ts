@@ -145,6 +145,8 @@ export interface Page {
   background?: PdfBackground;
   /** Whiteboard page: grows to the right and down as ink nears its edges (never shrinks). */
   grows?: boolean;
+  /** Paper colour (hex). Missing = white. Night mode pages ignore it. */
+  paper?: string;
   strokes: Stroke[];
   /** Tombstones: ids of erased strokes, kept so deletions survive merges with other devices. */
   deletedStrokeIds: ID[];
@@ -188,6 +190,10 @@ export interface Notebook extends LibraryBase {
   invertPdf?: boolean;
   /** Size of new pages (page units). Missing = A4 portrait. Each page keeps its own size. */
   pageSize?: { width: number; height: number };
+  /** Paper colour of new pages (hex). Missing = white. */
+  paper?: string;
+  /** Library card shows a coloured cover with the name (false/missing = the first page). */
+  cover?: boolean;
   /**
    * Notebook passcode (only a salted PBKDF2 hash). A lock screen on your devices; shared links
    * of a locked notebook are encrypted with the passcode itself (see share/).
@@ -221,7 +227,7 @@ export interface NotebookLock {
 }
 
 /** Notebook settings changed through setNotebookSettings (last change wins when syncing). */
-export type NotebookSettings = Partial<Pick<Notebook, 'pageTheme' | 'invertPdf' | 'pageSize' | 'lock' | 'bookmarks' | 'deletedBookmarkIds'>>;
+export type NotebookSettings = Partial<Pick<Notebook, 'pageTheme' | 'invertPdf' | 'pageSize' | 'lock' | 'bookmarks' | 'deletedBookmarkIds' | 'cover' | 'paper'>>;
 
 /** A bookmarked page with its title (shown in the notebook's contents). */
 export interface Bookmark {

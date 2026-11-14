@@ -20,7 +20,8 @@ import {
 import { notebookPages } from '../db/pages';
 import { exportNotebookPdf, safeFilename, shareOrDownload } from '../export/exporters';
 import { COVER_COLORS, FOLDER_COLORS, type ID, type LibraryItem, type Notebook } from '../model/types';
-import { ColorRow, Modal, MoveDialog, NewNotebookDialog, PromptDialog } from './Dialogs';
+import { ColorRow, Modal, MoveDialog, PromptDialog } from './Dialogs';
+import { NewNotebookDialog } from './NewNotebookDialog';
 import { act, pathOf, useLibrary, type LibraryState } from './useLibrary';
 import { importPdf } from '../pdf/pdf';
 import { setLocalOnly } from '../sync/localOnly';
@@ -394,7 +395,7 @@ export function LibraryView({ route, onNavigate, onOpenNotebook, onToggleSidebar
           <div className="recent-row">
             {recent.map((nb) => (
               <button key={nb.id} className="recent-card" onClick={() => onOpenNotebook(nb.id)} aria-label={`Open ${nb.name}`}>
-                {nb.lock || !nb.pageIds[0] ? (
+                {nb.cover || nb.lock || !nb.pageIds[0] ? (
                   <span className="mini-cover" style={{ ['--cover' as string]: nb.coverColor }} />
                 ) : (
                   <span className="mini-thumb">
@@ -495,10 +496,14 @@ export function LibraryView({ route, onNavigate, onOpenNotebook, onToggleSidebar
       )}
       {dialog?.kind === 'new-notebook' && (
         <NewNotebookDialog
-          onCreate={(name, template, color, size) =>
+          onCreate={(o) =>
             void act(async () => {
-              const nb = await createNotebook(db, name, folderId, template, color, size);
-              await setNotebookSettings(db, nb.id, { pageSize: size });
+              const nb = await createNotebook(db, o.name, folderId, o.template, o.coverColor, o.size, {
+                paper: o.paper,
+                cover: o.cover,
+                // The page colour is an explicit choice: light colours show as chosen even in dark mode.
+                pageTheme: o.night ? 'dark' : 'light',
+              });
               onOpenNotebook(nb.id);
             })
           }
@@ -716,7 +721,13 @@ function NotebookCover({ notebook, size }: { notebook: Notebook; size: number })
   const height = Math.round(size * 1.3);
   return (
     <div className="doc-cover" style={{ ['--cover' as string]: notebook.coverColor, width: size, height }}>
-      {notebook.lock ? (
+      {notebook.cover ? (
+        // A cover: the notebook colour with its name, and a darker spine on the left.
+        <div className="book-cover" style={{ height, background: notebook.coverColor }}>
+          {size > 60 && <span className="book-cover-title">{notebook.name}</span>}
+          {notebook.lock && <Icon name="lock" size={size > 60 ? 18 : 12} className="book-cover-lock" />}
+        </div>
+      ) : notebook.lock ? (
         <div className="doc-locked" style={{ height }}>
           <Icon name="lock" size={size > 60 ? 28 : 14} />
         </div>
@@ -772,6 +783,13 @@ function ItemMenu(props: {
               onClick={run(() => void act(() => setFavorite(db, item.id, !item.favorite)))}
             />
             <MenuItem icon="palette" label="Change colour" onClick={run(() => props.onDialog({ kind: 'color', item }))} />
+            {item.kind === 'notebook' && (
+              <MenuItem
+                icon={item.cover ? 'pages' : 'notebook'}
+                label={item.cover ? 'Show first page instead of cover' : 'Show cover'}
+                onClick={run(() => void act(() => setNotebookSettings(db, item.id, { cover: item.cover ? undefined : true })))}
+              />
+            )}
             {item.kind === 'notebook' && <MenuItem icon="tag" label="Tags" onClick={run(() => props.onDialog({ kind: 'tags', item }))} />}
             <MenuItem icon="move" label="Move to folder" onClick={run(() => props.onDialog({ kind: 'move', ids: [item.id] }))} />
             <MenuSeparator />

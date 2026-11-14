@@ -1,11 +1,8 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { COVER_COLORS, type ID, type PaperTemplate } from '../model/types';
-import { TEMPLATE_LABELS, templateStyle } from '../ink/templates';
+import type { ID } from '../model/types';
 import type { LibraryState } from './useLibrary';
 import { isWithin } from '../db/library';
 import { Icon } from './Icon';
-import { PageSizePicker } from './PageSizePicker';
-import { dimsFor, type PageDims } from '../model/pageSizes';
 
 export function Modal({ title, children, onClose }: { title: string; children: ReactNode; onClose: () => void }) {
   useEffect(() => {
@@ -54,53 +51,6 @@ export function PromptDialog(props: {
         <button onClick={props.onClose}>Cancel</button>
         <button className="primary" onClick={submit} disabled={!value.trim()}>
           {props.confirmLabel}
-        </button>
-      </div>
-    </Modal>
-  );
-}
-
-export function NewNotebookDialog(props: {
-  onCreate: (name: string, template: PaperTemplate, color: string, size: PageDims) => void;
-  onClose: () => void;
-}) {
-  const [name, setName] = useState('Untitled Notebook');
-  const [template, setTemplate] = useState<PaperTemplate>('ruled');
-  const [color, setColor] = useState(COVER_COLORS[0]!);
-  const [size, setSize] = useState<PageDims>(() => dimsFor('a4', 'portrait'));
-  const create = () => {
-    if (!name.trim()) return;
-    props.onCreate(name, template, color, size);
-    props.onClose();
-  };
-  return (
-    <Modal title="New notebook" onClose={props.onClose}>
-      <label className="field-label">Name</label>
-      <input
-        className="text-input"
-        value={name}
-        autoFocus
-        onFocus={(e) => e.target.select()}
-        onChange={(e) => setName(e.target.value)}
-        onKeyDown={(e) => e.key === 'Enter' && create()}
-      />
-      <label className="field-label">Paper</label>
-      <div className="template-picker">
-        {(Object.keys(TEMPLATE_LABELS) as PaperTemplate[]).map((t) => (
-          <button key={t} className={`template-option ${t === template ? 'selected' : ''}`} onClick={() => setTemplate(t)}>
-            <span className="template-swatch" style={templateStyle(t, 0.12, false, { width: 794, height: 1123 })} />
-            {TEMPLATE_LABELS[t]}
-          </button>
-        ))}
-      </div>
-      <label className="field-label">Page size</label>
-      <PageSizePicker value={size} onChange={setSize} />
-      <label className="field-label">Cover</label>
-      <ColorRow colors={COVER_COLORS} value={color} onChange={setColor} />
-      <div className="modal-actions">
-        <button onClick={props.onClose}>Cancel</button>
-        <button className="primary" onClick={create}>
-          Create
         </button>
       </div>
     </Modal>

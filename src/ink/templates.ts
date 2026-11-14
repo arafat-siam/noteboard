@@ -77,9 +77,23 @@ export const TEMPLATE_METRICS = {
 export const DARK_PAPER = { paper: '#1c1d21', line: '#323a46', margin: '#5e3434', dot: '#475263' };
 
 /** Paper drawn with CSS gradients: stays sharp at any zoom and costs no canvas memory. */
-export function templateStyle(template: PaperTemplate, scale: number, dark = false, size?: { width: number; height: number }): CSSProperties {
+/** Paper colours offered for new notebooks (Night = night mode pages, set separately). */
+export const PAPER_COLORS: { name: string; value: string }[] = [
+  { name: 'White', value: '#ffffff' },
+  { name: 'Ivory', value: '#fbf8ef' },
+  { name: 'Cream', value: '#f5eedb' },
+  { name: 'Grey', value: '#eef1f4' },
+];
+
+export function templateStyle(
+  template: PaperTemplate,
+  scale: number,
+  dark = false,
+  size?: { width: number; height: number },
+  paperColor?: string,
+): CSSProperties {
   const m = TEMPLATE_METRICS;
-  const paper = dark ? DARK_PAPER.paper : '#fff';
+  const paper = dark ? DARK_PAPER.paper : paperColor || '#fff';
   const lineColor = dark ? DARK_PAPER.line : m.lineColor;
   const marginColor = dark ? DARK_PAPER.margin : m.marginColor;
   const dotColor = dark ? DARK_PAPER.dot : '#8fa9c2';

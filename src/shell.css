@@ -1160,3 +1160,192 @@ button.secondary {
   padding-left: 6px;
   border-left: 1px solid var(--hairline);
 }
+
+/* Notebook cover (when the notebook has one instead of showing its first page). */
+.book-cover {
+  position: relative;
+  width: 100%;
+  box-shadow: inset 7px 0 0 rgba(0, 0, 0, 0.18), inset 8px 0 0 rgba(255, 255, 255, 0.08);
+}
+.doc-cover:has(.book-cover) {
+  border-radius: 4px 10px 10px 4px;
+}
+.doc-cover:has(.book-cover)::before {
+  display: none;
+}
+.book-cover-title {
+  position: absolute;
+  left: 16px;
+  right: 10px;
+  bottom: 12px;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.25;
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+}
+.book-cover-lock {
+  position: absolute;
+  top: 12px;
+  right: 10px;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+/* ---- New notebook dialog: preview on the left, one list of settings on the right ---- */
+.modal.nb-create {
+  width: min(680px, calc(100vw - 24px));
+  max-width: none;
+  padding: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 40px);
+}
+.nb-create-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 12px 12px 20px;
+  border-bottom: 1px solid var(--hairline);
+}
+.modal.nb-create .nb-create-head h2 {
+  margin: 0;
+  font-size: 17px;
+}
+.nb-create-body {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  min-height: 0;
+  overflow-y: auto;
+}
+.nb-preview {
+  display: grid;
+  place-items: center;
+  padding: 24px 16px;
+  background: var(--surface-2);
+  border-right: 1px solid var(--hairline);
+  min-height: 300px;
+}
+.nb-preview-stack {
+  position: relative;
+  transition: width 0.2s ease, height 0.2s ease;
+}
+.nb-preview-page,
+.nb-preview-cover {
+  position: absolute;
+  border-radius: 3px;
+  transition: width 0.2s ease, height 0.2s ease, left 0.2s ease;
+}
+.nb-preview-page {
+  box-shadow: 0 0 0 1px var(--hairline), 0 8px 18px -10px rgba(0, 0, 0, 0.35);
+}
+.nb-preview-cover {
+  left: 0;
+  top: 12px;
+  border-radius: 3px 9px 9px 3px;
+  box-shadow: inset 6px 0 0 rgba(0, 0, 0, 0.18), 0 10px 22px -10px rgba(0, 0, 0, 0.45);
+}
+.nb-preview-cover span {
+  position: absolute;
+  left: 14px;
+  right: 8px;
+  bottom: 10px;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.nb-settings {
+  padding: 4px 20px;
+}
+.nb-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 52px;
+  border-bottom: 1px solid var(--hairline);
+}
+.nb-row:last-child {
+  border-bottom: none;
+}
+.nb-row.nb-off {
+  opacity: 0.4;
+}
+.nb-key {
+  font-size: 14px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.nb-name {
+  max-width: 240px;
+  flex: 1;
+}
+.nb-row .select {
+  max-width: 240px;
+}
+.nb-seg {
+  display: inline-flex;
+  grid-template-columns: none;
+}
+.nb-seg button {
+  min-height: 32px;
+  padding: 4px 12px;
+}
+.nb-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 7px;
+}
+.nb-swatch {
+  width: 22px;
+  height: 22px;
+  min-height: 22px;
+  padding: 0;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px rgba(127, 127, 127, 0.4);
+}
+.nb-swatch.on {
+  box-shadow: 0 0 0 2px var(--surface), 0 0 0 3.5px var(--text);
+}
+.nb-ori {
+  display: inline-block;
+  border: 1.5px solid currentColor;
+  border-radius: 2px;
+}
+.nb-ori.portrait {
+  width: 9px;
+  height: 12px;
+}
+.nb-ori.landscape {
+  width: 13px;
+  height: 9px;
+}
+.nb-create-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 20px;
+  border-top: 1px solid var(--hairline);
+}
+@media (max-width: 640px) {
+  .nb-create-body {
+    grid-template-columns: 1fr;
+  }
+  .nb-preview {
+    border-right: none;
+    border-bottom: 1px solid var(--hairline);
+    min-height: 220px;
+  }
+}

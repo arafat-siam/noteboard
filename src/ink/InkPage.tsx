@@ -103,6 +103,8 @@ export interface ToolSettings {
   activeSlot: string;
   /** Fine-tuning of the pen in hand (mirrors its slot). */
   penStyle?: PenStyle;
+  /** Line style of the pen in hand (missing = solid). */
+  penDash?: DashStyle;
   /** Eraser leaves pen ink alone and only removes highlighter. */
   eraseHighlighterOnly?: boolean;
   text: TextToolSettings;
@@ -829,6 +831,7 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
       createdAt: Date.now(),
       ...(highlighter ? {} : { brush: settings.penBrush }),
       ...(!highlighter && settings.penStyle && Object.keys(settings.penStyle).length ? { penStyle: settings.penStyle } : {}),
+      ...(!highlighter && settings.penDash ? { dash: settings.penDash } : {}),
     };
   };
 
@@ -2449,7 +2452,7 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
       ref={containerRef}
       className={`ink-page${dark ? ' night' : ''}${invertPdf ? ' invert-pdf' : ''}`}
       data-page-width={page.width}
-      style={{ width: cssWidth, height: cssHeight, ...templateStyle(page.template, scale, dark, page) }}
+      style={{ width: cssWidth, height: cssHeight, ...templateStyle(page.template, scale, dark, page, page.paper) }}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={(e) => finish(e, false)}

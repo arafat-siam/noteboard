@@ -69,7 +69,7 @@ function withSlot(s: ToolSettings, id: string): ToolSettings {
   const slot = s.slots.find((x) => x.id === id) ?? s.slots[0];
   if (!slot) return s;
   return slot.kind === 'pen'
-    ? { ...s, activeSlot: slot.id, tool: 'pen', color: slot.color, penSize: slot.size, penBrush: isBrushKind(slot.brush) ? slot.brush : 'fountain', penStyle: slot.penStyle }
+    ? { ...s, activeSlot: slot.id, tool: 'pen', color: slot.color, penSize: slot.size, penBrush: isBrushKind(slot.brush) ? slot.brush : 'fountain', penStyle: slot.penStyle, penDash: slot.dash }
     : { ...s, activeSlot: slot.id, tool: 'highlighter', highlighterColor: slot.color, highlighterSize: slot.size };
 }
 

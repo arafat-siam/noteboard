@@ -169,7 +169,7 @@ export async function addPage(db: NoteboardDB, notebookId: ID, afterPageId?: ID)
     const previous = lastId ? await db.pages.get(lastId) : undefined;
     // A new page continues the paper and size of the page before it.
     const size = previous ? { width: previous.width, height: previous.height } : notebook.pageSize;
-    const page = blankPage(notebookId, previous?.template ?? notebook.template, Date.now(), size);
+    const page = blankPage(notebookId, previous?.template ?? notebook.template, Date.now(), size, previous ? previous.paper : notebook.paper);
     const index = afterPageId ? notebook.pageIds.indexOf(afterPageId) + 1 : notebook.pageIds.length;
     notebook.pageIds = [...notebook.pageIds.slice(0, index), page.id, ...notebook.pageIds.slice(index)];
     notebook.updatedAt = Date.now();

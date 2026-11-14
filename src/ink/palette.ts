@@ -21,6 +21,8 @@ export interface PenSlot {
   size: number;
   /** Fine-tuning of this pen (opacity, pressure, taper, smoothing). Missing = pen type default. */
   penStyle?: PenStyle;
+  /** Dashed or dotted line (pens only). Missing = solid. */
+  dash?: DashStyle;
 }
 
 export const DEFAULT_SLOTS: PenSlot[] = [

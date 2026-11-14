@@ -24,9 +24,10 @@ function hexToRgb(hex: string) {
   return rgb(((v >> 16) & 255) / 255, ((v >> 8) & 255) / 255, (v & 255) / 255);
 }
 
-function drawTemplatePdf(pdfPage: PDFPage, template: PaperTemplate, width: number, height: number, dark = false) {
+function drawTemplatePdf(pdfPage: PDFPage, template: PaperTemplate, width: number, height: number, dark = false, paper?: string) {
   const m = TEMPLATE_METRICS;
-  if (dark) pdfPage.drawRectangle({ x: 0, y: 0, width: width * PT, height: height * PT, color: hexToRgb(DARK_PAPER.paper) });
+  const fill = dark ? DARK_PAPER.paper : paper && paper.toLowerCase() !== '#ffffff' ? paper : null;
+  if (fill) pdfPage.drawRectangle({ x: 0, y: 0, width: width * PT, height: height * PT, color: hexToRgb(fill) });
   const color = hexToRgb(dark ? DARK_PAPER.line : m.lineColor);
   const h = height * PT;
   const line = (x1: number, y1: number, x2: number, y2: number, c = color) =>
@@ -112,7 +113,7 @@ export async function exportNotebookPdf(
         if (embedded) pdfPage.drawPage(embedded, { x: 0, y: 0, width: page.width * PT, height: page.height * PT });
       }
     } else {
-      drawTemplatePdf(pdfPage, page.template, page.width, page.height, dark);
+      drawTemplatePdf(pdfPage, page.template, page.width, page.height, dark, page.paper);
     }
     // Stacking order, like on screen (pictures and ink layered as arranged).
     const ordered = [...page.strokes].sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id));
@@ -235,7 +236,7 @@ export async function exportPagePng(page: Page, pixelScale = 2, db: NoteboardDB 
   canvas.width = Math.round(page.width * pixelScale);
   canvas.height = Math.round(page.height * pixelScale);
   const ctx = canvas.getContext('2d')!;
-  ctx.fillStyle = dark ? DARK_PAPER.paper : '#fff';
+  ctx.fillStyle = dark ? DARK_PAPER.paper : page.paper || '#fff';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   if (page.background) {
     const doc = await getPdf(db, page.background.fileId);

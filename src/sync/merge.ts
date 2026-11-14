@@ -26,6 +26,7 @@ export function mergePage(local: Page, remote: Page): Page {
 /** Same ink, tombstones and settings (ignores sync bookkeeping). */
 export function samePageContent(a: Page, b: Page): boolean {
   if (a.template !== b.template || a.strokes.length !== b.strokes.length) return false;
+  if (a.width !== b.width || a.height !== b.height || (a.paper ?? '') !== (b.paper ?? '') || !!a.grows !== !!b.grows) return false;
   if (a.deletedStrokeIds.length !== b.deletedStrokeIds.length) return false;
   const ids = new Set(a.strokes.map((s) => s.id));
   if (!b.strokes.every((s) => ids.has(s.id))) return false;

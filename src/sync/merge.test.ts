@@ -42,6 +42,15 @@ describe('mergePage', () => {
   });
 });
 
+describe('page colour', () => {
+  it('follows the newer copy of the page, like other page settings', () => {
+    const a = { ...page({ updatedAt: 5 }), paper: '#fbf8ef' };
+    const b = { ...page({ updatedAt: 9 }), paper: '#eef1f4' };
+    expect(mergePage(a, b).paper).toBe('#eef1f4');
+    expect(mergePage(b, a).paper).toBe('#eef1f4');
+  });
+});
+
 describe('whiteboard pages', () => {
   it('keep the larger size from either device', () => {
     const a = { ...page({ updatedAt: 5 }), grows: true, width: 1600, height: 3200 };
