@@ -84,15 +84,16 @@ export function QuickPalette({ x, y, settings, selectSlot, selectTool, updateSlo
   const activeSlot = settings.slots.find((s) => s.id === settings.activeSlot) ?? settings.slots[0];
   const isHighlighter = activeSlot?.kind === 'highlighter';
 
-  const tools: Entry[] = [
-    // Same order as the toolbar (drag pens there to reorder; saved in the toolbar preset).
-    ...settings.slots.map((slot) => ({
+  // Same order as the toolbar (drag pens there to reorder; saved in the toolbar preset).
+  const pens: Entry[] = settings.slots.map((slot) => ({
       key: slot.id,
       label: slot.kind === 'highlighter' ? 'Highlighter' : (BRUSHES[slot.brush]?.label ?? 'Pen'),
       icon: { kind: slotIcon(slot), color: slot.color },
       active: penInHand && slot.id === settings.activeSlot,
       choose: () => selectSlot(slot.id),
-    })),
+  }));
+  // Always visible, outside the scrolling pen row.
+  const fixed: Entry[] = [
     { key: 'eraser', label: 'Eraser', icon: { kind: 'eraser', color: '#888' }, active: settings.tool === 'eraser', choose: () => selectTool('eraser') },
     { key: 'lasso', label: 'Lasso', icon: { kind: 'lasso', color: '#888' }, active: settings.tool === 'lasso', choose: () => selectTool('lasso') },
   ];
@@ -114,6 +115,14 @@ export function QuickPalette({ x, y, settings, selectSlot, selectTool, updateSlo
   const sizes = isHighlighter ? HIGHLIGHTER_SIZES : PEN_SIZES;
   const nearestSize = sizes.reduce((best, s) => (Math.abs(s - (activeSlot?.size ?? 0)) < Math.abs(best - (activeSlot?.size ?? 0)) ? s : best), sizes[0]!);
 
+  const toolButton = (t: Entry) => (
+    <button key={t.key} role="menuitem" aria-label={t.label} aria-pressed={t.active} className={`qp-tool${t.active ? ' active' : ''}`} {...hoverPick(t.choose)}>
+      <span className="qp-pen">
+        <PenIcon {...t.icon} />
+      </span>
+    </button>
+  );
+
   return (
     <div ref={ref} className="quick-palette" role="menu" aria-label="Quick tools">
       <div
@@ -131,21 +140,9 @@ export function QuickPalette({ x, y, settings, selectSlot, selectTool, updateSlo
             </button>
           </div>
           <div className="qp-strip" ref={stripRef}>
-            {tools.map((t, i) => (
-              <button
-                key={t.key}
-                role="menuitem"
-                aria-label={t.label}
-                aria-pressed={t.active}
-                className={`qp-tool${t.active ? ' active' : ''}${i === settings.slots.length ? ' qp-after-pens' : ''}`}
-                {...hoverPick(t.choose)}
-              >
-                <span className="qp-pen">
-                  <PenIcon {...t.icon} />
-                </span>
-              </button>
-            ))}
+            {pens.map((t) => toolButton(t))}
           </div>
+          <div className="qp-fixed">{fixed.map((t) => toolButton(t))}</div>
           <label className="qp-well" aria-label="More colours" title="More colours">
             <span className="qp-well-dot" style={{ background: activeSlot?.color }} />
             <input type="color" value={activeSlot?.color ?? '#000000'} onChange={(e) => setPen({ color: e.target.value })} />

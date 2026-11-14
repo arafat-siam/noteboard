@@ -1004,7 +1004,7 @@ button.secondary {
   align-items: flex-end;
   gap: 2px;
   height: 62px;
-  max-width: 236px;
+  max-width: 178px;
   overflow-x: auto;
   overflow-y: hidden;
   scrollbar-width: none;
@@ -1149,4 +1149,14 @@ button.secondary {
   transition: none;
   z-index: 3;
   filter: drop-shadow(0 6px 10px rgba(0, 0, 0, 0.3));
+}
+
+/* Eraser and lasso stay in view next to the scrolling pens. */
+.qp-fixed {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 62px;
+  padding-left: 6px;
+  border-left: 1px solid var(--hairline);
 }

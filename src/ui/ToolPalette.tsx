@@ -275,6 +275,9 @@ export function ToolPalette(props: Props) {
   const onPointerDown = (e: React.PointerEvent) => {
     if (style !== 'floating') return;
     if ((e.target as Element).closest('button, input, label, select, .palette-popover, [role="slider"]')) return;
+    // A pen list that scrolls is for scrolling: moving the toolbar starts from its ends instead.
+    const tray = (e.target as Element).closest<HTMLElement>('.pen-tray');
+    if (tray && (tray.scrollWidth > tray.clientWidth + 1 || tray.scrollHeight > tray.clientHeight + 1)) return;
     dragRef.current = { id: e.pointerId, x: e.clientX, y: e.clientY, moved: false };
     (e.currentTarget as Element).setPointerCapture(e.pointerId);
   };
@@ -338,8 +341,22 @@ export function ToolPalette(props: Props) {
     step: number;
     target: number;
     from: number;
+    /** Pen list scroll position when the drag started (it auto-scrolls near its ends). */
+    scroll0: number;
   } | null>(null);
   const justReordered = useRef(false);
+  const trayRef = useRef<HTMLDivElement>(null);
+  // While a pen is being dragged, the pen list must not scroll under the finger (Safari would
+  // otherwise scroll and then cancel the drag).
+  useEffect(() => {
+    const tray = trayRef.current;
+    if (!tray) return;
+    const block = (e: TouchEvent) => {
+      if (reorder.current?.active) e.preventDefault();
+    };
+    tray.addEventListener('touchmove', block, { passive: false });
+    return () => tray.removeEventListener('touchmove', block);
+  });
   const endReorder = (commit: boolean) => {
     const r = reorder.current;
     reorder.current = null;
@@ -376,9 +393,12 @@ export function ToolPalette(props: Props) {
         target: from,
         from,
         timer: 0,
+        scroll0: 0,
       };
       state.timer = window.setTimeout(() => {
         state.active = true;
+        const tray = trayRef.current;
+        state.scroll0 = tray ? (vertical ? tray.scrollTop : tray.scrollLeft) : 0;
         setPopover(null);
         el.classList.add('reordering');
         try {
@@ -401,7 +421,23 @@ export function ToolPalette(props: Props) {
         return;
       }
       e.preventDefault();
-      const d = vertical ? dy : dx;
+      // Near either end of a scrolling pen list, scroll it so far-away places can be reached.
+      const tray = trayRef.current;
+      if (tray) {
+        const box = tray.getBoundingClientRect();
+        const at = vertical ? e.clientY : e.clientX;
+        const start = vertical ? box.top : box.left;
+        const end = vertical ? box.bottom : box.right;
+        const edge = 28;
+        const by = at < start + edge ? -8 : at > end - edge ? 8 : 0;
+        if (by) {
+          if (vertical) tray.scrollTop += by;
+          else tray.scrollLeft += by;
+        }
+      }
+      const scrolled = tray ? (vertical ? tray.scrollTop : tray.scrollLeft) - r.scroll0 : 0;
+      // Positions are measured as they were when the drag started; scrolling shifts the pen too.
+      const d = (vertical ? dy : dx) + scrolled;
       r.el.style.transform = vertical ? `translateY(${d}px)` : `translateX(${d}px)`;
       const centre = r.mid + d;
       // Where it would land: count the pens whose middle it has passed.
@@ -870,7 +906,7 @@ export function ToolPalette(props: Props) {
           </button>
         </div>
 
-        <div className="pen-tray">
+        <div className="pen-tray" ref={trayRef}>
           {props.presetActions && (
             <button
               className={`palette-button preset-button${popover === 'presets' ? ' on' : ''}`}
