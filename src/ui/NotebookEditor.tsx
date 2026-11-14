@@ -31,6 +31,7 @@ import { useSyncStatus } from '../sync/instance';
 import { QuickPalette } from './QuickPalette';
 import { ToolPalette, usePaletteLayout } from './ToolPalette';
 import { useEmptySpaceTap, useSlideAwayBar } from './useBarsAutoHide';
+import { activePresetId, readPresets, setActivePresetId, usePresets, writePresets } from '../ink/presets';
 import { Icon } from './Icon';
 import { MenuButton, MenuItem, MenuLabel, MenuSeparator } from './Menu';
 import { useAppIsDark } from './theme';
@@ -201,6 +202,88 @@ export function NotebookEditor({
       /* ignore */
     }
   }, [settings]);
+
+  // ---- Toolbar presets: the pens in the tray belong to the preset in hand -------------------
+  const presetState = usePresets();
+  const [presetId, setPresetId] = useState<string | null>(activePresetId);
+  /** Slots this device last saved into the preset (so our own write isn't applied back). */
+  const lastPresetWrite = useRef<string | null>(null);
+  const creatingPreset = useRef(false);
+  const [presetDialog, setPresetDialog] = useState<null | { kind: 'new' } | { kind: 'rename'; id: string }>(null);
+  const applySlots = (slots: PenSlot[]) =>
+    setSettings((s) => withSlot({ ...s, slots }, slots.some((x) => x.id === s.activeSlot) ? s.activeSlot : slots[0]!.id));
+  useEffect(() => {
+    if (!presetState) return;
+    if (!presetState.presets.length) {
+      // First run: the current tray becomes the "Default" preset (once, while the save lands).
+      if (creatingPreset.current) return;
+      creatingPreset.current = true;
+      const id = makeId();
+      const now = Date.now();
+      lastPresetWrite.current = JSON.stringify(settings.slots);
+      void writePresets({ ...presetState, presets: [{ id, name: 'Default', slots: settings.slots, updatedAt: now }], defaultId: id, defaultAt: now }).then(() => sync.syncSoon());
+      setActivePresetId(id);
+      setPresetId(id);
+      return;
+    }
+    const current =
+      presetState.presets.find((x) => x.id === presetId) ??
+      presetState.presets.find((x) => x.id === presetState.defaultId) ??
+      presetState.presets[0]!;
+    if (current.id !== presetId) {
+      setActivePresetId(current.id);
+      setPresetId(current.id);
+    }
+    // Changed on another device (or switched): put its pens in the tray.
+    const incoming = JSON.stringify(current.slots);
+    if (incoming !== lastPresetWrite.current && incoming !== JSON.stringify(settings.slots) && current.slots.length) {
+      lastPresetWrite.current = incoming;
+      applySlots(current.slots);
+    }
+  }, [presetState, presetId]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Pens edited in the tray are saved into the preset in hand.
+  useEffect(() => {
+    if (!presetState || !presetId) return;
+    const json = JSON.stringify(settings.slots);
+    const current = presetState.presets.find((x) => x.id === presetId);
+    if (!current || JSON.stringify(current.slots) === json) return;
+    const timer = window.setTimeout(() => {
+      lastPresetWrite.current = json;
+      void readPresets()
+        .then((st) =>
+          writePresets({ ...st, presets: st.presets.map((x) => (x.id === presetId ? { ...x, slots: settings.slots, updatedAt: Date.now() } : x)) }),
+        )
+        .then(() => sync.syncSoon());
+    }, 800);
+    return () => window.clearTimeout(timer);
+  }, [settings.slots, presetId]); // eslint-disable-line react-hooks/exhaustive-deps
+  const presetActions = {
+    switchTo: (id: string) => {
+      const target = presetState?.presets.find((x) => x.id === id);
+      if (!target) return;
+      lastPresetWrite.current = JSON.stringify(target.slots);
+      setActivePresetId(id);
+      setPresetId(id);
+      applySlots(target.slots);
+    },
+    create: () => setPresetDialog({ kind: 'new' }),
+    rename: (id: string) => setPresetDialog({ kind: 'rename', id }),
+    setDefault: (id: string) =>
+      void readPresets()
+        .then((st) => writePresets({ ...st, defaultId: id, defaultAt: Date.now() }))
+        .then(() => sync.syncSoon()),
+    remove: (id: string) => {
+      const target = presetState?.presets.find((x) => x.id === id);
+      if (!target || (presetState?.presets.length ?? 0) <= 1) return;
+      if (!confirm(`Delete the preset “${target.name}”? The pens in it will be removed from this toolbar preset.`)) return;
+      void readPresets()
+        .then((st) => {
+          const presets = st.presets.filter((x) => x.id !== id);
+          return writePresets({ ...st, presets, deletedIds: [...st.deletedIds, id], defaultId: st.defaultId === id ? presets[0]!.id : st.defaultId, defaultAt: st.defaultId === id ? Date.now() : st.defaultAt });
+        })
+        .then(() => sync.syncSoon());
+    },
+  };
 
   const update = (patch: Partial<ToolSettings>) => setSettings((s) => ({ ...s, ...patch }));
   const selectTool = useCallback((tool: ToolKind) => {
@@ -886,6 +969,10 @@ export function NotebookEditor({
         setLayout={setPaletteLayout}
         onSelectAll={() => pageAction({ action: 'selectAll', files: [] })}
         barsHidden={barsHidden}
+        presets={presetState?.presets ?? []}
+        presetId={presetId}
+        defaultPresetId={presetState?.defaultId ?? null}
+        presetActions={presetActions}
         onShowBars={() => setBarsHidden(false)}
       />
 
@@ -937,6 +1024,35 @@ export function NotebookEditor({
         </div>
       </div>
       </div>
+
+      {presetDialog && (
+        <PromptDialog
+          title={presetDialog.kind === 'new' ? 'New toolbar preset' : 'Rename preset'}
+          initial={presetDialog.kind === 'new' ? 'New preset' : presetState?.presets.find((x) => x.id === presetDialog.id)?.name ?? ''}
+          confirmLabel={presetDialog.kind === 'new' ? 'Create' : 'Rename'}
+          onConfirm={(name) => {
+            const clean = name.trim().slice(0, 40) || 'Preset';
+            if (presetDialog.kind === 'new') {
+              // A new preset starts with the pens currently in the tray.
+              const id = makeId();
+              void readPresets()
+                .then((st) => writePresets({ ...st, presets: [...st.presets, { id, name: clean, slots: settings.slots, updatedAt: Date.now() }] }))
+                .then(() => {
+                  lastPresetWrite.current = JSON.stringify(settings.slots);
+                  setActivePresetId(id);
+                  setPresetId(id);
+                  sync.syncSoon();
+                });
+            } else {
+              const id = presetDialog.id;
+              void readPresets()
+                .then((st) => writePresets({ ...st, presets: st.presets.map((x) => (x.id === id ? { ...x, name: clean, updatedAt: Date.now() } : x)) }))
+                .then(() => sync.syncSoon());
+            }
+          }}
+          onClose={() => setPresetDialog(null)}
+        />
+      )}
 
       {renaming && (
         <PromptDialog

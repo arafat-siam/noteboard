@@ -2,6 +2,7 @@ import type { NoteboardDB } from '../db/db';
 import type { LibraryItem, Page } from '../model/types';
 import { DriveAuthError, DriveClient, type DriveFile } from './drive';
 import { mergeLibrary, mergePage, samePageContent } from './merge';
+import { EMPTY_PRESETS, mergePresets, readPresets, writePresets, type PresetState } from '../ink/presets';
 import { compactPage } from './compact';
 import { loadPage, writePage, removePages } from '../db/pages';
 import { clearRemovalQueue, expandLocalOnly, getLocalOnlyRoots, takeRemovalQueue } from './localOnly';
@@ -30,6 +31,8 @@ export type SyncStatus =
 interface LibraryFile {
   format: 1;
   items: LibraryItem[];
+  /** Toolbar presets (added later; older files have none). */
+  presets?: PresetState;
 }
 
 const LIBRARY_FILE = 'library.json';
@@ -356,6 +359,10 @@ export class SyncEngine {
           }
           if (result.remoteChanged) libraryNeedsPush = true;
         });
+        // Toolbar presets travel in the same file.
+        const presetMerge = mergePresets(await readPresets(db), remote.presets ?? EMPTY_PRESETS);
+        if (presetMerge.localChanged) await writePresets(presetMerge.merged, db, false);
+        if (presetMerge.remoteChanged) libraryNeedsPush = true;
         await db.sync.put({ key: LIBRARY_FILE, fileId: libraryRemote.id, remoteModified: libraryRemote.modifiedTime });
       }
     }
@@ -397,7 +404,7 @@ export class SyncEngine {
     const pushedRev = await db.getMeta<number>('libraryPushedRev');
     if (libraryNeedsPush || rev !== pushedRev) {
       await this.pauseWhileBusy();
-      const data: LibraryFile = { format: 1, items: (await db.items.toArray()).filter(shared) };
+      const data: LibraryFile = { format: 1, items: (await db.items.toArray()).filter(shared), presets: await readPresets(db) };
       const known = await db.sync.get(LIBRARY_FILE);
       const saved = known
         ? await drive.updateJson(known.fileId, data)

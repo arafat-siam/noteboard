@@ -164,3 +164,18 @@ describe('recordings sync', () => {
     expect('recordings' in result.merged[0]!).toBe(false);
   });
 });
+
+describe('mergePresets', () => {
+  const p = (id: string, updatedAt: number, color = '#000') => ({ id, name: id, updatedAt, slots: [{ id: 'x', kind: 'pen' as const, brush: 'fountain' as const, color, size: 2 }] });
+  it('keeps presets from both sides, newer edit wins, deletions stick, latest default wins', async () => {
+    const { mergePresets } = await import('../ink/presets');
+    const local = { presets: [p('a', 1), p('b', 5, '#111')], deletedIds: [], defaultId: 'a', defaultAt: 2 };
+    const remote = { presets: [p('b', 3, '#222'), p('c', 1)], deletedIds: ['a'], defaultId: 'c', defaultAt: 4 };
+    const { merged, localChanged, remoteChanged } = mergePresets(local, remote);
+    expect(merged.presets.map((x) => x.id)).toEqual(['b', 'c']);
+    expect(merged.presets[0]!.slots[0]!.color).toBe('#111');
+    expect(merged.defaultId).toBe('c');
+    expect(localChanged && remoteChanged).toBe(true);
+    expect(mergePresets(merged, merged).localChanged).toBe(false);
+  });
+});

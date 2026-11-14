@@ -344,3 +344,40 @@ describe('page loading', () => {
     sub.unsubscribe();
   });
 });
+
+describe('toolbar presets', () => {
+  const preset = (id: string, name: string, color: string, updatedAt: number) => ({
+    id,
+    name,
+    updatedAt,
+    slots: [{ id: `${id}-pen`, kind: 'pen' as const, brush: 'fountain' as const, color, size: 2 }],
+  });
+
+  it('syncs presets and the default between devices; edits and deletions win by time', async () => {
+    const { readPresets, writePresets } = await import('../ink/presets');
+    const a = new NoteboardDB(`a-${crypto.randomUUID()}`);
+    const b = new NoteboardDB(`b-${crypto.randomUUID()}`);
+    await writePresets({ presets: [preset('study', 'Study', '#000', 1), preset('draw', 'Drawing', '#f00', 1)], deletedIds: [], defaultId: 'study', defaultAt: 1 }, a);
+    await syncDevice(a);
+    await syncDevice(b);
+    expect((await readPresets(b)).presets.map((p) => p.name)).toEqual(['Drawing', 'Study']);
+    expect((await readPresets(b)).defaultId).toBe('study');
+
+    // B recolours Study and makes Drawing the default; A deletes Drawing later.
+    const onB = await readPresets(b);
+    await writePresets({ ...onB, presets: onB.presets.map((p) => (p.id === 'study' ? preset('study', 'Study', '#00f', 5) : p)), defaultId: 'draw', defaultAt: 5 }, b);
+    await syncDevice(b);
+    const onA = await readPresets(a);
+    await writePresets({ ...onA, presets: onA.presets.filter((p) => p.id !== 'draw'), deletedIds: ['draw'] }, a);
+    await syncDevice(a);
+    await syncDevice(b);
+
+    for (const db of [a, b]) {
+      const state = await readPresets(db);
+      expect(state.presets.map((p) => p.id)).toEqual(['study']);
+      expect(state.presets[0]!.slots[0]!.color).toBe('#00f');
+      // The chosen default was deleted: the remaining preset takes over.
+      expect(state.defaultId).toBe('study');
+    }
+  });
+});

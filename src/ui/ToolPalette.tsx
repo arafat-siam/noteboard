@@ -22,6 +22,7 @@ import { ITEM_KINDS } from '../ink/selection';
 import type { PenStyle, Stroke } from '../model/types';
 import { DashSample, Icon, ShapeGlyph } from './Icon';
 import { PenIcon, type PenIconKind } from './PenIcon';
+import type { ToolPreset } from '../ink/presets';
 
 export type PaletteSide = 'top' | 'bottom' | 'left' | 'right';
 export type PaletteStyle = 'floating' | 'docked';
@@ -92,9 +93,20 @@ interface Props {
   barsHidden?: boolean;
   /** The small pen button was tapped while the bars are hidden. */
   onShowBars?: () => void;
+  /** Toolbar presets (named sets of pens). */
+  presets?: ToolPreset[];
+  presetId?: string | null;
+  defaultPresetId?: string | null;
+  presetActions?: {
+    switchTo: (id: string) => void;
+    create: () => void;
+    rename: (id: string) => void;
+    setDefault: (id: string) => void;
+    remove: (id: string) => void;
+  };
 }
 
-type Popover = 'slot' | 'eraser' | 'lasso' | 'text' | 'shape' | 'tape' | 'laser' | 'more';
+type Popover = 'slot' | 'eraser' | 'lasso' | 'text' | 'shape' | 'tape' | 'laser' | 'more' | 'presets';
 const TOOLS: { tool: Exclude<ToolKind, 'pen' | 'highlighter'>; label: string }[] = [
   { tool: 'eraser', label: 'Eraser' },
   { tool: 'lasso', label: 'Lasso' },
@@ -625,6 +637,58 @@ export function ToolPalette(props: Props) {
         <p className="popover-hint">Laser marks are never saved. Use the laser when presenting.</p>
       </div>
     );
+  } else if (popover === 'presets') {
+    const presets = props.presets ?? [];
+    const actions = props.presetActions;
+    content = (
+      <div className="palette-popover wide preset-popover" role="dialog" aria-label="Toolbar presets">
+        <div className="popover-title">Toolbar presets</div>
+        <div className="preset-list">
+          {presets.map((preset) => {
+            const active = preset.id === props.presetId;
+            return (
+              <div key={preset.id} className={`preset-row${active ? ' active' : ''}`}>
+                <button className="preset-main" onClick={() => actions?.switchTo(preset.id)} aria-pressed={active}>
+                  <span className="preset-pens" aria-hidden="true">
+                    {preset.slots.slice(0, 6).map((slot) => (
+                      <span key={slot.id} className="preset-swatch" style={{ background: slot.color }} />
+                    ))}
+                  </span>
+                  <span className="preset-name">{preset.name}</span>
+                  {preset.id === props.defaultPresetId && <span className="preset-default">Default</span>}
+                  {active && <Icon name="check" size={16} className="preset-check" />}
+                </button>
+                <button className="preset-tool" aria-label={`Rename ${preset.name}`} title="Rename" onClick={() => actions?.rename(preset.id)}>
+                  <Icon name="edit" size={16} />
+                </button>
+                <button
+                  className="preset-tool"
+                  aria-label={`Use ${preset.name} as the default`}
+                  title="Set as default"
+                  disabled={preset.id === props.defaultPresetId}
+                  onClick={() => actions?.setDefault(preset.id)}
+                >
+                  <Icon name="star" size={16} filled={preset.id === props.defaultPresetId} />
+                </button>
+                <button
+                  className="preset-tool"
+                  aria-label={`Delete ${preset.name}`}
+                  title="Delete"
+                  disabled={presets.length <= 1}
+                  onClick={() => actions?.remove(preset.id)}
+                >
+                  <Icon name="trash" size={16} />
+                </button>
+              </div>
+            );
+          })}
+        </div>
+        <button className="preset-new" onClick={() => actions?.create()}>
+          <Icon name="plus" size={16} /> New preset from current pens
+        </button>
+        <p className="popover-hint">Changes to the pens in the toolbar are saved to the selected preset. The default preset is used when Noteboard starts.</p>
+      </div>
+    );
   } else if (popover === 'more') {
     const p = settings.pointer;
     content = (
@@ -708,6 +772,16 @@ export function ToolPalette(props: Props) {
         </div>
 
         <div className="pen-tray">
+          {props.presetActions && (
+            <button
+              className={`palette-button preset-button${popover === 'presets' ? ' on' : ''}`}
+              aria-label="Toolbar presets"
+              title={props.presets?.find((p) => p.id === props.presetId)?.name ?? 'Toolbar presets'}
+              onClick={() => toggle('presets')}
+            >
+              <Icon name="palette" size={22} />
+            </button>
+          )}
           {settings.slots.map((slot) => {
             const active = penInHand && slot.id === settings.activeSlot;
             return (
