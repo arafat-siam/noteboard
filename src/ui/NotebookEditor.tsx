@@ -343,6 +343,17 @@ export function NotebookEditor({
       return withSlot({ ...s, slots }, id);
     });
   }, []);
+  /** Drag to reorder: the tray (and the hover palette) use this order; it's saved in the preset. */
+  const moveSlot = useCallback((id: string, toIndex: number) => {
+    setSettings((s) => {
+      const from = s.slots.findIndex((x) => x.id === id);
+      if (from < 0) return s;
+      const slots = [...s.slots];
+      const [moved] = slots.splice(from, 1);
+      slots.splice(Math.max(0, Math.min(slots.length, toIndex)), 0, moved!);
+      return { ...s, slots };
+    });
+  }, []);
   const removeSlot = useCallback((id: string) => {
     setSettings((s) => {
       if (s.slots.length <= 1) return s;
@@ -1071,6 +1082,7 @@ export function NotebookEditor({
         updateSlot={updateSlot}
         addSlot={addSlot}
         removeSlot={removeSlot}
+        moveSlot={moveSlot}
         undo={undo}
         redo={redo}
         canUndo={undoStack.length > 0}
@@ -1213,6 +1225,7 @@ export function NotebookEditor({
           settings={settings}
           selectSlot={selectSlot}
           selectTool={selectTool}
+          updateSlot={updateSlot}
           undo={undo}
           redo={redo}
           onClose={closePalette}

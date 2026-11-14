@@ -91,6 +91,8 @@ interface Props {
   onSelectAll?: () => void;
   /** The bars are hidden (tap on empty space): show only the small pen button. */
   barsHidden?: boolean;
+  /** Moves a pen to another place in the tray (drag to reorder). */
+  moveSlot?: (id: string, toIndex: number) => void;
   /** The small pen button was tapped while the bars are hidden. */
   onShowBars?: () => void;
   /** Toolbar presets (named sets of pens). */
@@ -321,6 +323,103 @@ export function ToolPalette(props: Props) {
   const dragProps = { onPointerDown, onPointerMove, onPointerUp, onPointerCancel: onPointerUp };
 
   const classes = `tool-palette ${style} side-${side}${vertical ? ' vertical' : ''}`;
+
+  // ---- Press and hold a pen, then drag it to reorder the tray (saved in the toolbar preset) ----
+  const reorder = useRef<{
+    id: string;
+    pointerId: number;
+    x: number;
+    y: number;
+    timer: number;
+    active: boolean;
+    el: HTMLElement;
+    others: { el: HTMLElement; mid: number }[];
+    mid: number;
+    step: number;
+    target: number;
+    from: number;
+  } | null>(null);
+  const justReordered = useRef(false);
+  const endReorder = (commit: boolean) => {
+    const r = reorder.current;
+    reorder.current = null;
+    if (!r) return;
+    window.clearTimeout(r.timer);
+    if (!r.active) return;
+    r.el.classList.remove('reordering');
+    r.el.style.transform = '';
+    for (const o of r.others) o.el.style.transform = '';
+    justReordered.current = true;
+    window.setTimeout(() => (justReordered.current = false), 400);
+    if (commit && r.target !== r.from) props.moveSlot?.(r.id, r.target);
+  };
+  const reorderProps = (id: string) => ({
+    onPointerDown: (e: React.PointerEvent<HTMLElement>) => {
+      if (!props.moveSlot || (e.pointerType === 'mouse' && e.button !== 0)) return;
+      const el = e.currentTarget;
+      const pens = [...(el.parentElement?.querySelectorAll<HTMLElement>('[data-slot]') ?? [])];
+      const mid = (b: DOMRect) => (vertical ? b.top + b.height / 2 : b.left + b.width / 2);
+      const own = el.getBoundingClientRect();
+      const from = pens.indexOf(el);
+      const next = pens[from + 1] ?? pens[from - 1];
+      const step = next ? Math.abs(mid(next.getBoundingClientRect()) - mid(own)) : vertical ? own.height : own.width;
+      const state = {
+        id,
+        pointerId: e.pointerId,
+        x: e.clientX,
+        y: e.clientY,
+        active: false,
+        el,
+        others: pens.filter((p) => p !== el).map((p) => ({ el: p, mid: mid(p.getBoundingClientRect()) })),
+        mid: mid(own),
+        step,
+        target: from,
+        from,
+        timer: 0,
+      };
+      state.timer = window.setTimeout(() => {
+        state.active = true;
+        setPopover(null);
+        el.classList.add('reordering');
+        try {
+          el.setPointerCapture(state.pointerId);
+        } catch {
+          // Synthetic or already-released pointers can't be captured; dragging still works.
+        }
+        navigator.vibrate?.(8);
+      }, 320);
+      reorder.current = state;
+    },
+    onPointerMove: (e: React.PointerEvent<HTMLElement>) => {
+      const r = reorder.current;
+      if (!r || r.pointerId !== e.pointerId) return;
+      const dx = e.clientX - r.x;
+      const dy = e.clientY - r.y;
+      if (!r.active) {
+        // Moving before the hold completes is a scroll or a tap, not a reorder.
+        if (Math.hypot(dx, dy) > 8) endReorder(false);
+        return;
+      }
+      e.preventDefault();
+      const d = vertical ? dy : dx;
+      r.el.style.transform = vertical ? `translateY(${d}px)` : `translateX(${d}px)`;
+      const centre = r.mid + d;
+      // Where it would land: count the pens whose middle it has passed.
+      let target = r.from;
+      for (const o of r.others) {
+        if (o.mid < r.mid && centre < o.mid) target--;
+        if (o.mid > r.mid && centre > o.mid) target++;
+      }
+      r.target = Math.max(0, Math.min(r.others.length, target));
+      // Make room: the pens it passed slide one place the other way.
+      for (const o of r.others) {
+        const shift = o.mid < r.mid && centre < o.mid ? r.step : o.mid > r.mid && centre > o.mid ? -r.step : 0;
+        o.el.style.transform = shift ? (vertical ? `translateY(${shift}px)` : `translateX(${shift}px)`) : '';
+      }
+    },
+    onPointerUp: () => endReorder(true),
+    onPointerCancel: () => endReorder(false),
+  });
 
   if (isMinimized) {
     return (
@@ -787,10 +886,17 @@ export function ToolPalette(props: Props) {
             return (
               <button
                 key={slot.id}
+                data-slot={slot.id}
                 className={`pen ${active ? 'active' : ''}`}
                 aria-label={`${slot.kind === 'highlighter' ? 'Highlighter' : BRUSHES[slot.brush]?.label ?? 'Pen'}, ${slot.color}`}
                 aria-pressed={active}
+                {...reorderProps(slot.id)}
                 onClick={() => {
+                  // The press was a drag to reorder, not a tap.
+                  if (justReordered.current) {
+                    justReordered.current = false;
+                    return;
+                  }
                   if (active) toggle('slot');
                   else {
                     setPopover(null);

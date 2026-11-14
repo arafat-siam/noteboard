@@ -1,7 +1,8 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { ToolKind, ToolSettings } from '../ink/InkPage';
 import { BRUSHES } from '../ink/brushes';
-import { PenIcon } from './PenIcon';
+import { HIGHLIGHTER_COLORS, PEN_COLORS, type PenSlot } from '../ink/palette';
+import { PenIcon, type PenIconKind } from './PenIcon';
 import { slotIcon } from './ToolPalette';
 import { Icon } from './Icon';
 
@@ -11,6 +12,8 @@ interface Props {
   settings: ToolSettings;
   selectSlot: (id: string) => void;
   selectTool: (tool: ToolKind) => void;
+  /** Changes the pen in hand (colour, size). */
+  updateSlot: (patch: Partial<PenSlot>) => void;
   undo: () => void;
   redo: () => void;
   onClose: () => void;
@@ -18,28 +21,56 @@ interface Props {
 
 /** How long the hovering Pencil rests on an item before it is chosen (no touch needed). */
 const DWELL_MS = 260;
-const RING_RADIUS = 108;
-const DISC_RADIUS = 152;
+/** Gap between the palette's pointer and the Pencil tip. */
+const GAP = 14;
+const PEN_SIZES = [1.2, 2.5, 4.5];
+const HIGHLIGHTER_SIZES = [12, 20, 32];
+const mm = (units: number) => `${((units * 25.4) / 96).toFixed(1)} mm`;
 
-type Entry = { key: string; label: string; icon: Parameters<typeof PenIcon>[0]; active: boolean; choose: () => void };
+type Entry = { key: string; label: string; icon: { kind: PenIconKind; color: string }; active: boolean; choose: () => void };
 
 /**
- * Circular palette under the Pencil tip (squeeze in the shell app, or hover-hold): your pens,
- * eraser and lasso around the ring, undo/redo in the middle. Pick by hovering or tapping.
+ * Compact palette just above the Pencil tip (hover-hold, or squeeze in the shell app), in the
+ * spirit of Apple Notes: undo/redo, the pens of the current preset in the toolbar's order (the
+ * pen in hand stands raised; the row scrolls when there are many), eraser and lasso, a colour
+ * well, then quick colours and three sizes for the pen in hand. Choose by tapping, or by
+ * holding the hovering Pencil still over an item.
  */
-export function QuickPalette({ x, y, settings, selectSlot, selectTool, undo, redo, onClose }: Props) {
+export function QuickPalette({ x, y, settings, selectSlot, selectTool, updateSlot, undo, redo, onClose }: Props) {
   const ref = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const stripRef = useRef<HTMLDivElement>(null);
   const dwell = useRef<number | null>(null);
+  const [place, setPlace] = useState<{ left: number; top: number; below: boolean; arrow: number } | null>(null);
 
-  const cx = Math.min(Math.max(x, DISC_RADIUS + 12), window.innerWidth - DISC_RADIUS - 12);
-  const cy = Math.min(Math.max(y, DISC_RADIUS + 12), window.innerHeight - DISC_RADIUS - 12);
+  // Above the tip when there is room, otherwise below; never past the screen edges.
+  useLayoutEffect(() => {
+    const panel = panelRef.current;
+    if (!panel) return;
+    const w = panel.offsetWidth;
+    const h = panel.offsetHeight;
+    const below = y - GAP - h < 70;
+    const left = Math.min(Math.max(x - w / 2, 10), window.innerWidth - w - 10);
+    const top = below ? y + GAP : y - GAP - h;
+    setPlace({ left, top, below, arrow: Math.min(Math.max(x - left, 22), w - 22) });
+  }, [x, y]);
+
+  // Keep the pen in hand in view when the row scrolls.
+  useLayoutEffect(() => {
+    stripRef.current?.querySelector<HTMLElement>('.qp-tool.active')?.scrollIntoView({ inline: 'center', block: 'nearest' });
+  }, []);
 
   useEffect(() => {
     const onDown = (e: PointerEvent) => {
-      if (!ref.current?.contains(e.target as Node)) onClose(); // the stroke still happens
+      if (!panelRef.current?.contains(e.target as Node)) onClose(); // the stroke still happens
     };
     const onMove = (e: PointerEvent) => {
-      if (Math.hypot(e.clientX - cx, e.clientY - cy) > DISC_RADIUS + 90) onClose();
+      const r = panelRef.current?.getBoundingClientRect();
+      if (!r) return;
+      // Moving the hovering Pencil well away closes it.
+      const dx = Math.max(r.left - e.clientX, 0, e.clientX - r.right);
+      const dy = Math.max(r.top - e.clientY, 0, e.clientY - r.bottom);
+      if (Math.hypot(dx, dy) > 120) onClose();
     };
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
     window.addEventListener('pointerdown', onDown, true);
@@ -51,75 +82,116 @@ export function QuickPalette({ x, y, settings, selectSlot, selectTool, undo, red
       window.removeEventListener('keydown', onKey);
       if (dwell.current != null) clearTimeout(dwell.current);
     };
-  }, [cx, cy, onClose]);
+  }, [onClose]);
 
   const penInHand = settings.tool === 'pen' || settings.tool === 'highlighter';
-  const entries: Entry[] = [
+  const activeSlot = settings.slots.find((s) => s.id === settings.activeSlot) ?? settings.slots[0];
+  const isHighlighter = activeSlot?.kind === 'highlighter';
+
+  const tools: Entry[] = [
+    // Same order as the toolbar (drag pens there to reorder; saved in the toolbar preset).
     ...settings.slots.map((slot) => ({
       key: slot.id,
-      label: slot.kind === 'highlighter' ? 'Highlighter' : BRUSHES[slot.brush]?.label ?? 'Pen',
+      label: slot.kind === 'highlighter' ? 'Highlighter' : (BRUSHES[slot.brush]?.label ?? 'Pen'),
       icon: { kind: slotIcon(slot), color: slot.color },
       active: penInHand && slot.id === settings.activeSlot,
       choose: () => selectSlot(slot.id),
     })),
     { key: 'eraser', label: 'Eraser', icon: { kind: 'eraser', color: '#888' }, active: settings.tool === 'eraser', choose: () => selectTool('eraser') },
     { key: 'lasso', label: 'Lasso', icon: { kind: 'lasso', color: '#888' }, active: settings.tool === 'lasso', choose: () => selectTool('lasso') },
-    { key: 'text', label: 'Text', icon: { kind: 'text', color: settings.text.color }, active: settings.tool === 'text', choose: () => selectTool('text') },
-    { key: 'shape', label: 'Shapes', icon: { kind: 'shape', color: settings.shape.color }, active: settings.tool === 'shape', choose: () => selectTool('shape') },
-    { key: 'tape', label: 'Tape', icon: { kind: 'tape', color: settings.tape.color }, active: settings.tool === 'tape', choose: () => selectTool('tape') },
-    { key: 'laser', label: 'Laser pointer', icon: { kind: 'laser', color: settings.pointer.laserColor }, active: settings.tool === 'laser', choose: () => selectTool('laser') },
   ];
 
-  const pick = (choose: () => void) => {
+  const pick = (choose: () => void, close = true) => {
     choose();
-    onClose();
+    if (close) onClose();
   };
-
-  const hoverPick = (choose: () => void) => ({
+  const hoverPick = (choose: () => void, close = true) => ({
     onPointerEnter: (e: React.PointerEvent) => {
       if (e.pointerType !== 'pen' || e.buttons !== 0) return;
       if (dwell.current != null) clearTimeout(dwell.current);
-      dwell.current = window.setTimeout(() => pick(choose), DWELL_MS);
+      dwell.current = window.setTimeout(() => pick(choose, close), DWELL_MS);
     },
     onPointerLeave: () => {
       if (dwell.current != null) clearTimeout(dwell.current);
       dwell.current = null;
     },
-    onClick: () => pick(choose),
+    onClick: () => pick(choose, close),
   });
 
-  const activeColor = settings.slots.find((s) => s.id === settings.activeSlot)?.color ?? '#000';
+  // Colour and size apply to the pen in hand (and put it in hand if another tool was).
+  const setPen = (patch: Partial<PenSlot>) => {
+    if (!activeSlot) return;
+    if (!penInHand) selectSlot(activeSlot.id);
+    updateSlot(patch);
+  };
+  const colours = (isHighlighter ? HIGHLIGHTER_COLORS : PEN_COLORS).slice(0, 6);
+  const sizes = isHighlighter ? HIGHLIGHTER_SIZES : PEN_SIZES;
+  const nearestSize = sizes.reduce((best, s) => (Math.abs(s - (activeSlot?.size ?? 0)) < Math.abs(best - (activeSlot?.size ?? 0)) ? s : best), sizes[0]!);
 
   return (
     <div ref={ref} className="quick-palette" role="menu" aria-label="Quick tools">
-      <div className="quick-disc" style={{ left: cx, top: cy, width: DISC_RADIUS * 2, height: DISC_RADIUS * 2 }} />
-      {entries.map((entry, i) => {
-        const angle = -90 + (i * 360) / entries.length;
-        const a = (angle * Math.PI) / 180;
-        return (
-          <button
-            key={entry.key}
-            role="menuitem"
-            aria-label={entry.label}
-            className={`quick-item ${entry.active ? 'active' : ''}`}
-            style={{ left: cx + RING_RADIUS * Math.cos(a), top: cy + RING_RADIUS * Math.sin(a) }}
-            {...hoverPick(entry.choose)}
-          >
-            {/* Pens point outward, like tools arranged around a dial. */}
-            <span className="quick-pen" style={{ transform: `rotate(${angle + 90}deg)` }}>
-              <PenIcon {...entry.icon} />
-            </span>
-          </button>
-        );
-      })}
-      <div className="quick-center" style={{ left: cx, top: cy }}>
-        <button aria-label="Undo" className="quick-action" onClick={undo}>
-          <Icon name="undo" size={20} />
-        </button>
-        <span className="quick-color" style={{ background: activeColor }} />
-        <button aria-label="Redo" className="quick-action" onClick={redo}>
-          <Icon name="redo" size={20} />
-        </button>
+      <div
+        ref={panelRef}
+        className={`qp-panel${place?.below ? ' below' : ''}`}
+        style={place ? { left: place.left, top: place.top, ['--arrow' as string]: `${place.arrow}px` } : { left: -9999, top: 0 }}
+      >
+        <div className="qp-top">
+          <div className="qp-history">
+            <button className="qp-icon" aria-label="Undo" onClick={undo}>
+              <Icon name="undo" size={18} />
+            </button>
+            <button className="qp-icon" aria-label="Redo" onClick={redo}>
+              <Icon name="redo" size={18} />
+            </button>
+          </div>
+          <div className="qp-strip" ref={stripRef}>
+            {tools.map((t, i) => (
+              <button
+                key={t.key}
+                role="menuitem"
+                aria-label={t.label}
+                aria-pressed={t.active}
+                className={`qp-tool${t.active ? ' active' : ''}${i === settings.slots.length ? ' qp-after-pens' : ''}`}
+                {...hoverPick(t.choose)}
+              >
+                <span className="qp-pen">
+                  <PenIcon {...t.icon} />
+                </span>
+              </button>
+            ))}
+          </div>
+          <label className="qp-well" aria-label="More colours" title="More colours">
+            <span className="qp-well-dot" style={{ background: activeSlot?.color }} />
+            <input type="color" value={activeSlot?.color ?? '#000000'} onChange={(e) => setPen({ color: e.target.value })} />
+          </label>
+        </div>
+        <div className="qp-bottom">
+          <div className="qp-colours">
+            {colours.map((c) => (
+              <button
+                key={c}
+                className={`qp-colour${activeSlot?.color.toLowerCase() === c.toLowerCase() ? ' on' : ''}`}
+                style={{ background: c }}
+                aria-label={`Colour ${c}`}
+                {...hoverPick(() => setPen({ color: c }), false)}
+              />
+            ))}
+          </div>
+          <span className="qp-divider" />
+          <div className="qp-sizes">
+            {sizes.map((s, i) => (
+              <button
+                key={s}
+                className={`qp-size${s === nearestSize ? ' on' : ''}`}
+                aria-label={['Thin', 'Medium', 'Thick'][i]}
+                {...hoverPick(() => setPen({ size: s }), false)}
+              >
+                <span style={{ width: 4 + i * 3, height: 4 + i * 3 }} />
+              </button>
+            ))}
+          </div>
+          <span className="qp-size-label">{activeSlot ? mm(activeSlot.size) : ''}</span>
+        </div>
       </div>
     </div>
   );
