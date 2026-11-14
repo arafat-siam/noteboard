@@ -2058,7 +2058,7 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
   const paste = async (at: Point | null) => {
     setCanvasMenu(null);
     if (pasteInk(at)) return;
-    if (!(await pasteFromSystem(at))) alert('There is nothing to paste. Copy some ink or a picture first.');
+    if (!(await pasteFromSystem(at))) alert('Nothing to paste. Copy ink or a picture first.');
   };
 
   const arrangeSelection = (action: ArrangeAction) => {
@@ -2411,7 +2411,7 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
         const at = { x: (e.clientX - box.left) / scale, y: (e.clientY - box.top) / scale };
         void resolveDropped(dropped).then((blobs) => {
           if (blobs.length) void insertPictures(blobs, at);
-          else if (dropped.files.length || dropped.urls.length) alert('This picture could not be added. Try saving it to Photos first, then drag it from there.');
+          else if (dropped.files.length || dropped.urls.length) alert('This picture could not be added. Save it to Photos first, then drag it from there.');
         });
       }}
     >
@@ -2553,7 +2553,7 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
               <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="11" height="11" rx="2.5" /><rect x="9" y="9" width="11" height="11" rx="2.5" /><path d="M14.5 12.5v4M12.5 14.5h4" /></svg>
               <span className="sel-label">Duplicate</span>
             </button>
-            <button className="sel-btn" aria-label="Lock" title="Lock so it can't be selected or moved" onClick={lockSelection}>
+            <button className="sel-btn" aria-label="Lock" title="Lock to prevent selecting or moving" onClick={lockSelection}>
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 10.5h11a1.5 1.5 0 0 1 1.5 1.5v7a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 5 19v-7a1.5 1.5 0 0 1 1.5-1.5zM8.5 10.5V7.5a3.5 3.5 0 0 1 7 0v3" /></svg>
               <span className="sel-label">Lock</span>
             </button>

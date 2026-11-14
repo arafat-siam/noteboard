@@ -36,7 +36,7 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
               </button>
             ))}
           </div>
-          <p className="settings-hint">Automatic follows the iPad's Light or Dark mode. Pages stay white so ink colours look right.</p>
+          <p className="settings-hint">Automatic matches the iPad's appearance setting. Pages remain white so ink colours display accurately.</p>
         </section>
 
         <section>

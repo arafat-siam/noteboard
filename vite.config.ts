@@ -17,8 +17,8 @@ export default defineConfig(({ command }) => ({
         description: 'Handwritten notes with Apple Pencil, synced to your Google Drive.',
         display: 'standalone',
         orientation: 'any',
-        background_color: '#f2f2f7',
-        theme_color: '#2f6fde',
+        background_color: '#ffffff',
+        theme_color: '#1d9e75',
         icons: [
           { src: 'icon-192.png', sizes: '192x192', type: 'image/png' },
           { src: 'icon-512.png', sizes: '512x512', type: 'image/png' },
@@ -28,7 +28,7 @@ export default defineConfig(({ command }) => ({
       workbox: {
         globPatterns: ['**/*.{js,mjs,css,html,svg,png,woff2}'],
         // Test builds under /lab/ are separate apps with their own service workers.
-        globIgnores: ['lab/**', 'preview/**'],
+        globIgnores: ['lab/**', 'preview/**', 'splash/**'],
         // The PDF engine's worker is ~1.4 MB; keep it cached so PDFs open offline.
         maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
         navigateFallback: 'index.html',

@@ -110,7 +110,7 @@ function LockScreen({ mode, onUnlocked, onSkip }: { mode: 'setup' | 'locked'; on
       }
       if (pin !== firstPin) {
         setFirstPin(null);
-        return fail("PINs didn't match. Start again.");
+        return fail('Passcodes do not match. Try again.');
       }
       setBusy(true);
       await pinLock.setPin(pin);
@@ -124,7 +124,7 @@ function LockScreen({ mode, onUnlocked, onSkip }: { mode: 'setup' | 'locked'; on
     setBusy(false);
     if (result.ok) return onUnlocked();
     setWaitMs(result.waitMs);
-    fail(result.waitMs > 0 ? 'Too many attempts.' : 'Wrong PIN.');
+    fail(result.waitMs > 0 ? 'Too many attempts.' : 'Incorrect passcode.');
   }, [busy, waitMs, mode, pin, firstPin, onUnlocked]);
 
   const press = useCallback(
@@ -135,6 +135,12 @@ function LockScreen({ mode, onUnlocked, onSkip }: { mode: 'setup' | 'locked'; on
     },
     [],
   );
+
+  // Like iPadOS: once the PIN's length is known, it opens as soon as that many digits are typed.
+  const knownLength = mode === 'locked' ? pinLock.pinLength() : null;
+  useEffect(() => {
+    if (knownLength !== null && pin.length === knownLength) void submit();
+  }, [pin, knownLength]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -147,7 +153,7 @@ function LockScreen({ mode, onUnlocked, onSkip }: { mode: 'setup' | 'locked'; on
   }, [press, submit]);
 
   const title =
-    mode === 'locked' ? 'Enter PIN' : firstPin === null ? 'Create a PIN for Noteboard' : 'Enter the same PIN again';
+    mode === 'locked' ? 'Enter passcode' : firstPin === null ? 'Create a passcode' : 'Confirm passcode';
   const seconds = Math.ceil(waitMs / 1000);
 
   return (
@@ -159,16 +165,16 @@ function LockScreen({ mode, onUnlocked, onSkip }: { mode: 'setup' | 'locked'; on
         <h1>{title}</h1>
         {mode === 'setup' && firstPin === null && (
           <p className="lock-hint">
-            {PIN_MIN_LENGTH}–{PIN_MAX_LENGTH} digits to open Noteboard. You can change it or turn it off later in Settings.
+            Use {PIN_MIN_LENGTH} to {PIN_MAX_LENGTH} digits. You can change or turn off the passcode in Settings.
           </p>
         )}
         <div className={`pin-dots ${shake ? 'shake' : ''}`} aria-label={`${pin.length} digits entered`}>
-          {Array.from({ length: Math.max(PIN_MIN_LENGTH, pin.length) }, (_, i) => (
+          {Array.from({ length: Math.max(knownLength ?? PIN_MIN_LENGTH, pin.length) }, (_, i) => (
             <span key={i} className={i < pin.length ? 'filled' : ''} />
           ))}
         </div>
         <div className="lock-message" role="alert">
-          {waitMs > 0 ? `Too many attempts. Try again in ${seconds}s.` : message}
+          {waitMs > 0 ? `Too many attempts. Try again in ${seconds} s.` : message}
         </div>
         <div className="keypad">
           {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map((d) => (
@@ -182,18 +188,22 @@ function LockScreen({ mode, onUnlocked, onSkip }: { mode: 'setup' | 'locked'; on
           <button onClick={() => press('0')} disabled={waitMs > 0}>
             0
           </button>
-          <button
-            className="keypad-aux ok"
-            onClick={() => void submit()}
-            disabled={busy || waitMs > 0 || pin.length < PIN_MIN_LENGTH}
-            aria-label="OK"
-          >
-            OK
-          </button>
+          {knownLength !== null ? (
+            <span aria-hidden="true" />
+          ) : (
+            <button
+              className="keypad-aux ok"
+              onClick={() => void submit()}
+              disabled={busy || waitMs > 0 || pin.length < PIN_MIN_LENGTH}
+              aria-label={mode === 'setup' ? 'Continue' : 'Unlock'}
+            >
+              <Icon name="check" size={24} />
+            </button>
+          )}
         </div>
         {mode === 'setup' && (
           <button className="link lock-forgot" onClick={onSkip}>
-            Not now (no passcode)
+            Skip for now
           </button>
         )}
         {mode === 'locked' && (
@@ -201,14 +211,14 @@ function LockScreen({ mode, onUnlocked, onSkip }: { mode: 'setup' | 'locked'; on
             className="link lock-forgot"
             onClick={() => {
               const driveNote = wasConnected()
-                ? 'Your notes in Google Drive are safe and will download again after you sign in to Google.'
-                : 'Google Drive is NOT connected, so notes on this iPad will be lost permanently.';
-              if (confirm(`Forgot your PIN?\n\nThis erases Noteboard on this iPad and lets you set a new PIN.\n\n${driveNote}`)) {
+                ? 'Your notes in Google Drive are not affected and will download again after you sign in to Google.'
+                : 'Google Drive is not connected. Notes on this iPad will be permanently deleted.';
+              if (confirm(`Reset Noteboard on this iPad?\n\nAll local data will be erased and you can set a new passcode.\n\n${driveNote}`)) {
                 void resetThisDevice();
               }
             }}
           >
-            Forgot PIN?
+            Forgot passcode?
           </button>
         )}
       </div>

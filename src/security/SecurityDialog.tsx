@@ -35,7 +35,7 @@ export function SecurityDialog({ onClose }: { onClose: () => void }) {
     setMessage(null);
   };
   const failure = (r: Exclude<VerifyResult, { ok: true }>) =>
-    setMessage({ text: r.waitMs > 0 ? `Too many attempts. Try again in ${Math.ceil(r.waitMs / 1000)}s.` : 'The current PIN is wrong.', ok: false });
+    setMessage({ text: r.waitMs > 0 ? `Too many attempts. Try again in ${Math.ceil(r.waitMs / 1000)} s.` : 'The current passcode is incorrect.', ok: false });
 
   const submit = async () => {
     if (mode === 'turn-off') {
@@ -49,7 +49,7 @@ export function SecurityDialog({ onClose }: { onClose: () => void }) {
       return;
     }
     if (!isValidPin(next)) return setMessage({ text: `The PIN must be ${PIN_MIN_LENGTH}–${PIN_MAX_LENGTH} digits.`, ok: false });
-    if (next !== confirmPin) return setMessage({ text: "The two new PINs don't match.", ok: false });
+    if (next !== confirmPin) return setMessage({ text: 'The new passcodes do not match.', ok: false });
     setBusy(true);
     if (mode === 'turn-on') {
       await pinLock.setPin(next);
@@ -63,7 +63,7 @@ export function SecurityDialog({ onClose }: { onClose: () => void }) {
     setBusy(false);
     if (!r.ok) return failure(r);
     reset('overview');
-    setMessage({ text: 'PIN changed.', ok: true });
+    setMessage({ text: 'Passcode changed.', ok: true });
   };
 
   const pinInput = (label: string, value: string, set: (v: string) => void, autoFocus = false) => (
@@ -83,12 +83,12 @@ export function SecurityDialog({ onClose }: { onClose: () => void }) {
   );
 
   if (mode !== 'overview') {
-    const title = mode === 'turn-on' ? 'Turn passcode on' : mode === 'change' ? 'Change PIN' : 'Turn passcode off';
+    const title = mode === 'turn-on' ? 'Turn passcode on' : mode === 'change' ? 'Change passcode' : 'Turn passcode off';
     return (
       <Modal title={title} onClose={onClose}>
-        {mode !== 'turn-on' && pinInput('Current PIN', current, setCurrent, true)}
-        {mode !== 'turn-off' && pinInput('New PIN', next, setNext, mode === 'turn-on')}
-        {mode !== 'turn-off' && pinInput('New PIN again', confirmPin, setConfirmPin)}
+        {mode !== 'turn-on' && pinInput('Current passcode', current, setCurrent, true)}
+        {mode !== 'turn-off' && pinInput('New passcode', next, setNext, mode === 'turn-on')}
+        {mode !== 'turn-off' && pinInput('Confirm new passcode', confirmPin, setConfirmPin)}
         {message && <p className={message.ok ? 'form-ok' : 'form-error'}>{message.text}</p>}
         <div className="modal-actions">
           <button onClick={() => reset('overview')}>Back</button>
@@ -105,7 +105,7 @@ export function SecurityDialog({ onClose }: { onClose: () => void }) {
       <button className="toggle-row" role="switch" aria-checked={hasPin} onClick={() => reset(hasPin ? 'turn-off' : 'turn-on')}>
         <span>
           Ask for a passcode
-          <small>{hasPin ? 'Noteboard asks for your PIN when it opens' : 'Anyone holding this iPad can open Noteboard'}</small>
+          <small>{hasPin ? 'Noteboard requires the passcode when it opens' : 'Anyone with access to this iPad can open Noteboard'}</small>
         </span>
         <span className={`switch ${hasPin ? 'on' : ''}`} />
       </button>
@@ -114,7 +114,7 @@ export function SecurityDialog({ onClose }: { onClose: () => void }) {
         <>
           <div className="menu-list">
             <button onClick={() => reset('change')}>
-              <Icon name="lock" size={18} /> Change PIN
+              <Icon name="lock" size={18} /> Change passcode
             </button>
           </div>
           <label className="field-label">Lock automatically</label>
@@ -133,7 +133,7 @@ export function SecurityDialog({ onClose }: { onClose: () => void }) {
               </option>
             ))}
           </select>
-          <p className="lock-hint">How long Noteboard can stay in the background before it asks for the PIN again.</p>
+          <p className="lock-hint">How long Noteboard can remain in the background before the passcode is required again.</p>
         </>
       )}
       <p className="lock-hint">

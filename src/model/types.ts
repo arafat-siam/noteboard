@@ -223,4 +223,4 @@ export function newId(): ID {
 }
 
 export const FOLDER_COLORS = ['#5b8def', '#34a853', '#f4b400', '#ea4335', '#a142f4', '#00a5b5', '#8d6e63', '#607d8b'];
-export const COVER_COLORS = ['#2f6fde', '#1e8e3e', '#d93025', '#f29900', '#9334e6', '#12a4af', '#5f6368', '#202124'];
+export const COVER_COLORS = ['#1d9e75', '#2f6fde', '#d93025', '#f29900', '#9334e6', '#12a4af', '#5f6368', '#202124'];

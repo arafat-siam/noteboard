@@ -438,7 +438,7 @@ export function ToolPalette(props: Props) {
         />
         <SliderRow label="Size" value={settings.eraserSize} min={ERASER_SIZE_RANGE.min} max={ERASER_SIZE_RANGE.max} step={ERASER_SIZE_RANGE.step} onChange={(v) => update({ eraserSize: v })} />
         <Toggle label="Highlighter only" hint="Leaves pen ink untouched" on={!!settings.eraseHighlighterOnly} onChange={(v) => update({ eraseHighlighterOnly: v })} />
-        <p className="popover-hint">Pictures and text boxes are never erased. Select them and use Delete.</p>
+        <p className="popover-hint">The eraser does not remove pictures or text boxes. Select them and choose Delete.</p>
       </div>
     );
   } else if (popover === 'lasso') {
@@ -544,7 +544,7 @@ export function ToolPalette(props: Props) {
         </div>
         <ColorPicker colors={PEN_COLORS} value={t.color} onChange={(c) => setText({ color: c })} label="Text colour" />
         <Toggle label="Highlight behind text" on={!!t.background} onChange={(v) => setText({ background: v ? '#fff3b0' : null })} />
-        <p className="popover-hint">Tap the page to start typing. Drag sideways first to choose the box width. Tap a text box with this tool to edit it.</p>
+        <p className="popover-hint">Tap the page to add a text box, or drag to set its width. Tap an existing text box to edit it.</p>
       </div>
     );
   } else if (popover === 'shape') {
@@ -592,7 +592,7 @@ export function ToolPalette(props: Props) {
         {s.fill && (
           <SliderRow label="Fill opacity" value={s.fillOpacity} min={0.05} max={1} step={0.05} format={(v) => `${Math.round(v * 100)}%`} onChange={(v) => setShape({ fillOpacity: v })} />
         )}
-        <p className="popover-hint">Drag on the page to draw. Nearly square shapes snap to perfect squares and circles; lines snap every 15°.</p>
+        <p className="popover-hint">Drag on the page to draw a shape. Near-square shapes snap to squares and circles, and lines snap in 15° steps.</p>
       </div>
     );
   } else if (popover === 'tape') {
@@ -603,7 +603,7 @@ export function ToolPalette(props: Props) {
         <div className="tape-sample" style={{ height: Math.min(48, tp.width), background: tp.color }} />
         <ColorPicker colors={TAPE_COLORS} value={tp.color} onChange={(c) => update({ tape: { ...tp, color: c } })} label="Tape colour" />
         <SliderRow label="Width" value={tp.width} min={TAPE_SIZE_RANGE.min} max={TAPE_SIZE_RANGE.max} step={TAPE_SIZE_RANGE.step} onChange={(v) => update({ tape: { ...tp, width: v } })} />
-        <p className="popover-hint">Drag over answers to hide them. Tap the tape (with this tool or a finger) to peek underneath; tap again to cover it.</p>
+        <p className="popover-hint">Drag over content to cover it. Tap the tape to reveal what is underneath, and tap again to cover it.</p>
       </div>
     );
   } else if (popover === 'laser') {
@@ -622,7 +622,7 @@ export function ToolPalette(props: Props) {
           ]}
           onChange={(v) => update({ pointer: { ...p, laserTrail: v } })}
         />
-        <p className="popover-hint">The laser is never saved. Great for presenting on a shared screen.</p>
+        <p className="popover-hint">Laser marks are never saved. Use the laser when presenting.</p>
       </div>
     );
   } else if (popover === 'more') {
@@ -645,7 +645,7 @@ export function ToolPalette(props: Props) {
         />
         <Toggle
           label="Tap empty space to hide bars"
-          hint="A finger tap on empty paper hides the top bar and shrinks the tools. Tap again to bring them back"
+          hint="Tap empty space with a finger to hide the top bar and minimize the toolbar. Tap again to restore them."
           on={!!layout.tapHidesBars}
           onChange={(v) => setLayout({ ...layout, tapHidesBars: v })}
         />
@@ -661,9 +661,9 @@ export function ToolPalette(props: Props) {
           onChange={(v) => update({ pointer: { ...p, cursor: v } })}
         />
         <Toggle label="Hover pointer" hint="Shows where ink will land while the Pencil hovers" on={settings.hoverPreview !== false} onChange={(v) => update({ hoverPreview: v })} />
-        <Toggle label="Hover palette" hint="Hold the Pencil still just above the page" on={settings.hoverPalette} onChange={(v) => update({ hoverPalette: v })} />
+        <Toggle label="Hover palette" hint="Hold the Pencil still just above the page to open it" on={settings.hoverPalette} onChange={(v) => update({ hoverPalette: v })} />
         <Toggle label="Shape recognition" hint="Hold the Pencil still at the end of a stroke" on={settings.shapeSnap} onChange={(v) => update({ shapeSnap: v })} />
-        <Toggle label="Draw with finger" hint="Otherwise fingers scroll and zoom" on={settings.fingerDraws} onChange={(v) => update({ fingerDraws: v })} />
+        <Toggle label="Draw with finger" hint="When off, fingers scroll and zoom" on={settings.fingerDraws} onChange={(v) => update({ fingerDraws: v })} />
       </div>
     );
   }

@@ -47,7 +47,7 @@ function LinkRow({ record, onStopped }: { record: ShareRecord; onStopped: () => 
           onClick={() => {
             if (!confirm(`Stop sharing “${record.name}”? The link stops working for everyone.`)) return;
             const token = getToken();
-            if (!token) return alert('Sign in to Google Drive first (sidebar), then try again.');
+            if (!token) return alert('Connect Google Drive from the account menu, then try again.');
             setBusy(true);
             void stopShare(db, new DriveClient(token), record.manifestId)
               .then(onStopped)
@@ -115,7 +115,7 @@ export function ShareDialog({ item, onClose }: { item: LibraryItem; onClose: () 
       ) : (
         <>
           <p className="settings-hint">
-            Anyone with the link can view a copy of {what} as it is now. They can't change it, and later changes aren't
+            Anyone with the link can view a copy of {what} as it is now. They cannot edit it, and later changes are not
             included: share again for a new copy.
           </p>
           {locked.length > 0 && (
@@ -123,7 +123,7 @@ export function ShareDialog({ item, onClose }: { item: LibraryItem; onClose: () 
               <div className="field-label">
                 <Icon name="lock" size={14} /> Locked notebooks stay locked
               </div>
-              <p className="settings-hint">The copy is encrypted with the notebook passcode. Viewers must type it to read.</p>
+              <p className="settings-hint">The copy is encrypted with the notebook passcode. Viewers must enter it to read the notebook.</p>
               {locked.map((nb) => (
                 <label key={nb.id} className="share-passcode">
                   <span>{nb.name}</span>

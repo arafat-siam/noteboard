@@ -24,8 +24,11 @@ import { ColorRow, Modal, MoveDialog, NewNotebookDialog, PromptDialog } from './
 import { act, pathOf, useLibrary, type LibraryState } from './useLibrary';
 import { importPdf } from '../pdf/pdf';
 import { setLocalOnly } from '../sync/localOnly';
+import { useSyncStatus } from '../sync/instance';
+import { useLiveQuery } from 'dexie-react-hooks';
 import { readDragIds, writeDragIds } from './dnd';
 import { Icon, type IconName } from './Icon';
+import { MenuButton, MenuItem, MenuLabel, MenuSeparator } from './Menu';
 import { NotebookLockDialog, UnlockNotebook } from './NotebookLockDialogs';
 import { ShareDialog } from './ShareDialog';
 import { PageThumbnail } from './PageManager';
@@ -79,6 +82,14 @@ export function LibraryView({ route, onNavigate, onOpenNotebook, onToggleSidebar
   const [selecting, setSelecting] = useState(false);
   const [selected, setSelected] = useState<Set<ID>>(new Set());
   const [dialog, setDialog] = useState<Dialog>(null);
+  const pdfInputRef = useRef<HTMLInputElement>(null);
+  // Notebooks with pages not yet uploaded (shown only while Drive sync is connected).
+  const syncState = useSyncStatus().state;
+  const syncing = syncState !== 'signed-out' && syncState !== 'not-configured';
+  const pendingNotebooks = useLiveQuery(
+    async () => new Set((await db.pages.where('dirty').equals(1).toArray()).map((p) => p.notebookId)),
+    [],
+  ) ?? new Set<ID>();
   const [importing, setImporting] = useState(false);
   const [menuFor, setMenuFor] = useState<ID | null>(null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
@@ -201,6 +212,7 @@ export function LibraryView({ route, onNavigate, onOpenNotebook, onToggleSidebar
           onMenu={() => setMenuFor(item.id)}
           dragIds={selected.has(item.id) ? selectedIds : [item.id]}
           dropProps={item.kind === 'folder' && !inTrash ? dropOn(item.id, item.id) : undefined}
+          pending={syncing && pendingNotebooks.has(item.id) && !library.localOnly.has(item.id)}
         />
       ))}
     </div>
@@ -244,60 +256,75 @@ export function LibraryView({ route, onNavigate, onOpenNotebook, onToggleSidebar
         </label>
         {!inTrash && (
           <>
-            <select className="select" value={sort} onChange={(e) => setSort(e.target.value as SortKey)} aria-label="Sort by">
-              <option value="name">Name</option>
-              <option value="updated">Last edited</option>
-              <option value="created">Date created</option>
-            </select>
-            <div className="view-toggle" role="group" aria-label="View">
-              <button className={layout === 'grid' ? 'on' : ''} aria-label="Grid" aria-pressed={layout === 'grid'} onClick={() => setLayout('grid')}>
-                <Icon name="grid" size={18} />
-              </button>
-              <button className={layout === 'list' ? 'on' : ''} aria-label="List" aria-pressed={layout === 'list'} onClick={() => setLayout('list')}>
-                <Icon name="list" size={18} />
-              </button>
-            </div>
-            <button className={`text-button ${selecting ? 'active' : ''}`} onClick={() => { setSelecting(!selecting); setSelected(new Set()); }}>
-              {selecting ? 'Done' : 'Select'}
+            <MenuButton
+              className="header-icon"
+              label="View and sort options"
+              menu={(close) => (
+                <>
+                  <MenuLabel>View</MenuLabel>
+                  <MenuItem icon="grid" label="Grid" checked={layout === 'grid'} onClick={() => { setLayout('grid'); close(); }} />
+                  <MenuItem icon="list" label="List" checked={layout === 'list'} onClick={() => { setLayout('list'); close(); }} />
+                  <MenuSeparator />
+                  <MenuLabel>Sort by</MenuLabel>
+                  <MenuItem label="Name" checked={sort === 'name'} onClick={() => { setSort('name'); close(); }} />
+                  <MenuItem label="Last edited" checked={sort === 'updated'} onClick={() => { setSort('updated'); close(); }} />
+                  <MenuItem label="Date created" checked={sort === 'created'} onClick={() => { setSort('created'); close(); }} />
+                </>
+              )}
+            >
+              <Icon name="sliders" size={20} />
+            </MenuButton>
+            <button
+              className={`header-icon${selecting ? ' on' : ''}`}
+              aria-label={selecting ? 'Finish selecting' : 'Select items'}
+              title={selecting ? 'Done' : 'Select'}
+              onClick={() => {
+                setSelecting(!selecting);
+                setSelected(new Set());
+              }}
+            >
+              <Icon name={selecting ? 'close' : 'check'} size={20} />
             </button>
           </>
         )}
         {route.view === 'library' && !query && (
           <>
-            <button className="toolbar-button" onClick={() => setDialog({ kind: 'new-folder' })} title="New folder">
-              <Icon name="folderPlus" size={20} />
-              <span>Folder</span>
-            </button>
-            <label className={`toolbar-button import-pdf ${importing ? 'busy' : ''}`} title="Import a PDF to write on">
-              <Icon name="fileImport" size={20} />
-              <span>{importing ? 'Importing' : 'Import PDF'}</span>
-              <input
-                type="file"
-                accept="application/pdf,.pdf"
-                multiple
-                hidden
-                disabled={importing}
-                onChange={(e) => {
-                  const files = [...(e.target.files ?? [])];
-                  e.target.value = '';
-                  if (!files.length) return;
-                  setImporting(true);
-                  void act(async () => {
-                    let first: string | null = null;
-                    for (const file of files) {
-                      const notebook = await importPdf(db, file, folderId);
-                      first ??= notebook.id;
-                    }
-                    // A single PDF opens straight away, ready to annotate.
-                    if (files.length === 1 && first) onOpenNotebook(first);
-                  }).finally(() => setImporting(false));
-                }}
-              />
-            </label>
-            <button className="primary new-notebook" onClick={() => setDialog({ kind: 'new-notebook' })}>
-              <Icon name="plus" size={18} />
-              <span>New notebook</span>
-            </button>
+            <input
+              ref={pdfInputRef}
+              type="file"
+              accept="application/pdf,.pdf"
+              multiple
+              hidden
+              onChange={(e) => {
+                const files = [...(e.target.files ?? [])];
+                e.target.value = '';
+                if (!files.length) return;
+                setImporting(true);
+                void act(async () => {
+                  let first: string | null = null;
+                  for (const file of files) {
+                    const notebook = await importPdf(db, file, folderId);
+                    first ??= notebook.id;
+                  }
+                  // A single PDF opens straight away, ready to annotate.
+                  if (files.length === 1 && first) onOpenNotebook(first);
+                }).finally(() => setImporting(false));
+              }}
+            />
+            <MenuButton
+              className="round-add"
+              label={importing ? 'Importing PDF' : 'Create or import'}
+              menu={(close) => (
+                <>
+                  <MenuItem icon="notebook" label="New notebook" onClick={() => { close(); setDialog({ kind: 'new-notebook' }); }} />
+                  <MenuItem icon="folderPlus" label="New folder" onClick={() => { close(); setDialog({ kind: 'new-folder' }); }} />
+                  <MenuSeparator />
+                  <MenuItem icon="fileImport" label="Import PDF" disabled={importing} onClick={() => { close(); pdfInputRef.current?.click(); }} />
+                </>
+              )}
+            >
+              {importing ? <Icon name="sync" size={22} className="spin" /> : <Icon name="plus" size={24} />}
+            </MenuButton>
           </>
         )}
         {inTrash && library.trashed.length > 0 && (
@@ -344,7 +371,13 @@ export function LibraryView({ route, onNavigate, onOpenNotebook, onToggleSidebar
           <div className="recent-row">
             {recent.map((nb) => (
               <button key={nb.id} className="recent-card" onClick={() => onOpenNotebook(nb.id)} aria-label={`Open ${nb.name}`}>
-                <span className="mini-cover" style={{ ['--cover' as string]: nb.coverColor }} />
+                {nb.lock || !nb.pageIds[0] ? (
+                  <span className="mini-cover" style={{ ['--cover' as string]: nb.coverColor }} />
+                ) : (
+                  <span className="mini-thumb">
+                    <PageThumbnail pageId={nb.pageIds[0]} width={36} fillHeight={46} />
+                  </span>
+                )}
                 <span className="recent-text">
                   <span className="recent-name">{nb.name}</span>
                   <span className="recent-sub">{relativeTime(nb.lastOpenedAt ?? nb.updatedAt)}</span>
@@ -392,8 +425,8 @@ export function LibraryView({ route, onNavigate, onOpenNotebook, onToggleSidebar
 
       {dialog?.kind === 'new-folder' && (
         <PromptDialog
-          title="New Folder"
-          initial="New Folder"
+          title="New folder"
+          initial="New folder"
           confirmLabel="Create"
           onConfirm={(name) => void act(() => createFolder(db, name, folderId))}
           onClose={() => setDialog(null)}
@@ -422,7 +455,7 @@ export function LibraryView({ route, onNavigate, onOpenNotebook, onToggleSidebar
       )}
       {dialog?.kind === 'tags' && dialog.item.kind === 'notebook' && (
         <PromptDialog
-          title="Tags (comma separated)"
+          title="Tags (separated by commas)"
           initial={dialog.item.tags.join(', ')}
           confirmLabel="Save"
           onConfirm={(value) => void act(() => setTags(db, dialog.item.id, value.split(',')))}
@@ -430,7 +463,7 @@ export function LibraryView({ route, onNavigate, onOpenNotebook, onToggleSidebar
         />
       )}
       {dialog?.kind === 'color' && (
-        <Modal title="Color" onClose={() => setDialog(null)}>
+        <Modal title="Colour" onClose={() => setDialog(null)}>
           <ColorRow
             colors={dialog.item.kind === 'folder' ? FOLDER_COLORS : COVER_COLORS}
             value={dialog.item.kind === 'folder' ? dialog.item.color : dialog.item.coverColor}
@@ -478,9 +511,13 @@ function Tile(props: {
   onOpen: () => void;
   onMenu: () => void;
   dropProps?: Record<string, unknown>;
+  /** Has changes not yet uploaded to Google Drive. */
+  pending?: boolean;
 }) {
   const { item } = props;
-  const date = new Date(item.updatedAt).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+  const updated = new Date(item.updatedAt);
+  // "14 Nov" this year, "14 Nov 2025" before: short enough not to wrap under the card.
+  const date = updated.toLocaleDateString(undefined, { day: 'numeric', month: 'short', ...(updated.getFullYear() === new Date().getFullYear() ? {} : { year: 'numeric' }) });
   const childCount =
     item.kind === 'folder' ? props.library.visible.filter((i) => i.parentId === item.id).length : 0;
 
@@ -577,6 +614,11 @@ function Tile(props: {
             {item.name}
           </div>
           <div className="tile-sub">
+            {props.pending && (
+              <span className="pending-badge" title="Not yet uploaded to Google Drive" aria-label="Not yet uploaded">
+                <Icon name="upload" size={13} />
+              </span>
+            )}
             {props.showPath
               ? pathOf(props.library.byId, item)
               : item.kind === 'folder'
@@ -637,65 +679,65 @@ function ItemMenu(props: {
   };
   return (
     <Modal title={item.name} onClose={onClose}>
-      <div className="menu-list">
+      <div className="item-menu">
         {props.inTrash ? (
           <>
-            <button onClick={run(() => void act(() => restoreItem(db, item.id)))}>Restore</button>
-            <button
-              className="danger-text"
+            <MenuItem icon="undo" label="Restore" onClick={run(() => void act(() => restoreItem(db, item.id)))} />
+            <MenuItem
+              icon="trash"
+              label="Delete permanently"
+              danger
               onClick={run(() => {
                 if (confirm(`Permanently delete “${item.name}”? This cannot be undone.`)) void act(() => purgeItems(db, [item.id]));
               })}
-            >
-              Delete permanently
-            </button>
+            />
           </>
         ) : (
           <>
-            <button onClick={run(props.onOpen)}>Open</button>
-            <button onClick={run(() => props.onDialog({ kind: 'rename', item }))}>Rename</button>
-            <button onClick={run(() => void act(() => setFavorite(db, item.id, !item.favorite)))}>
-              {item.favorite ? 'Remove from Favorites' : 'Add to Favorites'}
-            </button>
-            <button onClick={run(() => props.onDialog({ kind: 'color', item }))}>Change color</button>
-            <button onClick={run(() => props.onDialog({ kind: 'share', item }))}>
-              <Icon name="link" size={18} /> Share link
-            </button>
+            <MenuItem icon={item.kind === 'folder' ? 'folder' : 'notebook'} label="Open" onClick={run(props.onOpen)} />
+            <MenuItem icon="edit" label="Rename" onClick={run(() => props.onDialog({ kind: 'rename', item }))} />
+            <MenuItem
+              icon="star"
+              label={item.favorite ? 'Remove from Favorites' : 'Add to Favorites'}
+              onClick={run(() => void act(() => setFavorite(db, item.id, !item.favorite)))}
+            />
+            <MenuItem icon="palette" label="Change colour" onClick={run(() => props.onDialog({ kind: 'color', item }))} />
+            {item.kind === 'notebook' && <MenuItem icon="tag" label="Tags" onClick={run(() => props.onDialog({ kind: 'tags', item }))} />}
+            <MenuItem icon="move" label="Move to folder" onClick={run(() => props.onDialog({ kind: 'move', ids: [item.id] }))} />
+            <MenuSeparator />
+            {item.kind === 'notebook' && <MenuItem icon="download" label="Export as PDF" onClick={run(() => void props.onExportPdf(item))} />}
+            <MenuItem icon="link" label="Share view-only link" onClick={run(() => props.onDialog({ kind: 'share', item }))} />
             {item.kind === 'notebook' && (
-              <button onClick={run(() => props.onDialog({ kind: 'lock', item }))}>
-                <Icon name="lock" size={18} /> {item.lock ? 'Lock settings' : 'Lock with passcode'}
-              </button>
+              <MenuItem icon="lock" label={item.lock ? 'Passcode settings' : 'Lock with passcode'} onClick={run(() => props.onDialog({ kind: 'lock', item }))} />
             )}
-            {item.kind === 'notebook' && <button onClick={run(() => props.onDialog({ kind: 'tags', item }))}>Tags…</button>}
-            <button onClick={run(() => props.onDialog({ kind: 'move', ids: [item.id] }))}>Move to…</button>
-            {item.kind === 'notebook' && <button onClick={run(() => void props.onExportPdf(item))}>Export as PDF</button>}
             {props.localOnlyRoot ? (
-              <button
+              <MenuItem
+                icon="cloud"
+                label="Sync with Google Drive again"
                 onClick={run(() => {
-                  if (confirm(`Sync “${item.name}” to Google Drive again?`)) void act(() => setLocalOnly(db, item.id, false));
+                  if (confirm(`Sync “${item.name}” with Google Drive again?`)) void act(() => setLocalOnly(db, item.id, false));
                 })}
-              >
-                <Icon name="cloud" size={18} /> Sync to Google Drive again
-              </button>
+              />
             ) : props.localOnly ? (
-              <button disabled>
-                <Icon name="tablet" size={18} /> On this iPad only (set on its folder)
-              </button>
+              <MenuItem icon="tablet" label="On this iPad only (set on its folder)" disabled onClick={() => undefined} />
             ) : (
-              <button
+              <MenuItem
+                icon="tablet"
+                label="Keep on this iPad only"
                 onClick={run(() => {
                   const ok = confirm(
-                    `Keep ${what} on this iPad only?\n\n- It won't be uploaded to Google Drive, and any copy already there is removed.\n- It won't appear on your other devices.\n- If this iPad is lost or reset, these notes are gone. Export a PDF or backup if they matter.`,
+                    `Keep ${what} on this iPad only?
+
+- It will not be uploaded to Google Drive, and any existing copy there will be removed.
+- It will not appear on your other devices.
+- If this iPad is lost or reset, these notes cannot be recovered. Export a PDF or backup to keep a copy.`,
                   );
                   if (ok) void act(() => setLocalOnly(db, item.id, true));
                 })}
-              >
-                <Icon name="tablet" size={18} /> Keep on this iPad only (don't sync)
-              </button>
+              />
             )}
-            <button className="danger-text" onClick={run(() => void act(() => trashItems(db, [item.id])))}>
-              Move to Trash
-            </button>
+            <MenuSeparator />
+            <MenuItem icon="trash" label="Move to Trash" danger onClick={run(() => void act(() => trashItems(db, [item.id])))} />
           </>
         )}
       </div>

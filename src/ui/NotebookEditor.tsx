@@ -26,11 +26,13 @@ import { penActiveWithin } from '../ink/penState';
 import { diagnostics } from '../ink/diagnostics';
 import { sync } from '../sync/instance';
 import { Modal, PromptDialog } from './Dialogs';
-import { SyncBadge } from './SyncBadge';
+import { syncTone, syncSentence } from './AccountButton';
+import { useSyncStatus } from '../sync/instance';
 import { QuickPalette } from './QuickPalette';
 import { ToolPalette, usePaletteLayout } from './ToolPalette';
 import { useEmptySpaceTap, useSlideAwayBar } from './useBarsAutoHide';
 import { Icon } from './Icon';
+import { MenuButton, MenuItem, MenuLabel, MenuSeparator } from './Menu';
 import { useAppIsDark } from './theme';
 import { GuideOverlay, toggleGuide } from './GuideOverlay';
 import { FOLLOW_LINK, type FollowRequest } from '../ink/links';
@@ -157,6 +159,8 @@ export function NotebookEditor({
   const [copyingPage, setCopyingPage] = useState<Page | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [addingPdf, setAddingPdf] = useState(false);
+  const pdfInputRef = useRef<HTMLInputElement>(null);
+  const syncStatus = useSyncStatus();
   const [pagesOpen, setPagesOpen] = useState(false);
   const pictureInputRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
@@ -164,7 +168,6 @@ export function NotebookEditor({
     const timer = window.setTimeout(() => setNotice(null), 2600);
     return () => clearTimeout(timer);
   }, [notice]);
-  const [exportOpen, setExportOpen] = useState(false);
   /** The export dialog (with pages picked in the page manager, if any). */
   const [exporting, setExporting] = useState<{ picked?: string[] } | null>(null);
   const [showDiagnostics, setShowDiagnostics] = useState(diagnostics.enabled);
@@ -716,12 +719,10 @@ export function NotebookEditor({
   const setPageLook = (patch: NotebookSettings) => void act(() => setNotebookSettings(db, notebook.id, patch));
 
   const exportPdf = async () => {
-    setExportOpen(false);
     await shareOrDownload(await exportNotebookPdf(notebook, await notebookPages(db, notebook.id)), `${safeFilename(notebook.name)}.pdf`);
   };
 
   const exportVisiblePagePng = async () => {
-    setExportOpen(false);
     const pageId = visiblePageId();
     const index = Math.max(0, pageIds.indexOf(pageId ?? ''));
     const page = pageId ? await loadPage(db, pageId) : undefined;
@@ -736,6 +737,7 @@ export function NotebookEditor({
           <span>Library</span>
         </button>
         <button className="editor-title" onClick={() => setRenaming(true)} title="Rename">
+          {syncTone(syncStatus) !== 'off' && <span className={`sync-dot tone-${syncTone(syncStatus)}`} title={syncSentence(syncStatus, 0)} />}
           {notebook.name}
         </button>
         <span className="muted page-count">{pageIds.length} page{pageIds.length === 1 ? '' : 's'}</span>
@@ -751,16 +753,6 @@ export function NotebookEditor({
             <Icon name="plus" size={18} />
           </button>
         </div>
-        <SyncBadge compact />
-        <button
-          className={`tool icon-tool${darkPages ? ' on' : ''}`}
-          aria-label={darkPages ? 'Light pages' : 'Night mode (dark pages)'}
-          title={darkPages ? 'Light pages' : 'Night mode'}
-          onClick={() => setPageLook({ pageTheme: darkPages ? 'light' : 'dark' })}
-        >
-          <Icon name={darkPages ? 'sun' : 'moon'} size={22} />
-        </button>
-        <RecordingsButton notebook={notebook} />
         <button
           className={`tool icon-tool${guideKind === 'ruler' ? ' on' : ''}`}
           aria-label="Ruler"
@@ -777,15 +769,92 @@ export function NotebookEditor({
         >
           <Icon name="protractor" size={22} />
         </button>
-        <button className="tool icon-tool" aria-label="Insert picture" title="Insert picture" onClick={() => pictureInputRef.current?.click()}>
-          <Icon name="image" size={22} />
-        </button>
+        <RecordingsButton notebook={notebook} />
+        <MenuButton
+          className="tool icon-tool"
+          label="Insert"
+          menu={(close) => (
+            <>
+              <MenuItem icon="image" label="Picture" onClick={() => { close(); pictureInputRef.current?.click(); }} />
+              <MenuItem icon="plus" label="Blank page at the end" onClick={() => { close(); void addPage(db, notebook.id).then(() => sync.syncSoon()); }} />
+              <MenuItem icon="fileImport" label={addingPdf ? 'Adding PDF…' : 'PDF pages at the end'} disabled={addingPdf} onClick={() => { close(); pdfInputRef.current?.click(); }} />
+            </>
+          )}
+        >
+          <Icon name="plus" size={22} />
+        </MenuButton>
         <button className="tool icon-tool" aria-label="Pages" title="Pages" onClick={() => setPagesOpen(true)}>
           <Icon name="pages" size={22} />
         </button>
-        <button className="tool icon-tool" aria-label="Export and more" title="Export and more" onClick={() => setExportOpen(true)}>
+        <MenuButton
+          className="tool icon-tool"
+          label="Share and export"
+          width={260}
+          menu={(close) => (
+            <>
+              <MenuItem icon="download" label="Export as PDF" onClick={() => { close(); void exportPdf(); }} />
+              <MenuItem icon="pages" label="Export selected pages" onClick={() => { close(); setExporting({}); }} />
+              <MenuItem icon="image" label="Export current page as image" onClick={() => { close(); void exportVisiblePagePng(); }} />
+              <MenuSeparator />
+              <MenuItem icon="link" label="Share view-only link" onClick={() => { close(); setSharing(true); }} />
+            </>
+          )}
+        >
           <Icon name="share" size={22} />
-        </button>
+        </MenuButton>
+        <MenuButton
+          className="tool icon-tool"
+          label="Page appearance and options"
+          width={270}
+          menu={(close) => (
+            <>
+              <MenuLabel>Page appearance</MenuLabel>
+              <MenuItem icon="display" label="Match app theme" checked={notebook.pageTheme === undefined} onClick={() => { close(); setPageLook({ pageTheme: undefined }); }} />
+              <MenuItem icon="sun" label="Light" checked={notebook.pageTheme === 'light'} onClick={() => { close(); setPageLook({ pageTheme: 'light' }); }} />
+              <MenuItem icon="moon" label="Night" checked={notebook.pageTheme === 'dark'} onClick={() => { close(); setPageLook({ pageTheme: 'dark' }); }} />
+              <MenuItem icon="image" label="Invert PDF pages at night" checked={!!notebook.invertPdf} onClick={() => setPageLook({ invertPdf: notebook.invertPdf ? undefined : true })} />
+              <MenuSeparator />
+              <MenuLabel>Apple Pencil</MenuLabel>
+              <MenuItem icon="pen" label="Hover palette" checked={settings.hoverPalette} onClick={() => update({ hoverPalette: !settings.hoverPalette })} />
+              <MenuItem
+                icon="info"
+                label="Pencil diagnostics"
+                checked={showDiagnostics}
+                onClick={() => {
+                  close();
+                  diagnostics.enabled = !diagnostics.enabled;
+                  setShowDiagnostics(diagnostics.enabled);
+                }}
+              />
+            </>
+          )}
+        >
+          <Icon name="more" size={22} />
+        </MenuButton>
+        <input
+          ref={pdfInputRef}
+          type="file"
+          accept="application/pdf,.pdf"
+          hidden
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            e.target.value = '';
+            if (!file) return;
+            setAddingPdf(true);
+            void appendPdf(db, notebook.id, file)
+              .then((count) => {
+                sync.syncSoon();
+                setNotice(`Added ${count} page${count === 1 ? '' : 's'} from ${file.name}`);
+                // Show the first new page.
+                requestAnimationFrame(() => {
+                  const el = scrollRef.current;
+                  if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+                });
+              })
+              .catch(() => alert('This PDF could not be opened.'))
+              .finally(() => setAddingPdf(false));
+          }}
+        />
         <input
           ref={pictureInputRef}
           type="file"
@@ -877,104 +946,6 @@ export function NotebookEditor({
           onConfirm={(name) => void renameItem(db, notebook.id, name).then(() => sync.syncSoon())}
           onClose={() => setRenaming(false)}
         />
-      )}
-
-      {exportOpen && (
-        <Modal title="More" onClose={() => setExportOpen(false)}>
-          <label className="field-label">Page appearance</label>
-          <div className="segmented" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
-            {([
-              [undefined, 'Follow app'],
-              ['light', 'Light'],
-              ['dark', 'Night'],
-            ] as const).map(([value, label]) => (
-              <button key={label} className={notebook.pageTheme === value ? 'on' : ''} onClick={() => setPageLook({ pageTheme: value })}>
-                {label}
-              </button>
-            ))}
-          </div>
-          <div className="menu-list">
-            <button onClick={() => setPageLook({ invertPdf: notebook.invertPdf ? undefined : true })}>
-              <Icon name={notebook.invertPdf ? 'check' : 'image'} size={18} /> {notebook.invertPdf ? 'PDF pages are inverted in night mode' : 'Invert PDF pages in night mode'}
-            </button>
-          </div>
-          <label className="field-label">Share</label>
-          <div className="menu-list">
-            <button
-              onClick={() => {
-                setExportOpen(false);
-                setSharing(true);
-              }}
-            >
-              <Icon name="link" size={18} /> Share a view-only link
-            </button>
-          </div>
-          <label className="field-label">Export</label>
-          <div className="menu-list">
-            <button onClick={() => void exportPdf()}>
-              <Icon name="share" size={18} /> Whole notebook as PDF
-            </button>
-            <button
-              onClick={() => {
-                setExportOpen(false);
-                setExporting({});
-              }}
-            >
-              <Icon name="pages" size={18} /> Choose pages and format
-            </button>
-            <button onClick={() => void exportVisiblePagePng()}>
-              <Icon name="image" size={18} /> Current page as image (PNG)
-            </button>
-          </div>
-          <label className="field-label">PDF</label>
-          <div className="menu-list">
-            <label className={`menu-file${addingPdf ? ' busy' : ''}`}>
-              {addingPdf ? 'Adding PDF…' : 'Add another PDF at the end of this notebook'}
-              <input
-                type="file"
-                accept="application/pdf,.pdf"
-                hidden
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  e.target.value = '';
-                  if (!file) return;
-                  setAddingPdf(true);
-                  void appendPdf(db, notebook.id, file)
-                    .then((count) => {
-                      sync.syncSoon();
-                      setExportOpen(false);
-                      setNotice(`Added ${count} page${count === 1 ? '' : 's'} from ${file.name}`);
-                      // Show the first new page.
-                      requestAnimationFrame(() => {
-                        const el = scrollRef.current;
-                        if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
-                      });
-                    })
-                    .catch(() => alert('This PDF could not be opened.'))
-                    .finally(() => setAddingPdf(false));
-                }}
-              />
-            </label>
-          </div>
-          <label className="field-label">Troubleshooting</label>
-          <div className="menu-list">
-            <button
-              onClick={() => {
-                diagnostics.enabled = !diagnostics.enabled;
-                setShowDiagnostics(diagnostics.enabled);
-                setExportOpen(false);
-              }}
-            >
-              {showDiagnostics ? 'Hide' : 'Show'} Pencil diagnostics
-            </button>
-          </div>
-          <label className="field-label">Apple Pencil</label>
-          <div className="menu-list">
-            <button onClick={() => update({ hoverPalette: !settings.hoverPalette })}>
-              Hover palette: {settings.hoverPalette ? 'On' : 'Off'} (hold the Pencil still just above the page)
-            </button>
-          </div>
-        </Modal>
       )}
 
       {showDiagnostics && <DiagnosticsOverlay />}
@@ -1106,7 +1077,7 @@ export function NotebookEditor({
                 setPageMenu(null);
                 void loadPage(db, page.id).then((full) => {
                   if (full) setClip({ kind: 'pages', pages: [full] });
-                  setNotice('Page copied — paste it from Pages in any notebook');
+                  setNotice('Page copied. Paste it from Pages in any notebook.');
                 });
               }}
             >

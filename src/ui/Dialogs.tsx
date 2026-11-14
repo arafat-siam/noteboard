@@ -74,7 +74,7 @@ export function NewNotebookDialog(props: {
     props.onClose();
   };
   return (
-    <Modal title="New Notebook" onClose={props.onClose}>
+    <Modal title="New notebook" onClose={props.onClose}>
       <label className="field-label">Name</label>
       <input
         className="text-input"

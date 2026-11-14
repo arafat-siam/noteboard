@@ -77,7 +77,7 @@ export function UnlockNotebook(props: { notebook: Notebook; onUnlocked: () => vo
     const result = await pinLock.verify(appPin);
     setBusy(false);
     if (!result.ok) {
-      setError(result.waitMs > 0 ? `Too many attempts. Try again in ${Math.ceil(result.waitMs / 1000)}s.` : 'Wrong app PIN.');
+      setError(result.waitMs > 0 ? `Too many attempts. Try again in ${Math.ceil(result.waitMs / 1000)} s.` : 'Incorrect Noteboard passcode.');
       return;
     }
     await act(() => setNotebookSettings(db, notebook.id, { lock: undefined }));
@@ -88,8 +88,8 @@ export function UnlockNotebook(props: { notebook: Notebook; onUnlocked: () => vo
   const body = forgot ? (
     pinLock.hasPin() ? (
       <>
-        <p className="lock-hint">Enter Noteboard's app PIN to remove this notebook's lock. You can set a new passcode afterwards.</p>
-        <PasscodeField label="App PIN" value={appPin} onChange={(v) => setAppPin(v.replace(/\D/g, ''))} onEnter={() => void removeWithAppPin()} autoFocus />
+        <p className="lock-hint">Enter the Noteboard passcode to remove this notebook's lock. You can set a new notebook passcode afterwards.</p>
+        <PasscodeField label="Noteboard passcode" value={appPin} onChange={(v) => setAppPin(v.replace(/\D/g, ''))} onEnter={() => void removeWithAppPin()} autoFocus />
         {error && <p className="form-error">{error}</p>}
         <div className="modal-actions">
           <button onClick={() => setForgot(false)}>Back</button>
@@ -101,7 +101,7 @@ export function UnlockNotebook(props: { notebook: Notebook; onUnlocked: () => vo
     ) : (
       <>
         <p className="lock-hint">
-          Without the notebook passcode it can only be unlocked with Noteboard's app PIN, and no app PIN is set on this iPad. If
+          Without the notebook passcode it can only be unlocked with the Noteboard passcode, and no Noteboard passcode is set on this iPad. If
           you set one later (Settings &gt; Passcode), it can be used here.
         </p>
         <div className="modal-actions">
@@ -166,7 +166,7 @@ export function NotebookLockDialog({ notebook, onClose }: { notebook: Notebook; 
   const save = async () => {
     if (changing) {
       if (!isValidNotebookPasscode(next)) return setError(`Use at least ${NOTEBOOK_PASSCODE_MIN} characters.`);
-      if (next !== again) return setError("The two passcodes don't match.");
+      if (next !== again) return setError('The passcodes do not match.');
     }
     setBusy(true);
     const lock = changing ? await makeNotebookLock(next, relock) : { ...notebook.lock!, relockMinutes: relock };

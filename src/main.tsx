@@ -9,6 +9,7 @@ import './styles.css';
 import './palette.css';
 import './library.css';
 import './design.css';
+import './shell.css';
 import { applyTheme } from './ui/theme';
 
 applyTheme();

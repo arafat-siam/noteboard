@@ -25,6 +25,22 @@ describe('PinLock', () => {
     expect((await lock.verify('4321')).ok).toBe(false);
   });
 
+  it('remembers the PIN length (learned on unlock for older PINs) so the lock screen opens by itself', async () => {
+    const store = memoryStore();
+    const lock = new PinLock(store);
+    await lock.setPin('482913');
+    expect(lock.pinLength()).toBe(6);
+    // A PIN saved before the length was recorded.
+    const old = JSON.parse(store.data.get('noteboard.pin')!) as Record<string, unknown>;
+    delete old.length;
+    store.data.set('noteboard.pin', JSON.stringify(old));
+    expect(lock.pinLength()).toBeNull();
+    expect((await lock.verify('1111')).ok).toBe(false);
+    expect(lock.pinLength()).toBeNull();
+    expect((await lock.verify('482913')).ok).toBe(true);
+    expect(lock.pinLength()).toBe(6);
+  });
+
   it('changes the PIN only when the current PIN is correct', async () => {
     const lock = new PinLock(memoryStore());
     await lock.setPin('1111');

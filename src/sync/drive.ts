@@ -8,6 +8,14 @@ export interface DriveFile {
   appProperties?: Record<string, string>;
 }
 
+export interface DriveAbout {
+  name: string;
+  email: string;
+  photo: string;
+  driveUsed: number;
+  driveLimit: number | null;
+}
+
 export class DriveAuthError extends Error {}
 export class DriveError extends Error {
   constructor(message: string, readonly status: number) {
@@ -214,5 +222,38 @@ export class DriveClient {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ trashed: true }),
     });
+  }
+
+  /** The signed-in Google account and the Drive's total storage (works with the drive.file scope). */
+  async about(): Promise<DriveAbout> {
+    const fields = 'user(displayName,emailAddress,photoLink),storageQuota(limit,usage)';
+    const res = await this.request(`${API}/about?fields=${encodeURIComponent(fields)}`);
+    const body = (await res.json()) as {
+      user?: { displayName?: string; emailAddress?: string; photoLink?: string };
+      storageQuota?: { limit?: string; usage?: string };
+    };
+    return {
+      name: body.user?.displayName ?? '',
+      email: body.user?.emailAddress ?? '',
+      photo: body.user?.photoLink ?? '',
+      driveUsed: Number(body.storageQuota?.usage ?? 0),
+      // No limit = unlimited (some Workspace accounts).
+      driveLimit: body.storageQuota?.limit ? Number(body.storageQuota.limit) : null,
+    };
+  }
+
+  /** Bytes used by every file Noteboard created in this Drive (the drive.file scope sees only those). */
+  async appUsage(): Promise<number> {
+    let total = 0;
+    let pageToken: string | undefined;
+    do {
+      const params = new URLSearchParams({ q: 'trashed=false', fields: 'nextPageToken,files(size)', pageSize: '1000', spaces: 'drive' });
+      if (pageToken) params.set('pageToken', pageToken);
+      const res = await this.request(`${API}/files?${params}`);
+      const body = (await res.json()) as { files: { size?: string }[]; nextPageToken?: string };
+      for (const f of body.files) total += Number(f.size ?? 0);
+      pageToken = body.nextPageToken;
+    } while (pageToken);
+    return total;
   }
 }

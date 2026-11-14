@@ -15,6 +15,8 @@ interface StoredPin {
   salt: string;
   hash: string;
   iterations: number;
+  /** Number of digits, so the lock screen can open as soon as that many are typed (like iPadOS). */
+  length?: number;
 }
 
 interface Attempts {
@@ -87,7 +89,7 @@ export class PinLock {
   async setPin(pin: string): Promise<void> {
     if (!isValidPin(pin)) throw new Error(`PIN must be ${PIN_MIN_LENGTH}–${PIN_MAX_LENGTH} digits.`);
     const salt = crypto.getRandomValues(new Uint8Array(16));
-    const stored: StoredPin = { salt: toB64(salt), hash: await derive(pin, salt, ITERATIONS), iterations: ITERATIONS };
+    const stored: StoredPin = { salt: toB64(salt), hash: await derive(pin, salt, ITERATIONS), iterations: ITERATIONS, length: pin.length };
     this.store.setItem(PIN_KEY, JSON.stringify(stored));
     this.store.removeItem(ATTEMPTS_KEY);
     this.store.removeItem(SKIPPED_KEY);
@@ -98,6 +100,16 @@ export class PinLock {
       return { failures: 0, lockedUntil: 0, ...(JSON.parse(this.store.getItem(ATTEMPTS_KEY) ?? '{}') as Partial<Attempts>) };
     } catch {
       return { failures: 0, lockedUntil: 0 };
+    }
+  }
+
+  /** Digits in the PIN, if known (PINs set before this was recorded learn it on the next unlock). */
+  pinLength(): number | null {
+    try {
+      const stored = JSON.parse(this.store.getItem(PIN_KEY) ?? 'null') as StoredPin | null;
+      return stored?.length ?? null;
+    } catch {
+      return null;
     }
   }
 
@@ -117,6 +129,7 @@ export class PinLock {
     const hash = await derive(pin, fromB64(stored.salt), stored.iterations);
     if (constantTimeEqual(hash, stored.hash)) {
       this.store.removeItem(ATTEMPTS_KEY);
+      if (stored.length !== pin.length) this.store.setItem(PIN_KEY, JSON.stringify({ ...stored, length: pin.length }));
       return { ok: true };
     }
     const failures = attempts.failures + 1;

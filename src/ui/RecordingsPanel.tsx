@@ -153,7 +153,7 @@ function RecordingRow(props: { notebookId: string; recording: Recording; active:
           className="icon-button danger-text"
           aria-label="Delete recording"
           onClick={() => {
-            if (confirm(`Delete “${r.name}”? The ink stays; only the audio is removed.`))
+            if (confirm(`Delete “${r.name}”? The ink is kept; only the audio is removed.`))
               void deleteRecording(db, props.notebookId, r.id).then(() => sync.syncSoon());
           }}
         >

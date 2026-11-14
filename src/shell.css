@@ -1,0 +1,478 @@
+/*
+ * Green theme, Drawboard-style sidebar, library header with the + menu, account panel and sync
+ * badges. Loaded after design.css.
+ */
+
+/* ---- Sidebar ---- */
+.sidebar {
+  border-right: 1px solid var(--hairline);
+}
+.brand img {
+  border-radius: 9px;
+}
+.nav-item.active,
+.tree-item.active {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+.nav-item.active .icon,
+.tree-item.active .tree-label,
+.tree-item.active .disclosure {
+  color: var(--accent-strong) !important;
+}
+.sidebar-section {
+  letter-spacing: 0.06em;
+}
+.sidebar-footer {
+  margin-top: auto;
+  padding: 12px 0 calc(12px + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--hairline);
+}
+
+/* ---- Account button, avatar and sync badge ---- */
+.account {
+  position: relative;
+}
+.account-button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px;
+  min-height: 52px;
+  background: none;
+  border-radius: 10px;
+  text-align: left;
+  font-weight: 500;
+}
+.account-button-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.account-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.account-email {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.account-avatar {
+  position: relative;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+.account-avatar img {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+}
+.account-initials {
+  font-size: 13px;
+  font-weight: 600;
+}
+.account-avatar.tone-off {
+  background: var(--fill-strong);
+  color: var(--muted);
+}
+.account-badge {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  border: 2px solid var(--surface);
+  background: var(--disabled);
+}
+.account-badge .icon {
+  stroke-width: 3;
+}
+.tone-ok .account-badge {
+  background: var(--accent);
+}
+.tone-waiting .account-badge {
+  background: #ba7517;
+}
+.tone-alert .account-badge {
+  background: #e24b4a;
+}
+.account-ring {
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  border-top-color: var(--accent);
+  border-right-color: var(--accent);
+  animation: account-spin 1s linear infinite;
+}
+@keyframes account-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .account-ring {
+    animation: none;
+    border-color: var(--accent);
+    opacity: 0.5;
+  }
+}
+
+/* ---- Account panel ---- */
+.account-panel {
+  /* Fixed, so the sidebar's scrolling doesn't clip it. */
+  position: fixed;
+  left: 12px;
+  bottom: calc(76px + env(safe-area-inset-bottom));
+  width: 300px;
+  max-width: calc(100vw - 32px);
+  z-index: 60;
+  background: var(--surface);
+  border-radius: 14px;
+  box-shadow: var(--shadow-md);
+  border: 1px solid var(--hairline);
+  padding: 6px 0;
+  animation: panel-in 0.16s ease-out;
+}
+@keyframes panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+.account-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+}
+.account-id {
+  min-width: 0;
+}
+.account-section {
+  border-top: 1px solid var(--hairline);
+  padding: 12px 16px;
+}
+.account-section.menu-like {
+  padding: 6px;
+}
+.account-status {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text);
+}
+.account-status .icon {
+  flex-shrink: 0;
+  color: var(--muted);
+}
+.account-status.tone-ok .icon {
+  color: var(--accent);
+}
+.account-status.tone-waiting .icon {
+  color: #ba7517;
+}
+.account-status.tone-alert .icon {
+  color: #e24b4a;
+}
+.account-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+.account-actions button,
+.account-signin {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 34px;
+  font-size: 13px;
+}
+.account-signin {
+  width: 100%;
+  margin-top: 10px;
+}
+.account-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 13px;
+}
+.account-row > span:first-child {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.account-row .icon {
+  color: var(--muted);
+}
+.storage-bar {
+  position: relative;
+  height: 6px;
+  margin: 10px 0 6px;
+  border-radius: 3px;
+  overflow: hidden;
+  background: var(--fill-strong);
+}
+.storage-bar span {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 3px;
+}
+.storage-other {
+  background: var(--surface-3);
+}
+.storage-app {
+  background: var(--accent);
+  min-width: 3px;
+}
+.account-note {
+  font-size: 12px;
+  color: var(--muted);
+}
+.menu-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 40px;
+  padding: 0 10px;
+  background: none;
+  border-radius: 8px;
+  font-weight: 500;
+  font-size: 14px;
+  text-align: left;
+  color: var(--text);
+}
+.menu-row .icon {
+  color: var(--muted);
+}
+.menu-row.danger-text .icon {
+  color: var(--danger);
+}
+.menu-sep {
+  height: 1px;
+  margin: 6px 10px;
+  background: var(--hairline);
+}
+.menu-label {
+  padding: 8px 10px 4px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--disabled);
+}
+button.secondary {
+  background: var(--fill);
+  color: var(--text);
+}
+
+/* ---- Small sync dot (editor title, notebook cards) ---- */
+.sync-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--disabled);
+}
+.sync-dot.tone-ok {
+  background: var(--accent);
+}
+.sync-dot.tone-busy {
+  background: var(--accent);
+  animation: sync-pulse 1s ease-in-out infinite alternate;
+}
+.sync-dot.tone-waiting {
+  background: #ba7517;
+}
+.sync-dot.tone-alert {
+  background: #e24b4a;
+}
+@keyframes sync-pulse {
+  to {
+    opacity: 0.3;
+  }
+}
+.pending-badge {
+  color: var(--muted);
+  display: inline-flex;
+  vertical-align: -2px;
+  margin-right: 4px;
+}
+
+/* ---- Dropdown menus (MenuButton) ---- */
+.menu-anchor {
+  position: relative;
+  display: inline-flex;
+}
+.dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  z-index: 70;
+  width: 240px;
+  padding: 6px;
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+  box-shadow: var(--shadow-md);
+  animation: panel-in 0.14s ease-out;
+}
+.dropdown.align-right {
+  right: 0;
+}
+.dropdown.align-left {
+  left: 0;
+}
+.dropdown.up {
+  top: auto;
+  bottom: calc(100% + 6px);
+}
+.menu-row-label {
+  flex: 1;
+  min-width: 0;
+}
+.menu-hint {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--muted);
+}
+.menu-icon-space {
+  width: 18px;
+  flex-shrink: 0;
+}
+.menu-row .menu-check {
+  color: var(--accent);
+}
+.menu-row:hover:not(:disabled) {
+  background: var(--fill);
+}
+
+/* ---- Library header (Drawboard style) ---- */
+.library-toolbar {
+  align-items: center;
+  min-height: 64px;
+}
+.library-toolbar .search {
+  margin-left: auto;
+  max-width: 280px;
+  flex: 0 1 280px;
+}
+.round-add {
+  width: 44px;
+  height: 44px;
+  min-height: 44px;
+  padding: 0;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--accent);
+  color: var(--on-accent);
+  box-shadow: 0 6px 16px -6px rgba(29, 158, 117, 0.6);
+}
+.round-add:hover:not(:disabled) {
+  background: var(--accent-strong);
+}
+.round-add .icon {
+  stroke-width: 2.4;
+}
+.header-icon {
+  width: 40px;
+  height: 40px;
+  min-height: 40px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  background: none;
+  color: var(--muted);
+  border-radius: 10px;
+}
+.header-icon:hover:not(:disabled),
+.header-icon[aria-expanded='true'],
+.header-icon.on {
+  background: var(--fill-strong);
+  color: var(--text);
+}
+.library-subbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 28px 6px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.library-subbar .count-label {
+  margin-right: auto;
+}
+.library-toolbar {
+  flex-wrap: nowrap;
+}
+.library-toolbar .crumbs {
+  flex: 1 1 auto;
+}
+.library-toolbar .search {
+  flex: 0 1 260px;
+  min-width: 120px;
+}
+.sidebar-footer {
+  display: block;
+}
+.account-button {
+  justify-content: flex-start;
+}
+.mini-thumb {
+  width: 36px;
+  height: 46px;
+  flex-shrink: 0;
+  overflow: hidden;
+  display: flex;
+  justify-content: center;
+  border-radius: 5px;
+  background: #fff;
+  box-shadow: 0 0 0 1px var(--hairline);
+}
+.menu-row {
+  justify-content: flex-start;
+}
+
+/* ---- Notebook top bar ---- */
+.editor-top .editor-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.editor-top .menu-anchor .tool.icon-tool[aria-expanded='true'] {
+  background: var(--fill-strong);
+  color: var(--text);
+}
+.item-menu {
+  display: flex;
+  flex-direction: column;
+  margin: -8px -10px -6px;
+}
+.item-menu .menu-row {
+  min-height: 46px;
+}

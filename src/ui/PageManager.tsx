@@ -69,11 +69,11 @@ export function PageManager(props: {
   const copy = async () => {
     const pages = (await loadPages(db, ordered(selected))).filter((p): p is Page => !!p);
     setClip({ kind: 'pages', pages });
-    setNotice(`Copied ${plural(pages.length)} — open any notebook's pages to paste`);
+    setNotice(`Copied ${plural(pages.length)}. Paste from Pages in any notebook.`);
   };
   const cut = async () => {
     if (selected.length >= pageIds.length) {
-      alert('A notebook needs at least one page. Copy them instead, or add a page first.');
+      alert('A notebook must contain at least one page. Copy the pages instead, or add a page first.');
       return;
     }
     await copy();
