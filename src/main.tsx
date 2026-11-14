@@ -80,16 +80,15 @@ function start(): void {
   hideSplash();
 }
 
-/** Fades the launch logo out once the first screen is drawn (shown at least briefly, so it never flickers). */
+/** Fades the plain launch screen out as soon as the first screen is drawn. */
 function hideSplash(): void {
   const splash = document.getElementById('splash');
   if (!splash) return;
-  const shownFor = performance.now();
   const remove = () => {
     splash.classList.add('hide');
-    setTimeout(() => splash.remove(), 400);
+    setTimeout(() => splash.remove(), 250);
   };
-  requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(remove, Math.max(0, 650 - shownFor))));
+  requestAnimationFrame(() => requestAnimationFrame(remove));
   // Safety net if frames don't run (e.g. the page opened in the background).
   setTimeout(remove, 2500);
 }

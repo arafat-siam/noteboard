@@ -44,34 +44,6 @@ writeFileSync(
   ) + '\n',
 );
 writeFileSync(`${assets}/Contents.json`, JSON.stringify({ info: { author: 'xcode', version: 1 } }, null, 2) + '\n');
-// iPad launch screens (Home Screen app): the logo centred on the app background, one image per
-// iPad screen size and orientation. Without them iPadOS shows its own screen first.
-// Keep in step with the <link rel="apple-touch-startup-image"> tags in index.html.
-export const IPADS = [
-  [1032, 1376], // iPad Pro 13" (M4)
-  [1024, 1366], // iPad Pro 12.9"
-  [834, 1210], // iPad Pro 11" (M4)
-  [834, 1194], // iPad Pro 11", iPad Air 11"
-  [820, 1180], // iPad Air 10.9", iPad 10th gen
-  [834, 1112], // iPad Air 10.5"
-  [810, 1080], // iPad 10.2"
-  [768, 1024], // iPad 9.7", iPad mini 5
-  [744, 1133], // iPad mini 6/7
-];
-function splash(w, h) {
-  const s = 132; // logo size in points
-  const inner = logo(Math.round(1024 * 0.225)).replace('<svg ', `<svg x="${(w - s) / 2}" y="${(h - s) / 2 - 16}" width="${s}" height="${s}" `).replace(/ width="1024" height="1024"/, '');
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}">
-  <rect width="${w}" height="${h}" fill="#FFFFFF"/>
-  ${inner}
-</svg>`;
-}
-mkdirSync('public/splash', { recursive: true });
-for (const [w, h] of IPADS) {
-  for (const [cw, ch] of [[w, h], [h, w]]) {
-    writeFileSync(`public/splash/splash-${cw * 2}x${ch * 2}.png`, render(splash(cw, ch), cw * 2));
-  }
-}
 // Optional preview with rounded corners, for checking the design: ICON_PREVIEW=path npm run icons
 if (process.env.ICON_PREVIEW) writeFileSync(process.env.ICON_PREVIEW, render(logo(228), 512));
 console.log('Icons written.');
