@@ -19,8 +19,6 @@ interface Props {
   onClose: () => void;
 }
 
-/** How long the hovering Pencil rests on an item before it is chosen (no touch needed). */
-const DWELL_MS = 260;
 /** Gap between the palette's pointer and the Pencil tip. */
 const GAP = 14;
 const PEN_SIZES = [1.2, 2.5, 4.5];
@@ -33,14 +31,13 @@ type Entry = { key: string; label: string; icon: { kind: PenIconKind; color: str
  * Compact palette just above the Pencil tip (hover-hold, or squeeze in the shell app), in the
  * spirit of Apple Notes: undo/redo, the pens of the current preset in the toolbar's order (the
  * pen in hand stands raised; the row scrolls when there are many), eraser and lasso, a colour
- * well, then quick colours and three sizes for the pen in hand. Choose by tapping, or by
- * holding the hovering Pencil still over an item.
+ * well, then quick colours and three sizes for the pen in hand. Choose by touching an item with
+ * the Pencil or a finger (hovering never chooses).
  */
 export function QuickPalette({ x, y, settings, selectSlot, selectTool, updateSlot, undo, redo, onClose }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const stripRef = useRef<HTMLDivElement>(null);
-  const dwell = useRef<number | null>(null);
   const [place, setPlace] = useState<{ left: number; top: number; below: boolean; arrow: number } | null>(null);
 
   // Above the tip when there is room, otherwise below; never past the screen edges.
@@ -80,7 +77,6 @@ export function QuickPalette({ x, y, settings, selectSlot, selectTool, updateSlo
       window.removeEventListener('pointerdown', onDown, true);
       window.removeEventListener('pointermove', onMove, true);
       window.removeEventListener('keydown', onKey);
-      if (dwell.current != null) clearTimeout(dwell.current);
     };
   }, [onClose]);
 
@@ -105,18 +101,8 @@ export function QuickPalette({ x, y, settings, selectSlot, selectTool, updateSlo
     choose();
     if (close) onClose();
   };
-  const hoverPick = (choose: () => void, close = true) => ({
-    onPointerEnter: (e: React.PointerEvent) => {
-      if (e.pointerType !== 'pen' || e.buttons !== 0) return;
-      if (dwell.current != null) clearTimeout(dwell.current);
-      dwell.current = window.setTimeout(() => pick(choose, close), DWELL_MS);
-    },
-    onPointerLeave: () => {
-      if (dwell.current != null) clearTimeout(dwell.current);
-      dwell.current = null;
-    },
-    onClick: () => pick(choose, close),
-  });
+  // Chosen only by touching (Pencil or finger): hovering never picks, so the pen row can scroll.
+  const hoverPick = (choose: () => void, close = true) => ({ onClick: () => pick(choose, close) });
 
   // Colour and size apply to the pen in hand (and put it in hand if another tool was).
   const setPen = (patch: Partial<PenSlot>) => {

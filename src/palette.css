@@ -45,23 +45,42 @@
   top: calc(64px + env(safe-area-inset-top));
 }
 .tool-palette.floating.vertical {
-  top: calc(64px + env(safe-area-inset-top));
-  bottom: calc(14px + env(safe-area-inset-bottom));
-  margin: auto 0;
-  height: fit-content;
+  /* Centred with top + translate (Safari mishandles height: fit-content with top and bottom),
+     and a flex column so the height limit reaches the pen list, which then scrolls. */
+  /* Centred in the space below the top bar (about 52 px). */
+  top: calc(50% + 25px + env(safe-area-inset-top) / 2);
+  bottom: auto;
+  translate: 0 -50%;
+  margin: 0;
+  height: auto;
   max-height: calc(100vh - 92px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
   padding: 8px 0;
-  /* A flex column, so the height limit reaches the row inside and the pen list scrolls
-     instead of the toolbar running off the screen. */
   display: flex;
   flex-direction: column;
+}
+@supports (height: 100dvh) {
+  .tool-palette.floating.vertical {
+    max-height: calc(100dvh - 92px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  }
 }
 .tool-palette.floating.vertical .palette-row {
   flex: 0 1 auto;
   min-height: 0;
+  max-height: none;
 }
 .vertical .pen-tray {
   flex: 0 1 auto;
+}
+/* Docked on the left or right: a column whose middle (the pens) shrinks and scrolls. */
+.tool-palette.docked.vertical {
+  flex-direction: column;
+  align-items: center;
+  min-height: 0;
+}
+.tool-palette.docked.vertical .palette-row {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none;
 }
 .tool-palette.floating.side-left {
   left: calc(12px + env(safe-area-inset-left));
@@ -112,7 +131,6 @@
   max-height: 100%;
 }
 .tool-palette.docked.vertical .palette-row {
-  height: 100%;
   padding: 8px 0;
 }
 .palette-group {
