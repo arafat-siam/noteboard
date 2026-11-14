@@ -576,9 +576,7 @@ function Tile(props: {
   pending?: boolean;
 }) {
   const { item } = props;
-  const updated = new Date(item.updatedAt);
-  // "14 Nov" this year, "14 Nov 2025" before: short enough not to wrap under the card.
-  const date = updated.toLocaleDateString(undefined, { day: 'numeric', month: 'short', ...(updated.getFullYear() === new Date().getFullYear() ? {} : { year: 'numeric' }) });
+  const date = editedLabel(item.updatedAt);
   const childCount =
     item.kind === 'folder' ? props.library.visible.filter((i) => i.parentId === item.id).length : 0;
 
@@ -684,7 +682,7 @@ function Tile(props: {
               ? pathOf(props.library.byId, item)
               : item.kind === 'folder'
                 ? `${childCount} item${childCount === 1 ? '' : 's'}`
-                : `${item.pageIds.length} page${item.pageIds.length === 1 ? '' : 's'} · ${date}`}
+                : date}
           </div>
         </div>
       </button>
@@ -695,6 +693,17 @@ function Tile(props: {
       )}
     </div>
   );
+}
+
+/** When something was last edited, short: "Today", "Yesterday", "14 Nov", "14 Nov 2025". */
+function editedLabel(time: number): string {
+  const then = new Date(time);
+  const now = new Date();
+  const day = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const days = Math.round((day(now) - day(then)) / 86_400_000);
+  if (days === 0) return 'Today';
+  if (days === 1) return 'Yesterday';
+  return then.toLocaleDateString(undefined, { day: 'numeric', month: 'short', ...(then.getFullYear() === now.getFullYear() ? {} : { year: 'numeric' }) });
 }
 
 /**

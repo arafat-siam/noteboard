@@ -44,6 +44,21 @@ writeFileSync(
   ) + '\n',
 );
 writeFileSync(`${assets}/Contents.json`, JSON.stringify({ info: { author: 'xcode', version: 1 } }, null, 2) + '\n');
+// iPad opening screens: plain light and dark backgrounds (no logo), one per iPad screen size and
+// orientation. Without them iPadOS makes its own white screen with the icon on it.
+// Keep in step with the <link rel="apple-touch-startup-image"> tags in index.html.
+export const IPADS = [
+  [1032, 1376], [1024, 1366], [834, 1210], [834, 1194], [820, 1180], [834, 1112], [810, 1080], [768, 1024], [744, 1133],
+];
+mkdirSync('public/launch', { recursive: true });
+for (const [theme, color] of [['light', '#FFFFFF'], ['dark', '#141A21']]) {
+  for (const [w, h] of IPADS) {
+    for (const [cw, ch] of [[w, h], [h, w]]) {
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${cw}" height="${ch}"><rect width="100%" height="100%" fill="${color}"/></svg>`;
+      writeFileSync(`public/launch/${theme}-${cw * 2}x${ch * 2}.png`, render(svg, cw * 2));
+    }
+  }
+}
 // Optional preview with rounded corners, for checking the design: ICON_PREVIEW=path npm run icons
 if (process.env.ICON_PREVIEW) writeFileSync(process.env.ICON_PREVIEW, render(logo(228), 512));
 console.log('Icons written.');

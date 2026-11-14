@@ -28,7 +28,7 @@ export default defineConfig(({ command }) => ({
       workbox: {
         globPatterns: ['**/*.{js,mjs,css,html,svg,png,woff2}'],
         // Test builds under /lab/ are separate apps with their own service workers.
-        globIgnores: ['lab/**', 'preview/**'],
+        globIgnores: ['lab/**', 'preview/**', 'launch/**'],
         // The PDF engine's worker is ~1.4 MB; keep it cached so PDFs open offline.
         maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
         navigateFallback: 'index.html',
