@@ -88,7 +88,7 @@ export function NewNotebookDialog(props: {
       <div className="template-picker">
         {(Object.keys(TEMPLATE_LABELS) as PaperTemplate[]).map((t) => (
           <button key={t} className={`template-option ${t === template ? 'selected' : ''}`} onClick={() => setTemplate(t)}>
-            <span className="template-swatch" style={templateStyle(t, 0.12)} />
+            <span className="template-swatch" style={templateStyle(t, 0.12, false, { width: 794, height: 1123 })} />
             {TEMPLATE_LABELS[t]}
           </button>
         ))}

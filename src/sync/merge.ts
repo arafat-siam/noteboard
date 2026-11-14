@@ -12,8 +12,11 @@ export function mergePage(local: Page, remote: Page): Page {
   for (const s of local.strokes) if (!tombstones.has(s.id)) byId.set(s.id, s);
   const strokes = [...byId.values()].sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id));
   const newer = local.updatedAt >= remote.updatedAt ? local : remote;
+  // A whiteboard page grown on both devices keeps the larger size, so no ink ends up off the page.
+  const grown = newer.grows ? { width: Math.max(local.width, remote.width), height: Math.max(local.height, remote.height) } : {};
   return {
     ...newer,
+    ...grown,
     strokes,
     deletedStrokeIds: [...tombstones].sort(),
     updatedAt: Math.max(local.updatedAt, remote.updatedAt),
@@ -68,6 +71,17 @@ export function mergeLibrary(local: LibraryItem[], remote: LibraryItem[]): Libra
       const pageIds = [...new Set([...winner.pageIds, ...loser.pageIds])].filter((id) => !removed.has(id));
       // lastOpenedAt is a local convenience; keep this device's value.
       winner = { ...winner, pageIds, deletedPageIds, lastOpenedAt: l.lastOpenedAt };
+      // Bookmarks made on either device are kept (newer title wins); removed ones stay removed.
+      if (l.bookmarks || r.bookmarks || l.deletedBookmarkIds || r.deletedBookmarkIds) {
+        const removedMarks = new Set([...(l.deletedBookmarkIds ?? []), ...(r.deletedBookmarkIds ?? [])]);
+        const marks = new Map<string, NonNullable<typeof l.bookmarks>[number]>();
+        for (const b of [...(loser.bookmarks ?? []), ...(winner.bookmarks ?? [])]) if (!removedMarks.has(b.id)) marks.set(b.id, b);
+        winner = {
+          ...winner,
+          bookmarks: [...marks.values()].sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id)),
+          deletedBookmarkIds: [...removedMarks].sort(),
+        };
+      }
       // Recordings made on either device are kept (newer name wins); deleted ones stay deleted.
       if (l.recordings || r.recordings || l.deletedRecordingIds || r.deletedRecordingIds) {
         const gone = new Set([...(l.deletedRecordingIds ?? []), ...(r.deletedRecordingIds ?? [])]);

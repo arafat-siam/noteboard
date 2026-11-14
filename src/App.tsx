@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { db } from './db/db';
 import { markOpened, purgeExpiredTrash } from './db/library';
 import { sync } from './sync/instance';
+import { startIndexer } from './search/indexer';
 import { Sidebar } from './ui/Sidebar';
 import { LibraryView } from './ui/LibraryView';
 import { NotebookEditor } from './ui/NotebookEditor';
@@ -12,7 +13,7 @@ export type Route =
   | { view: 'recents' }
   | { view: 'trash' }
   | { view: 'tag'; tag: string }
-  | { view: 'notebook'; id: string; from: Route };
+  | { view: 'notebook'; id: string; from: Route; pageId?: string };
 
 export function App() {
   const [route, setRoute] = useState<Route>({ view: 'library', folderId: null });
@@ -20,16 +21,21 @@ export function App() {
 
   useEffect(() => {
     void purgeExpiredTrash(db);
-    return sync.start();
+    const stopSync = sync.start();
+    const stopIndex = startIndexer();
+    return () => {
+      stopSync();
+      stopIndex();
+    };
   }, []);
 
-  const openNotebook = (id: string) => {
+  const openNotebook = (id: string, pageId?: string) => {
     void markOpened(db, id);
-    setRoute((from) => ({ view: 'notebook', id, from: from.view === 'notebook' ? from.from : from }));
+    setRoute((from) => ({ view: 'notebook', id, pageId, from: from.view === 'notebook' ? from.from : from }));
   };
 
   if (route.view === 'notebook') {
-    return <NotebookEditor key={route.id} notebookId={route.id} onClose={() => setRoute(route.from)} onOpenNotebook={openNotebook} />;
+    return <NotebookEditor key={route.id} notebookId={route.id} initialPageId={route.pageId} onClose={() => setRoute(route.from)} onOpenNotebook={openNotebook} />;
   }
 
   return (

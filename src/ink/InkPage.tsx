@@ -41,8 +41,11 @@ import { templateStyle } from './templates';
 import type { DashStyle, PenStyle, TextContent } from '../model/types';
 import { boxCorners, DEFAULT_TEXT_WIDTH, makeTextStroke, retextStroke, TEXT_FONT_ORDER, TEXT_FONTS } from './text';
 import { makeShapeStroke, makeTapeStroke } from './shapeTool';
-import { revealedTape } from './render';
+import { revealedTape, TAPE_CHANGE } from './render';
 import { noteTapHandled } from './tapSignal';
+import { handwriting, inkImage, recognitionLanguage, typedTextOf } from '../search/textIndex';
+import { getToken } from '../sync/auth';
+import { DriveClient } from '../sync/drive';
 import { displayColor } from './inkTheme';
 import { audioStamp, getPlayback, onRecordingChange, seekRecording } from './recording';
 import { DashSample } from '../ui/Icon';
@@ -69,7 +72,9 @@ import {
 import type { PDFDocumentProxy, RenderTask } from 'pdfjs-dist';
 import { db } from '../db/db';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { getPdf, renderPdfRegion } from '../pdf/pdf';
+import { getPdf, pdfPageText, renderPdfRegion } from '../pdf/pdf';
+import { lineAt, pageTextFromRuns, snapHighlight, textInRect } from '../pdf/pdfText';
+import type { PdfTextRun } from '../db/db';
 import { noteHover, notePen, penActiveWithin } from './penState';
 import { diagnostics, recordEvent, recordFrame } from './diagnostics';
 import { hideHoverCursor, showHoverCursor } from './hoverCursor';
@@ -290,6 +295,8 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
   const [pdfMissing, setPdfMissing] = useState(false);
   /** Links inside the imported PDF page (tap with a finger to follow). */
   const [pdfLinkAreas, setPdfLinkAreas] = useState<PdfLinkArea[]>([]);
+  /** Text of the imported PDF page (copying text, text-aware highlighter). */
+  const [pdfRuns, setPdfRuns] = useState<PdfTextRun[]>([]);
   // Stable identity (the page object is re-read after every save; the PDF behind it isn't).
   const bgFile = page.background?.fileId;
   const bgIndex = page.background?.pageIndex;
@@ -548,6 +555,7 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
       setPdfMissing(!doc);
       void renderPdf();
       if (doc) void pdfLinks(doc, background.fileId, background.pageIndex, page.width, page.height).then((areas) => alive && setPdfLinkAreas(areas));
+      if (doc) void pdfPageText(doc, background.pageIndex).then((t) => alive && setPdfRuns(t.runs)).catch(() => undefined);
     });
     return () => {
       alive = false;
@@ -1234,6 +1242,13 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
   };
 
   /** Peek under tape, or cover it up again (this device, this session only). */
+  // Flashcard mode reveals and covers tape from outside the page.
+  useEffect(() => {
+    const repaint = () => paintInk(true);
+    window.addEventListener(TAPE_CHANGE, repaint);
+    return () => window.removeEventListener(TAPE_CHANGE, repaint);
+  }, [paintInk]);
+
   const toggleTape = (s: Stroke) => {
     if (revealedTape.has(s.id)) revealedTape.delete(s.id);
     else revealedTape.add(s.id);
@@ -1717,14 +1732,20 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
           // Written while recording: remember the moment, for synced playback.
           const stamp = audioStamp();
           const stroke: Stroke = { ...liveStroke(g, false), id: newId(), ...(stamp ? { audio: stamp } : {}) };
+          // Text-aware highlighter: a sideways swipe over PDF text becomes neat bands on the lines.
+          const bands = stroke.tool === 'highlighter' && !g.snapped ? snapHighlight(stroke.points, stroke.size, pdfRuns) : null;
+          const made: Stroke[] = bands
+            ? bands.map((b, i) => ({ ...stroke, id: i ? newId() : stroke.id, points: [b.x0, b.y, 0.5, b.x1, b.y, 0.5], size: b.height, hasPressure: false }))
+            : [stroke];
+          if (bands) requestRender();
           const ctx = inkRef.current?.getContext('2d');
           const region = regionRef.current;
-          if (ctx && region) {
+          if (ctx && region && !bands) {
             applyRegion(ctx, region);
             drawStroke(ctx, stroke); // show immediately; the saved page won't need a repaint
             paintedRef.current.ids.add(stroke.id);
           }
-          onChange(page.id, [stroke], []);
+          onChange(page.id, made, []);
           // Like Drawboard: a recognised shape stays selected, ready to move, resize or rotate.
           if (g.snapped) setSelection({ ids: new Set([stroke.id]), bounds: strokeBounds(stroke) });
           break;
@@ -2322,6 +2343,44 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
     }
   };
   /** Puts a picture of the selection on the clipboard (or the share sheet). */
+  /** Reads the selected handwriting with Google Drive and copies it (plus any typed text). */
+  const [copyingText, setCopyingText] = useState(false);
+  const copySelectionAsText = async () => {
+    const strokes = selectedStrokes();
+    // Typed text boxes, plus the PDF text under the selection.
+    const pdfUnder = pdfRuns.length && selection ? textInRect(pdfRuns, selection.bounds) : '';
+    const typed = [typedTextOf(strokes), pdfUnder].filter(Boolean).join('\n');
+    let text = typed;
+    if (handwriting(strokes).length) {
+      const token = getToken();
+      if (!token || !navigator.onLine) {
+        alert('Reading handwriting requires an internet connection and Google Drive. Connect Google Drive from the account menu, then try again.');
+        return;
+      }
+      setCopyingText(true);
+      try {
+        const image = await inkImage(strokes, 1);
+        const read = image ? await new DriveClient(token).readTextFromImage(image, recognitionLanguage()) : '';
+        text = [read, typed].filter(Boolean).join('\n');
+      } catch {
+        alert('The handwriting could not be read. Check the connection and try again.');
+        return;
+      } finally {
+        setCopyingText(false);
+      }
+    }
+    if (!text) {
+      alert('No text was found in the selection.');
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      prompt('Copy this text:', text);
+    }
+    setMenuPanel(null);
+  };
+
   const copySelectionAsImage = async () => {
     const strokes = selectedStrokes();
     const b = unionRects(strokes.map(strokeBounds));
@@ -2389,7 +2448,8 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
     <div
       ref={containerRef}
       className={`ink-page${dark ? ' night' : ''}${invertPdf ? ' invert-pdf' : ''}`}
-      style={{ width: cssWidth, height: cssHeight, ...templateStyle(page.template, scale, dark) }}
+      data-page-width={page.width}
+      style={{ width: cssWidth, height: cssHeight, ...templateStyle(page.template, scale, dark, page) }}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={(e) => finish(e, false)}
@@ -2443,6 +2503,30 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
               }}
             >
               Unlock
+            </button>
+          )}
+          {pdfRuns.length > 0 && lineAt(pdfRuns, canvasMenu.x, canvasMenu.y) && (
+            <button
+              role="menuitem"
+              onClick={() => {
+                const line = lineAt(pdfRuns, canvasMenu.x, canvasMenu.y)!;
+                setCanvasMenu(null);
+                void navigator.clipboard.writeText(line).catch(() => prompt('Copy this text:', line));
+              }}
+            >
+              Copy line
+            </button>
+          )}
+          {pdfRuns.length > 0 && (
+            <button
+              role="menuitem"
+              onClick={() => {
+                const all = pageTextFromRuns(pdfRuns);
+                setCanvasMenu(null);
+                void navigator.clipboard.writeText(all).catch(() => prompt('Copy this text:', all));
+              }}
+            >
+              Copy page text
             </button>
           )}
           <button role="menuitem" onClick={() => void paste(canvasMenu)}>
@@ -2617,6 +2701,7 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
                   <span className={`switch ${keepAspect ? 'on' : ''}`} />
                 </button>
                 <button onClick={() => void copySelectionAsImage()}>Copy as image</button>
+                <button disabled={copyingText} onClick={() => void copySelectionAsText()}>{copyingText ? 'Reading handwriting…' : 'Copy as text'}</button>
               </div>
             )}
             {menuPanel === 'style' && selectedPens.length > 0 && (

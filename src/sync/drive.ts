@@ -224,6 +224,37 @@ export class DriveClient {
     });
   }
 
+  /**
+   * Reads the text in a picture of handwriting with Google Drive's own text recognition: the
+   * image is uploaded as a Google Doc (Drive converts it, reading the text), the text is
+   * exported, and the temporary document is deleted straight away.
+   */
+  async readTextFromImage(image: Blob, language: string): Promise<string> {
+    const boundary = `noteboard-${crypto.randomUUID()}`;
+    // Outside the Noteboard folder, so the sync quick check isn't woken up by it.
+    const metadata = { name: 'Noteboard text recognition (temporary)', mimeType: 'application/vnd.google-apps.document' };
+    const body = new Blob([
+      `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n`,
+      `--${boundary}\r\nContent-Type: ${image.type || 'image/jpeg'}\r\n\r\n`,
+      image,
+      `\r\n--${boundary}--`,
+    ]);
+    const params = new URLSearchParams({ uploadType: 'multipart', fields: 'id', ocrLanguage: language });
+    const res = await this.request(`${UPLOAD}/files?${params}`, {
+      method: 'POST',
+      headers: { 'Content-Type': `multipart/related; boundary=${boundary}` },
+      body,
+    });
+    const { id } = (await res.json()) as { id: string };
+    try {
+      const text = await this.request(`${API}/files/${id}/export?mimeType=text%2Fplain`);
+      // Google Docs exports start with a byte-order mark.
+      return (await text.text()).replace(/^﻿/, '').trim();
+    } finally {
+      await this.deleteFile(id).catch(() => undefined);
+    }
+  }
+
   /** The signed-in Google account and the Drive's total storage (works with the drive.file scope). */
   async about(): Promise<DriveAbout> {
     const fields = 'user(displayName,emailAddress,photoLink),storageQuota(limit,usage)';

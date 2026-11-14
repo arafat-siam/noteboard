@@ -17,6 +17,16 @@ export function brushOf(stroke: Pick<Stroke, 'tool' | 'brush' | 'penStyle'>): Br
 
 /** Tape the user has tapped to peek under, this session only (never saved or synced). */
 export const revealedTape = new Set<string>();
+/** Fired when tape is revealed or covered from outside a page (flashcard mode). */
+export const TAPE_CHANGE = 'noteboard-tape-change';
+/** Reveals or covers tape (this device, this session only) and repaints the pages. */
+export function setTapeRevealed(ids: Iterable<string>, revealed: boolean): void {
+  for (const id of ids) {
+    if (revealed) revealedTape.add(id);
+    else revealedTape.delete(id);
+  }
+  window.dispatchEvent(new Event(TAPE_CHANGE));
+}
 
 /** Flat-nib outline: each point is offset along a fixed 40° nib, so width follows direction. */
 function calligraphyOutline(stroke: Pick<Stroke, 'points' | 'size' | 'hasPressure'>): number[][] {

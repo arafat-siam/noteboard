@@ -30,36 +30,42 @@
 - [x] Selection: lock items, rectangle lasso, filters, groups, align/distribute/flip, smart guides
 - [x] Ruler and protractor; links (PDF, pages, notebooks, web); view-only share links; audio recording with synced playback
 - [x] Neutral, minimal design (restore point of the earlier look: git tag ui-v1)
+- [x] Drawboard-style library: + menu, account panel with sync badge and Drive storage, formal wording, menus with icons
+- [x] Saved toolbar presets (synced), tap empty space to hide bars, lock screen opens on the right passcode
+- [x] Handwriting search (Google Drive text recognition) and Copy as text; search in PDFs; Find in notebook
+- [x] PDF text: copy line/page, text-aware highlighter
+- [x] Zoom writing window; Cornell, music and isometric paper; linked monthly planners
+- [x] Bookmarks and contents, flashcards from tape, presentation mode, whiteboard pages that grow
 
 ## Missing compared with pro note apps (GoodNotes, Notability, Drawboard, Noteshelf)
 Rough priority order (★ = biggest gap).
 
 ### Writing and editing
-- [ ] ★ Handwriting search and convert handwriting to text
+- [x] ★ Handwriting search and convert handwriting to text
 - [ ] Eyedropper and saved favourite colours
-- [ ] Ruler (and protractor) for straight lines at any angle
+- [x] Ruler (and protractor) for straight lines at any angle
 - [ ] Eraser: auto-switch back to the pen
-- [ ] Rectangle selection and select-by-type in the lasso
-- [ ] Zoom window (write large, ink lands small) for neat handwriting
+- [x] Rectangle selection and select-by-type in the lasso
+- [x] Zoom window (write large, ink lands small) for neat handwriting
 - [ ] Picture tools: crop, opacity, replace; camera photo and document scanner
 - [ ] Stickers / saved elements library (reuse drawings and pictures)
-- [ ] Audio recording synced to what you wrote
+- [x] Audio recording synced to what you wrote
 
 ### Pages, paper and PDFs
 - [ ] ★ More paper: Cornell, planner, music, isometric, custom templates; paper colour; page sizes (Letter, square) and landscape
 - [ ] Change paper for all pages; rotate a page
-- [ ] Bookmarks, outline / table of contents
-- [ ] Links: tap a PDF link, link to another page or notebook, web links
-- [ ] ★ PDF text: search, select and copy, text-aware highlighter
+- [x] Bookmarks, outline / table of contents
+- [x] Links: tap a PDF link, link to another page or notebook, web links
+- [x] ★ PDF text: search, select and copy, text-aware highlighter
 - [ ] Horizontal page scrolling (one page at a time) as an option
-- [ ] Infinite canvas / whiteboard pages
+- [x] Infinite canvas / whiteboard pages
 
 ### Library
 - [ ] Notebook covers (choose / custom), folder icons
 - [ ] Manual sort order (drag notebooks into your own order)
 - [ ] Smart folders (saved searches), search inside notes (handwriting, typed text, PDF text)
 - [ ] Notebook templates (start a notebook with chosen pages)
-- [ ] Lock individual notebooks
+- [x] Lock individual notebooks
 
 ### Sharing and sync
 - [ ] Print
@@ -74,5 +80,5 @@ Rough priority order (★ = biggest gap).
 
 ### Polish
 - [ ] Two notebooks side by side inside the app
-- [ ] Dark paper (the app UI already has dark mode)
+- [x] Dark paper (the app UI already has dark mode)
 - [ ] Accessibility audit, localization, onboarding tour

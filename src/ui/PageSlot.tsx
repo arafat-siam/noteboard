@@ -102,14 +102,14 @@ export const PageSlot = memo(function PageSlot(props: Props) {
   if (!page) {
     // Still loading (or not downloaded yet): keep the page's space so scrolling doesn't jump.
     return (
-      <div className="page-slot">
+      <div className="page-slot" data-page-id={pageId}>
         <div className="page-placeholder" style={{ width: (props.size?.width ?? PAGE_WIDTH) * props.scale, height: (props.size?.height ?? PAGE_HEIGHT) * props.scale }} />
       </div>
     );
   }
 
   return (
-    <div className="page-slot">
+    <div className="page-slot" data-page-id={pageId}>
       <InkPage
         page={page}
         scale={props.scale}

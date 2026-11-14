@@ -29,6 +29,9 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { readDragIds, writeDragIds } from './dnd';
 import { Icon, type IconName } from './Icon';
 import { MenuButton, MenuItem, MenuLabel, MenuSeparator } from './Menu';
+import { searchText, type TextMatch } from '../search/textIndex';
+import { createMonthPlanner } from '../ink/planner';
+import { onIndexChange } from '../search/indexer';
 import { NotebookLockDialog, UnlockNotebook } from './NotebookLockDialogs';
 import { ShareDialog } from './ShareDialog';
 import { PageThumbnail } from './PageManager';
@@ -37,7 +40,7 @@ import { isNotebookUnlocked } from '../security/notebookLock';
 interface Props {
   route: Route;
   onNavigate: (r: Route) => void;
-  onOpenNotebook: (id: ID) => void;
+  onOpenNotebook: (id: ID, pageId?: ID) => void;
   onToggleSidebar: () => void;
 }
 
@@ -77,12 +80,31 @@ function usePersisted<T extends string>(key: string, fallback: T): [T, (v: T) =>
 export function LibraryView({ route, onNavigate, onOpenNotebook, onToggleSidebar }: Props) {
   const library = useLibrary();
   const [query, setQuery] = useState('');
+  // Words found inside notes (handwriting, text boxes, PDF text).
+  const [textMatches, setTextMatches] = useState<TextMatch[]>([]);
+  useEffect(() => {
+    const q = query.trim();
+    if (q.length < 2) {
+      setTextMatches([]);
+      return;
+    }
+    let cancelled = false;
+    const run = () => void searchText(q).then((m) => !cancelled && setTextMatches(m));
+    const timer = window.setTimeout(run, 180);
+    const stop = onIndexChange(run);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+      stop();
+    };
+  }, [query]);
   const [sort, setSort] = usePersisted<SortKey>('noteboard.sort', 'name');
   const [layout, setLayout] = usePersisted<'grid' | 'list'>('noteboard.layout', 'grid');
   const [selecting, setSelecting] = useState(false);
   const [selected, setSelected] = useState<Set<ID>>(new Set());
   const [dialog, setDialog] = useState<Dialog>(null);
   const pdfInputRef = useRef<HTMLInputElement>(null);
+  const [plannerOpen, setPlannerOpen] = useState(false);
   // Notebooks with pages not yet uploaded (shown only while Drive sync is connected).
   const syncState = useSyncStatus().state;
   const syncing = syncState !== 'signed-out' && syncState !== 'not-configured';
@@ -318,6 +340,7 @@ export function LibraryView({ route, onNavigate, onOpenNotebook, onToggleSidebar
                 <>
                   <MenuItem icon="notebook" label="New notebook" onClick={() => { close(); setDialog({ kind: 'new-notebook' }); }} />
                   <MenuItem icon="folderPlus" label="New folder" onClick={() => { close(); setDialog({ kind: 'new-folder' }); }} />
+                  <MenuItem icon="template" label="New monthly planner" onClick={() => { close(); setPlannerOpen(true); }} />
                   <MenuSeparator />
                   <MenuItem icon="fileImport" label="Import PDF" disabled={importing} onClick={() => { close(); pdfInputRef.current?.click(); }} />
                 </>
@@ -388,8 +411,34 @@ export function LibraryView({ route, onNavigate, onOpenNotebook, onToggleSidebar
         </section>
       )}
 
+      {textMatches.length > 0 && (
+        <section className="library-section">
+          <h2 className="section-title">In your notes</h2>
+          <div className="text-results">
+            {textMatches
+              .map((m) => ({ m, nb: library.byId.get(m.notebookId) }))
+              .filter((x): x is { m: TextMatch; nb: Notebook } => x.nb?.kind === 'notebook' && !x.nb.deleted && !x.nb.lock)
+              .slice(0, 50)
+              .map(({ m, nb }) => (
+                <button key={m.pageId} className="text-result" onClick={() => onOpenNotebook(nb.id, m.pageId)}>
+                  <span className="text-result-head">
+                    <Icon name={m.source === 'pdf' ? 'fileImport' : m.source === 'typed' ? 'text' : 'pen'} size={16} />
+                    <span className="text-result-name">{nb.name}</span>
+                    <span className="muted">Page {nb.pageIds.indexOf(m.pageId) + 1}</span>
+                  </span>
+                  <span className="text-result-snippet">
+                    {m.snippet.before}
+                    <mark>{m.snippet.match}</mark>
+                    {m.snippet.after}
+                  </span>
+                </button>
+              ))}
+          </div>
+        </section>
+      )}
+
       {items.length === 0 ? (
-        <EmptyState
+        textMatches.length > 0 ? null : <EmptyState
           route={route}
           searching={!!query}
           onNewNotebook={() => setDialog({ kind: 'new-notebook' })}
@@ -420,6 +469,18 @@ export function LibraryView({ route, onNavigate, onOpenNotebook, onToggleSidebar
           onExportPdf={exportPdf}
           localOnly={library.localOnly.has(menuFor)}
           localOnlyRoot={library.localOnlyRoots.has(menuFor)}
+        />
+      )}
+
+      {plannerOpen && (
+        <PlannerDialog
+          onClose={() => setPlannerOpen(false)}
+          onCreate={(year, month) =>
+            void act(async () => {
+              const nb = await createMonthPlanner(db, year, month, folderId);
+              onOpenNotebook(nb.id);
+            })
+          }
         />
       )}
 
@@ -752,6 +813,33 @@ function relativeTime(time: number): string {
   if (s < 86400) return `${Math.round(s / 3600)} h ago`;
   if (s < 86400 * 7) return `${Math.round(s / 86400)} d ago`;
   return new Date(time).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+}
+
+/** Choose the month for a new linked planner. */
+function PlannerDialog(props: { onClose: () => void; onCreate: (year: number, month: number) => void }) {
+  const now = new Date();
+  const [value, setValue] = useState(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`);
+  const [y, m] = value.split('-').map(Number) as [number, number];
+  return (
+    <Modal title="New monthly planner" onClose={props.onClose}>
+      <p className="settings-hint">A month overview with one page per day. Tap a date to open its page; each day page links back to the month.</p>
+      <label className="field-label" htmlFor="planner-month">Month</label>
+      <input id="planner-month" className="text-input" type="month" value={value} onChange={(e) => e.target.value && setValue(e.target.value)} />
+      <div className="modal-actions">
+        <button onClick={props.onClose}>Cancel</button>
+        <button
+          className="primary"
+          disabled={!y || !m}
+          onClick={() => {
+            props.onCreate(y, m - 1);
+            props.onClose();
+          }}
+        >
+          Create planner
+        </button>
+      </div>
+    </Modal>
+  );
 }
 
 function EmptyState(props: { route: Route; searching: boolean; onNewNotebook: () => void; onNewFolder: () => void }) {

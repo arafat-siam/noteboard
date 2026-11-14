@@ -42,6 +42,15 @@ describe('mergePage', () => {
   });
 });
 
+describe('whiteboard pages', () => {
+  it('keep the larger size from either device', () => {
+    const a = { ...page({ updatedAt: 5 }), grows: true, width: 1600, height: 3200 };
+    const b = { ...page({ updatedAt: 9 }), grows: true, width: 2400, height: 1600 };
+    const merged = mergePage(a, b);
+    expect([merged.width, merged.height]).toEqual([2400, 3200]);
+  });
+});
+
 describe('mergeLibrary', () => {
   it('takes the newer copy of each item', () => {
     const { merged, localChanged, remoteChanged } = mergeLibrary(
@@ -73,6 +82,18 @@ describe('mergeLibrary', () => {
     const remote = { ...base, pageIds: ['p1', 'pB'], deletedPageIds: ['p2'], updatedAt: 4 };
     const merged = mergeLibrary([local], [remote]).merged[0];
     expect(merged?.kind === 'notebook' && merged.pageIds).toEqual(['p1', 'pA', 'pB']);
+  });
+
+  it('keeps bookmarks made on either device and honours removals', () => {
+    const base = {
+      kind: 'notebook' as const, id: 'n', parentId: null, name: 'N', coverColor: '#000', template: 'ruled' as const,
+      tags: [], createdAt: 1, trashedAt: null, favorite: false, deleted: false, lastOpenedAt: null, pageIds: ['p1', 'p2'], deletedPageIds: [],
+    };
+    const mark = (id: string, title: string, createdAt: number) => ({ id, pageId: 'p1', title, createdAt });
+    const local = { ...base, updatedAt: 5, bookmarks: [mark('a', 'Intro', 1), mark('b', 'Local', 2)], deletedBookmarkIds: [] };
+    const remote = { ...base, updatedAt: 4, bookmarks: [mark('a', 'Old title', 1), mark('c', 'Remote', 3)], deletedBookmarkIds: ['b'] };
+    const merged = mergeLibrary([local], [remote]).merged[0];
+    expect(merged?.kind === 'notebook' && merged.bookmarks?.map((b) => b.title)).toEqual(['Intro', 'Remote']);
   });
 
   it('reports no changes when both sides match', () => {

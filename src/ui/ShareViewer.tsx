@@ -107,7 +107,7 @@ function ViewerPage({ page, scale, assets }: { page: Page; scale: number; assets
     <div
       ref={holder}
       className="viewer-page"
-      style={{ width: page.width * scale, height: page.height * scale, ...(page.background ? { background: '#fff' } : templateStyle(page.template, scale)) }}
+      style={{ width: page.width * scale, height: page.height * scale, ...(page.background ? { background: '#fff' } : templateStyle(page.template, scale, false, page)) }}
     >
       <canvas ref={canvas} style={{ width: '100%', height: '100%' }} />
     </div>

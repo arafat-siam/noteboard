@@ -1,6 +1,7 @@
 export type ID = string;
 
-export type PaperTemplate = 'blank' | 'ruled' | 'grid' | 'dotted';
+/** Older versions draw templates they don't know as blank paper. */
+export type PaperTemplate = 'blank' | 'ruled' | 'grid' | 'dotted' | 'cornell' | 'music' | 'isometric';
 /**
  * 'image' items are pictures placed on the page. They are stored as strokes so they share
  * everything strokes have: immutable ids, tombstones, sync merge, undo, select / move / resize /
@@ -142,6 +143,8 @@ export interface Page {
   height: number;
   /** Imported PDF page shown under the ink. */
   background?: PdfBackground;
+  /** Whiteboard page: grows to the right and down as ink nears its edges (never shrinks). */
+  grows?: boolean;
   strokes: Stroke[];
   /** Tombstones: ids of erased strokes, kept so deletions survive merges with other devices. */
   deletedStrokeIds: ID[];
@@ -194,6 +197,10 @@ export interface Notebook extends LibraryBase {
   recordings?: Recording[];
   /** Deleted recordings, so another device doesn't bring them back. */
   deletedRecordingIds?: ID[];
+  /** Bookmarked pages (the notebook's contents). Merged like recordings. */
+  bookmarks?: Bookmark[];
+  /** Removed bookmarks, so another device doesn't bring them back. */
+  deletedBookmarkIds?: ID[];
 }
 
 export interface Recording {
@@ -214,7 +221,15 @@ export interface NotebookLock {
 }
 
 /** Notebook settings changed through setNotebookSettings (last change wins when syncing). */
-export type NotebookSettings = Partial<Pick<Notebook, 'pageTheme' | 'invertPdf' | 'pageSize' | 'lock'>>;
+export type NotebookSettings = Partial<Pick<Notebook, 'pageTheme' | 'invertPdf' | 'pageSize' | 'lock' | 'bookmarks' | 'deletedBookmarkIds'>>;
+
+/** A bookmarked page with its title (shown in the notebook's contents). */
+export interface Bookmark {
+  id: ID;
+  pageId: ID;
+  title: string;
+  createdAt: number;
+}
 
 export type LibraryItem = Folder | Notebook;
 

@@ -82,6 +82,12 @@ Verify UI changes in the browser pane (launch config `noteboard-dev`). Synthetic
 - Sharing (`src/share/`): view-only snapshot in a separate Drive folder, public via permission; locked notebooks are AES-GCM sealed with the passcode. Viewer route `#/s/<id>` needs `GOOGLE_API_KEY` (docs/SHARING_SETUP.md).
 - Audio (`src/ink/recording.ts`, `RecordingsPanel`): notebook `recordings` (merge = union minus `deletedRecordingIds`), audio in files table, ink stamped with `audio: {rec, t}`.
 - Design preview: branch `redesign` is built into `/noteboard/preview/` whenever main deploys. Restore point of the old look: tag `ui-v1`.
+- Search (`src/search/`): local `pageText` table (Dexie v4, not synced) per page: handwriting read by Google Drive OCR (`DriveClient.readTextFromImage`: cropped ink JPEG uploaded as a temporary Google Doc outside the Noteboard folder, text exported, doc deleted), typed text boxes, PDF text + runs. `indexer.ts` runs after sync/online/every 5 min, one page at a time, never while writing; local-only and locked notebooks are never sent; locked (planner) strokes aren't OCR'd. Library search shows "In your notes"; the editor has a Find panel.
+- PDF text (`src/pdf/pdfText.ts`, tested): copy line / page text (long-press), text in "Copy as text", and the text-aware highlighter (sideways swipe over PDF text → bands snapped to words).
+- Zoom writing window (`src/ui/ZoomWindow.tsx`): magnified strip; ink goes through the editor's `onChange` (undo/sync as usual).
+- Templates: Cornell / music / isometric are line templates (`templateLines`) drawn as SVG on screen and as lines in exports. Monthly planner (`src/ink/planner.ts`): locked text boxes/lines with page links.
+- Study: notebook `bookmarks` (merged like recordings, `deletedBookmarkIds`), Contents panel, flashcards over tape (`setTapeRevealed`).
+- Whiteboard pages: `page.grows`; ink near the right/bottom edge grows the page (merge keeps the larger size). Presentation mode: bars hidden, laser in hand.
 - CI annotations (`scripts/ci-run.sh`) are how build errors are read without GitHub login — keep using it for new CI steps.
 
 ## Subagents (.claude/agents)

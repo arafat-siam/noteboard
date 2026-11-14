@@ -34,6 +34,9 @@ import { useEmptySpaceTap, useSlideAwayBar } from './useBarsAutoHide';
 import { activePresetId, readPresets, setActivePresetId, usePresets, writePresets } from '../ink/presets';
 import { Icon } from './Icon';
 import { MenuButton, MenuItem, MenuLabel, MenuSeparator } from './Menu';
+import { FindPanel } from './FindPanel';
+import { ZoomWindow } from './ZoomWindow';
+import { ContentsPanel, FlashcardPanel } from './StudyTools';
 import { useAppIsDark } from './theme';
 import { GuideOverlay, toggleGuide } from './GuideOverlay';
 import { FOLLOW_LINK, type FollowRequest } from '../ink/links';
@@ -45,6 +48,10 @@ import type { NotebookSettings } from '../model/types';
 import { DEFAULT_POINTER, DEFAULT_SHAPE, DEFAULT_SLOTS, DEFAULT_TAPE, DEFAULT_TEXT, PEN_COLORS, type PenSlot } from '../ink/palette';
 import { isBrushKind } from '../ink/brushes';
 import { newId as makeId } from '../model/types';
+
+/** Whiteboard pages grow by this much when ink comes within GROW_MARGIN of an edge (page units). */
+const GROW_STEP = 600;
+const GROW_MARGIN = 220;
 
 /** Zoom range: 5 % (see a whole notebook at once) to 400 %. */
 const MIN_ZOOM = 0.05;
@@ -118,10 +125,13 @@ function loadSettings(): ToolSettings {
 
 export function NotebookEditor({
   notebookId,
+  initialPageId,
   onClose,
   onOpenNotebook,
 }: {
   notebookId: string;
+  /** Open at this page (e.g. from a search result). */
+  initialPageId?: string;
   onClose: () => void;
   /** Follow a link to another notebook. */
   onOpenNotebook?: (id: string) => void;
@@ -161,6 +171,29 @@ export function NotebookEditor({
   const [notice, setNotice] = useState<string | null>(null);
   const [addingPdf, setAddingPdf] = useState(false);
   const pdfInputRef = useRef<HTMLInputElement>(null);
+  const [findOpen, setFindOpen] = useState(false);
+  // Presentation mode: no bars, laser pointer in hand, page arrows; Exit restores everything.
+  const [presenting, setPresenting] = useState<null | { tool: ToolKind }>(null);
+  const startPresenting = () => {
+    setPresenting({ tool: settings.tool });
+    setFindOpen(false);
+    setStudyPanel(null);
+    setSettings((s) => ({ ...s, tool: 'laser' }));
+    void document.documentElement.requestFullscreen?.().catch(() => undefined);
+  };
+  const stopPresenting = () => {
+    const previous = presenting?.tool;
+    setPresenting(null);
+    if (previous) selectTool(previous);
+    if (document.fullscreenElement) void document.exitFullscreen?.().catch(() => undefined);
+  };
+  const stepPage = (delta: number) => {
+    const current = pageIds.indexOf(visiblePageId() ?? '');
+    const next = pageIds[Math.max(0, Math.min(pageIds.length - 1, current + delta))];
+    if (next) openPage(next);
+  };
+  const [studyPanel, setStudyPanel] = useState<null | 'contents' | 'cards'>(null);
+  const [zoomPage, setZoomPage] = useState<string | null>(null);
   const syncStatus = useSyncStatus();
   const [pagesOpen, setPagesOpen] = useState(false);
   const pictureInputRef = useRef<HTMLInputElement>(null);
@@ -375,6 +408,19 @@ export function NotebookEditor({
         undoRef.current = [...undoRef.current.slice(-199), inverse];
         redoRef.current = [];
         publish();
+        // Whiteboard page: ink near the right or bottom edge makes the page bigger.
+        if (page?.grows && added.length) {
+          let maxX = 0;
+          let maxY = 0;
+          for (const st of added)
+            for (let i = 0; i < st.points.length; i += 3) {
+              maxX = Math.max(maxX, st.points[i]!);
+              maxY = Math.max(maxY, st.points[i + 1]!);
+            }
+          const width = maxX > page.width - GROW_MARGIN ? page.width + GROW_STEP : page.width;
+          const height = maxY > page.height - GROW_MARGIN ? page.height + GROW_STEP : page.height;
+          if (width !== page.width || height !== page.height) await setPageSize(db, [pageId], { width, height });
+        }
       });
     },
     [apply],
@@ -774,6 +820,14 @@ export function NotebookEditor({
     if (top !== undefined && scrollRef.current) scrollRef.current.scrollTop = top;
   };
 
+  // Opened from a search result: go to that page once the pages are laid out.
+  const openedAt = useRef(false);
+  useEffect(() => {
+    if (openedAt.current || !initialPageId || !pageIds.includes(initialPageId)) return;
+    openedAt.current = true;
+    window.setTimeout(() => openPage(initialPageId), 120);
+  }, [pageIds.length]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const openPage = (pageId: string) => {
     setPagesOpen(false);
     requestAnimationFrame(() => {
@@ -813,7 +867,27 @@ export function NotebookEditor({
   };
 
   return (
-    <div className="editor">
+    <div className={`editor${presenting ? ' presenting' : ''}`}>
+      {presenting && (
+        <div className="present-bar" role="toolbar" aria-label="Presentation">
+          <button className="header-icon" aria-label="Previous page" onClick={() => stepPage(-1)}>
+            <Icon name="chevronUp" size={20} />
+          </button>
+          <button className="header-icon" aria-label="Next page" onClick={() => stepPage(1)}>
+            <Icon name="chevronDown" size={20} />
+          </button>
+          <button
+            className={`header-icon${settings.tool === 'laser' ? ' on' : ''}`}
+            aria-label={settings.tool === 'laser' ? 'Laser pointer (on)' : 'Laser pointer'}
+            onClick={() => selectTool(settings.tool === 'laser' ? presenting.tool : 'laser')}
+          >
+            <Icon name="present" size={20} />
+          </button>
+          <button className="present-exit" onClick={stopPresenting}>
+            Exit
+          </button>
+        </div>
+      )}
       <header className="toolbar editor-top" ref={topBarRef}>
         <button className="back-button" onClick={onClose} aria-label="Back to library">
           <Icon name="chevronLeft" size={22} />
@@ -836,6 +910,17 @@ export function NotebookEditor({
             <Icon name="plus" size={18} />
           </button>
         </div>
+        <button
+          className={`tool icon-tool${zoomPage ? ' on' : ''}`}
+          aria-label="Zoom writing window"
+          title="Zoom writing window"
+          onClick={() => setZoomPage((z) => (z ? null : visiblePageId() ?? null))}
+        >
+          <Icon name="zoomIn" size={22} />
+        </button>
+        <button className={`tool icon-tool${findOpen ? ' on' : ''}`} aria-label="Find in notebook" title="Find" onClick={() => setFindOpen((o) => !o)}>
+          <Icon name="search" size={22} />
+        </button>
         <button
           className={`tool icon-tool${guideKind === 'ruler' ? ' on' : ''}`}
           aria-label="Ruler"
@@ -860,15 +945,38 @@ export function NotebookEditor({
             <>
               <MenuItem icon="image" label="Picture" onClick={() => { close(); pictureInputRef.current?.click(); }} />
               <MenuItem icon="plus" label="Blank page at the end" onClick={() => { close(); void addPage(db, notebook.id).then(() => sync.syncSoon()); }} />
+              <MenuItem
+                icon="board"
+                label="Whiteboard page at the end"
+                onClick={() => {
+                  close();
+                  void addPage(db, notebook.id)
+                    .then(async (added) => {
+                      if (added) await db.pages.update(added.id, { width: 1600, height: 1600, template: 'dotted', grows: true, updatedAt: Date.now(), dirty: 1 });
+                      sync.syncSoon();
+                      setNotice('Whiteboard page added. It grows as you write near its edges.');
+                    });
+                }}
+              />
               <MenuItem icon="fileImport" label={addingPdf ? 'Adding PDF…' : 'PDF pages at the end'} disabled={addingPdf} onClick={() => { close(); pdfInputRef.current?.click(); }} />
             </>
           )}
         >
           <Icon name="plus" size={22} />
         </MenuButton>
-        <button className="tool icon-tool" aria-label="Pages" title="Pages" onClick={() => setPagesOpen(true)}>
+        <MenuButton
+          className="tool icon-tool"
+          label="Pages and study"
+          menu={(close) => (
+            <>
+              <MenuItem icon="pages" label="All pages" onClick={() => { close(); setPagesOpen(true); }} />
+              <MenuItem icon="toc" label="Contents and bookmarks" onClick={() => { close(); setFindOpen(false); setStudyPanel('contents'); }} />
+              <MenuItem icon="cards" label="Study with flashcards" onClick={() => { close(); setFindOpen(false); setStudyPanel('cards'); }} />
+            </>
+          )}
+        >
           <Icon name="pages" size={22} />
-        </button>
+        </MenuButton>
         <MenuButton
           className="tool icon-tool"
           label="Share and export"
@@ -880,6 +988,8 @@ export function NotebookEditor({
               <MenuItem icon="image" label="Export current page as image" onClick={() => { close(); void exportVisiblePagePng(); }} />
               <MenuSeparator />
               <MenuItem icon="link" label="Share view-only link" onClick={() => { close(); setSharing(true); }} />
+              <MenuSeparator />
+              <MenuItem icon="present" label="Present" onClick={() => { close(); startPresenting(); }} />
             </>
           )}
         >
@@ -1024,6 +1134,9 @@ export function NotebookEditor({
         </div>
       </div>
       </div>
+      {zoomPage && pageIds.includes(zoomPage) && (
+        <ZoomWindow pageId={zoomPage} settings={settings} onCommit={(id, strokes) => onChange(id, strokes, [])} onClose={() => setZoomPage(null)} />
+      )}
 
       {presetDialog && (
         <PromptDialog
@@ -1064,6 +1177,26 @@ export function NotebookEditor({
         />
       )}
 
+      {studyPanel === 'contents' && !findOpen && (
+        <ContentsPanel notebook={notebook} currentPageId={visiblePageId} onOpenPage={openPage} onClose={() => setStudyPanel(null)} />
+      )}
+      {studyPanel === 'cards' && !findOpen && (
+        <FlashcardPanel
+          notebook={notebook}
+          onShowCard={(pageId, y) => {
+            const index = pageIds.indexOf(pageId);
+            const slot = scrollRef.current?.querySelectorAll<HTMLElement>('.page-slot')[index];
+            const el = scrollRef.current;
+            if (!slot || !el) return;
+            // The card a third of the way down the screen.
+            el.scrollTop += slot.getBoundingClientRect().top - el.getBoundingClientRect().top + y * scale - el.clientHeight / 3;
+          }}
+          onClose={() => {
+            setStudyPanel(null);
+          }}
+        />
+      )}
+      {findOpen && <FindPanel notebookId={notebook.id} pageIds={pageIds} onOpenPage={openPage} onClose={() => setFindOpen(false)} />}
       {showDiagnostics && <DiagnosticsOverlay />}
       {sharing && <ShareDialog item={notebook} onClose={() => setSharing(false)} />}
       {backStack.length > 0 && (

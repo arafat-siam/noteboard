@@ -755,3 +755,89 @@ button.secondary {
   border-radius: 4px;
   background: rgba(145, 158, 171, 0.08);
 }
+
+/* ---- Contents and flashcards ---- */
+.panel-title {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  padding-left: 6px;
+}
+.contents-row {
+  display: flex;
+  align-items: center;
+}
+.contents-row .find-result {
+  flex: 1;
+  min-width: 0;
+}
+.panel-foot {
+  padding: 8px 10px 10px;
+  border-top: 1px solid var(--hairline);
+}
+.flashcard-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+}
+.flashcard-count {
+  font-size: 13px;
+  font-weight: 600;
+}
+.flashcard-reveal {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 46px;
+}
+.flashcard-actions {
+  display: flex;
+  gap: 6px;
+}
+.flashcard-actions button {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  font-size: 13px;
+  padding: 6px;
+}
+
+/* ---- Presentation mode ---- */
+.editor.presenting .editor-top,
+.editor.presenting .tool-palette,
+.editor.presenting .find-panel,
+.editor.presenting .zoom-window {
+  display: none !important;
+}
+.present-bar {
+  position: fixed;
+  top: calc(12px + env(safe-area-inset-top));
+  right: 12px;
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: var(--shadow-sm);
+  opacity: 0.55;
+  transition: opacity 0.2s;
+}
+.present-bar:hover,
+.present-bar:focus-within {
+  opacity: 1;
+}
+.present-exit {
+  min-height: 36px;
+  padding: 0 14px;
+  margin-left: 4px;
+}

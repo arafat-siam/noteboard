@@ -6,7 +6,7 @@ import type { LibraryItem, Notebook, Page, PaperTemplate, Stroke } from '../mode
 import { brushOf, DEFAULT_FILL_OPACITY, drawPage, fillSvgPath, strokeSvgPath } from '../ink/render';
 import { arrowPath } from '../ink/shapeTool';
 import { drawTextStroke } from '../ink/text';
-import { DARK_PAPER, TEMPLATE_METRICS } from '../ink/templates';
+import { DARK_PAPER, TEMPLATE_METRICS, templateLines } from '../ink/templates';
 import { darkVariant, setInkDark } from '../ink/inkTheme';
 import { pdfLinks } from '../ink/links';
 import { strokeBounds } from '../ink/geometry';
@@ -32,7 +32,11 @@ function drawTemplatePdf(pdfPage: PDFPage, template: PaperTemplate, width: numbe
   const line = (x1: number, y1: number, x2: number, y2: number, c = color) =>
     pdfPage.drawLine({ start: { x: x1 * PT, y: h - y1 * PT }, end: { x: x2 * PT, y: h - y2 * PT }, thickness: 0.6, color: c });
 
-  if (template === 'ruled') {
+  const drawn = templateLines(template, width, height);
+  if (drawn) {
+    const strong = hexToRgb(dark ? DARK_PAPER.margin : m.marginColor);
+    for (const [x1, y1, x2, y2, s] of drawn) line(x1, y1, x2, y2, s ? strong : color);
+  } else if (template === 'ruled') {
     for (let y = m.ruledSpacing; y < height; y += m.ruledSpacing) line(0, y, width, y);
     line(m.ruledMargin, 0, m.ruledMargin, height, hexToRgb(dark ? DARK_PAPER.margin : m.marginColor));
   } else if (template === 'grid') {
@@ -246,7 +250,13 @@ export async function exportPagePng(page: Page, pixelScale = 2, db: NoteboardDB 
   ctx.strokeStyle = dark ? DARK_PAPER.line : m.lineColor;
   ctx.lineWidth = pixelScale * 0.8;
   ctx.beginPath();
-  if (page.template === 'ruled') {
+  const drawn = templateLines(page.template, page.width, page.height);
+  if (drawn) {
+    for (const [x1, y1, x2, y2] of drawn) {
+      ctx.moveTo(x1 * pixelScale, y1 * pixelScale);
+      ctx.lineTo(x2 * pixelScale, y2 * pixelScale);
+    }
+  } else if (page.template === 'ruled') {
     for (let y = m.ruledSpacing; y < page.height; y += m.ruledSpacing) {
       ctx.moveTo(0, y * pixelScale);
       ctx.lineTo(canvas.width, y * pixelScale);

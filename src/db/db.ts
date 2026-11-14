@@ -24,6 +24,33 @@ export type PageRecord = Omit<Page, 'strokes'>;
 /** One stroke, stored on its own and linked to its page. */
 export type StoredStroke = Stroke & { pageId: string };
 
+/** A PDF text run on a page, in page units (for search highlights and text selection). */
+export interface PdfTextRun {
+  str: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/** What search knows about one page. Rebuilt when the ink (`inkKey`) or PDF changes. */
+export interface PageTextRow {
+  pageId: string;
+  notebookId: string;
+  /** Handwriting as text (Google Drive OCR); '' when there's no ink or it couldn't be read yet. */
+  ink: string;
+  /** Fingerprint of the handwriting `ink` was read from; null = not read yet. */
+  inkKey: string | null;
+  /** Typed text boxes. */
+  typed: string;
+  /** Text of the imported PDF page under the ink. */
+  pdf: string;
+  pdfRuns?: PdfTextRun[];
+  /** Which PDF page `pdf` came from (fileId:index). */
+  pdfKey: string | null;
+  at: number;
+}
+
 /** Local working copy (IndexedDB). Google Drive is the durable copy shared across devices. */
 export class NoteboardDB extends Dexie {
   items!: Table<LibraryItem, string>;
@@ -32,6 +59,8 @@ export class NoteboardDB extends Dexie {
   meta!: Table<MetaRow, string>;
   sync!: Table<SyncRow, string>;
   files!: Table<StoredFile, string>;
+  /** Searchable text of each page (handwriting read by Google Drive, text boxes, PDF text). Local only. */
+  pageText!: Table<PageTextRow, string>;
 
   constructor(name = 'noteboard') {
     super(name);
@@ -70,6 +99,16 @@ export class NoteboardDB extends Dexie {
           await pages.put(record);
         }
       });
+    // v4: search index of page text.
+    this.version(4).stores({
+      items: 'id, kind',
+      pages: 'id, notebookId, dirty',
+      strokes: 'id, pageId',
+      meta: 'key',
+      sync: 'key',
+      files: 'id, uploaded',
+      pageText: 'pageId, notebookId',
+    });
   }
 
   async getMeta<T>(key: string): Promise<T | undefined> {

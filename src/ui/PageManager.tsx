@@ -333,7 +333,7 @@ export function PageThumbnail({
     <div
       ref={holderRef}
       className="page-thumb-paper"
-      style={{ width, height, ...(record && !record.background ? templateStyle(record.template, k, inkIsDark()) : { background: inkIsDark() ? '#1c1d21' : '#fff' }) }}
+      style={{ width, height, ...(record && !record.background ? templateStyle(record.template, k, inkIsDark(), record) : { background: inkIsDark() ? '#1c1d21' : '#fff' }) }}
     >
       <canvas ref={canvasRef} style={{ width, height }} />
     </div>

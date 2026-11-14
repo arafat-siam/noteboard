@@ -115,3 +115,24 @@ export async function renderPdfRegion(
   });
   return { canvas, task };
 }
+
+/** The text of an imported PDF page, with each run's box in page units. */
+export async function pdfPageText(doc: PDFDocumentProxy, pageIndex: number): Promise<{ text: string; runs: import('../db/db').PdfTextRun[] }> {
+  const page = await doc.getPage(pageIndex + 1);
+  const viewport = page.getViewport({ scale: PT_TO_UNITS });
+  const content = await page.getTextContent();
+  const [va, vb, vc, vd, ve, vf] = viewport.transform as number[];
+  const runs: import('../db/db').PdfTextRun[] = [];
+  let text = '';
+  for (const item of content.items) {
+    if (!('str' in item)) continue;
+    const [, , c, d, e, f] = item.transform as number[];
+    // Text space → viewport (page units): viewport.transform × item.transform.
+    const x = va! * e! + vc! * f! + ve!;
+    const y = vb! * e! + vd! * f! + vf!;
+    const height = Math.hypot(va! * c! + vc! * d!, vb! * c! + vd! * d!) || Math.hypot(c!, d!) * PT_TO_UNITS;
+    if (item.str.trim()) runs.push({ str: item.str, x, y: y - height, width: item.width * PT_TO_UNITS, height });
+    text += item.str + (item.hasEOL ? '\n' : ' ');
+  }
+  return { text: text.replace(/[ \t]+/g, ' ').trim(), runs };
+}
