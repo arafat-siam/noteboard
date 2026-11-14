@@ -26,7 +26,8 @@ so we lock it to your website and to Google Drive only. It costs nothing.
 
 1. Open https://github.com/arafat-siam/noteboard → **Settings** → **Secrets and variables** →
    **Actions** → tab **Variables**.
-2. **New repository variable** → Name `GOOGLE_API_KEY`, Value: the key → **Add variable**.
+2. **New repository variable** → Name `GOOGLE_API_KEY` (exactly this, in capitals), Value: the
+   key → **Add variable**. (A repository *secret* with the same name works too.)
 3. Tab **Actions** (top of the repository) → the latest run → **Re-run all jobs** (or push any
    change). A few minutes later sharing works.
 
@@ -39,3 +40,11 @@ so we lock it to your website and to Google Drive only. It costs nothing.
 - **Stop sharing** deletes the copy, and the link stops working immediately.
 - Locked notebooks are encrypted with their passcode before upload. Without the passcode, the
   shared file is unreadable, even to Google.
+
+## Still not working?
+
+- Open the repository's **Actions** tab → the latest run. A yellow note "Share links are off"
+  means the build didn't find the key: check the name is exactly `GOOGLE_API_KEY`.
+- The key must allow **Google Drive API** and the website `https://arafat-siam.github.io/*`.
+- After a new build, close Noteboard in the iPad app switcher and open it again so it loads the
+  new version.

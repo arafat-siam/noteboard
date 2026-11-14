@@ -32,12 +32,23 @@ jobs:
       - name: Unit tests
         if: success() || failure()
         run: bash scripts/ci-run.sh "Unit tests" npx vitest run
+      # Share links need the API key; say so plainly (a public annotation) when it's missing.
+      - name: Check sharing key
+        if: success() || failure()
+        env:
+          KEY: ${{ vars.GOOGLE_API_KEY || secrets.GOOGLE_API_KEY }}
+        run: |
+          if [ -z "$KEY" ]; then
+            echo "::warning title=Share links are off::No GOOGLE_API_KEY found. Add it under Settings → Secrets and variables → Actions → Variables (see docs/SHARING_SETUP.md)."
+          else
+            echo "Sharing key found (${#KEY} characters)."
+          fi
       - name: Build
         if: success() || failure()
         run: bash scripts/ci-run.sh "Build" npx vite build
         env:
           VITE_GOOGLE_CLIENT_ID: ${{ vars.GOOGLE_CLIENT_ID }}
-          VITE_GOOGLE_API_KEY: ${{ vars.GOOGLE_API_KEY }}
+          VITE_GOOGLE_API_KEY: ${{ vars.GOOGLE_API_KEY || secrets.GOOGLE_API_KEY }}
 
       # Design preview: the redesign branch (if there is one) at https://arafat-siam.github.io/noteboard/preview/
       # It's rebuilt whenever main is published. It shares the app's notes on the device, so it
@@ -54,7 +65,7 @@ jobs:
           fi
         env:
           VITE_GOOGLE_CLIENT_ID: ${{ vars.GOOGLE_CLIENT_ID }}
-          VITE_GOOGLE_API_KEY: ${{ vars.GOOGLE_API_KEY }}
+          VITE_GOOGLE_API_KEY: ${{ vars.GOOGLE_API_KEY || secrets.GOOGLE_API_KEY }}
 
       # The Noteboard Shell app, downloadable at https://arafat-siam.github.io/noteboard/NoteboardShell.swiftpm.zip
       - name: Package shell app
