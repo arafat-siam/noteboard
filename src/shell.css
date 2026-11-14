@@ -917,3 +917,11 @@ button.secondary {
 .vertical .pen-tray .preset-button {
   margin: 2px 0;
 }
+
+/* Minimized on the left or right: the side toolbar's top/bottom padding must not stretch the
+   round pen button into an oval. */
+.tool-palette.floating.vertical.minimized {
+  padding: 4px;
+  height: fit-content;
+  width: fit-content;
+}
