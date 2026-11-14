@@ -908,3 +908,12 @@ button.secondary {
   background: var(--fill-strong);
   color: var(--text);
 }
+
+/* The preset button sits in the middle of the toolbar, whichever side it is on. */
+.pen-tray .preset-button {
+  align-self: center;
+  margin: 0 2px;
+}
+.vertical .pen-tray .preset-button {
+  margin: 2px 0;
+}

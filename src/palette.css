@@ -51,6 +51,17 @@
   height: fit-content;
   max-height: calc(100vh - 92px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
   padding: 8px 0;
+  /* A flex column, so the height limit reaches the row inside and the pen list scrolls
+     instead of the toolbar running off the screen. */
+  display: flex;
+  flex-direction: column;
+}
+.tool-palette.floating.vertical .palette-row {
+  flex: 0 1 auto;
+  min-height: 0;
+}
+.vertical .pen-tray {
+  flex: 0 1 auto;
 }
 .tool-palette.floating.side-left {
   left: calc(12px + env(safe-area-inset-left));
