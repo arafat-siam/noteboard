@@ -29,6 +29,7 @@ import { Modal, PromptDialog } from './Dialogs';
 import { SyncBadge } from './SyncBadge';
 import { QuickPalette } from './QuickPalette';
 import { ToolPalette, usePaletteLayout } from './ToolPalette';
+import { useEmptySpaceTap, useSlideAwayBar } from './useBarsAutoHide';
 import { Icon } from './Icon';
 import { useAppIsDark } from './theme';
 import { GuideOverlay, toggleGuide } from './GuideOverlay';
@@ -180,6 +181,15 @@ export function NotebookEditor({
     setScrollEl(el);
   }, []);
   const pagesWrapRef = useRef<HTMLDivElement>(null);
+
+  // Optional (toolbar settings): a finger tap on empty space hides the top bar and shrinks the
+  // tools to the pen button; the next tap, or the pen button, brings them back.
+  const tapHidesBars = !!paletteLayout.tapHidesBars;
+  const [barsHiddenState, setBarsHidden] = useState(false);
+  const barsHidden = tapHidesBars && barsHiddenState;
+  const topBarRef = useRef<HTMLElement>(null);
+  useEmptySpaceTap(tapHidesBars && !settings.fingerDraws, scrollRef, () => setBarsHidden((h) => !h));
+  useSlideAwayBar(barsHidden, topBarRef, scrollRef);
 
   useEffect(() => {
     try {
@@ -720,7 +730,7 @@ export function NotebookEditor({
 
   return (
     <div className="editor">
-      <header className="toolbar editor-top">
+      <header className="toolbar editor-top" ref={topBarRef}>
         <button className="back-button" onClick={onClose} aria-label="Back to library">
           <Icon name="chevronLeft" size={22} />
           <span>Library</span>
@@ -790,7 +800,7 @@ export function NotebookEditor({
         />
       </header>
 
-      <div className={`editor-body palette-${paletteLayout.style} palette-${paletteLayout.side}`}>
+      <div className={`editor-body palette-${barsHidden ? 'floating' : paletteLayout.style} palette-${paletteLayout.side}`}>
       <ToolPalette
         settings={settings}
         update={update}
@@ -806,6 +816,8 @@ export function NotebookEditor({
         layout={paletteLayout}
         setLayout={setPaletteLayout}
         onSelectAll={() => pageAction({ action: 'selectAll', files: [] })}
+        barsHidden={barsHidden}
+        onShowBars={() => setBarsHidden(false)}
       />
 
       <div

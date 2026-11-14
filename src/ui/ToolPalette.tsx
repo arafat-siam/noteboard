@@ -28,6 +28,8 @@ export type PaletteStyle = 'floating' | 'docked';
 export interface PaletteLayout {
   style: PaletteStyle;
   side: PaletteSide;
+  /** Like Drawboard: a finger tap on empty space hides the top bar and shrinks the tools. */
+  tapHidesBars?: boolean;
 }
 
 const LAYOUT_KEY = 'noteboard.palette.layout';
@@ -86,6 +88,10 @@ interface Props {
   setLayout: (layout: PaletteLayout) => void;
   /** Select everything on the page on screen. */
   onSelectAll?: () => void;
+  /** The bars are hidden (tap on empty space): show only the small pen button. */
+  barsHidden?: boolean;
+  /** The small pen button was tapped while the bars are hidden. */
+  onShowBars?: () => void;
 }
 
 type Popover = 'slot' | 'eraser' | 'lasso' | 'text' | 'shape' | 'tape' | 'laser' | 'more';
@@ -203,8 +209,10 @@ function PenPreview({ stroke }: { stroke: Omit<Stroke, 'points' | 'id' | 'create
  * bar joined to the edge of the screen), and either one on the top, bottom, left or right.
  */
 export function ToolPalette(props: Props) {
-  const { settings, update, layout, setLayout } = props;
-  const { style, side } = layout;
+  const { settings, update, layout, setLayout, barsHidden = false } = props;
+  const { side } = layout;
+  // Hidden bars always shrink to the floating pen button, docked or not.
+  const style: PaletteStyle = barsHidden ? 'floating' : layout.style;
   const vertical = side === 'left' || side === 'right';
   const [minimized, setMinimized] = useState(() => readStorage(MINIMIZED_KEY) === '1');
   const [popover, setPopover] = useState<Popover | null>(null);
@@ -214,7 +222,7 @@ export function ToolPalette(props: Props) {
 
   const activeSlot = settings.slots.find((s) => s.id === settings.activeSlot) ?? settings.slots[0];
   const penInHand = settings.tool === 'pen' || settings.tool === 'highlighter';
-  const isMinimized = minimized && style === 'floating';
+  const isMinimized = (minimized && style === 'floating') || barsHidden;
 
   useEffect(() => writeStorage(MINIMIZED_KEY, minimized ? '1' : '0'), [minimized]);
 
@@ -247,7 +255,7 @@ export function ToolPalette(props: Props) {
       duration: 320,
       easing: 'cubic-bezier(0.2, 0.9, 0.25, 1.1)',
     });
-  }, [side, minimized, style]);
+  }, [side, minimized, style, barsHidden]);
 
   // ---- dragging a floating bar to any edge (from anywhere that isn't a button) ----------
   const onPointerDown = (e: React.PointerEvent) => {
@@ -310,7 +318,8 @@ export function ToolPalette(props: Props) {
           aria-label="Show tools"
           onClick={() => {
             flipFrom.current = rootRef.current?.getBoundingClientRect() ?? null;
-            setMinimized(false);
+            if (barsHidden) props.onShowBars?.();
+            else setMinimized(false);
           }}
         >
           <span className="mini-pen">
@@ -633,6 +642,12 @@ export function ToolPalette(props: Props) {
           value={side}
           options={(['top', 'bottom', 'left', 'right'] as const).map((sd) => ({ value: sd, label: sd[0]!.toUpperCase() + sd.slice(1) }))}
           onChange={(v) => setLayout({ ...layout, side: v })}
+        />
+        <Toggle
+          label="Tap empty space to hide bars"
+          hint="A finger tap on empty paper hides the top bar and shrinks the tools. Tap again to bring them back"
+          on={!!layout.tapHidesBars}
+          onChange={(v) => setLayout({ ...layout, tapHidesBars: v })}
         />
         <div className="popover-title">Apple Pencil</div>
         <div className="field-caption">Hover pointer</div>

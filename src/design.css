@@ -367,6 +367,11 @@ button.new-notebook {
   position: relative;
   border-radius: 8px;
   overflow: hidden;
+  /* The page covers the card; anything longer or wider is cropped (top part, centred). */
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  flex-shrink: 0;
   background: #fff;
   box-shadow: var(--shadow-sm);
 }
@@ -810,7 +815,20 @@ label.menu-file {
 /* The "…" menu sits next to the name (press and hold a tile also opens it). */
 .tile.grid .tile-text {
   width: 100%;
-  padding: 8px 28px 0;
+  padding: 8px 4px 0;
+}
+/* Only the date line shares its row with the "…" button; the title gets the full width. */
+.tile.grid .tile-sub {
+  padding: 0 24px;
+}
+/* Grid titles wrap onto up to three lines instead of being cut to one. */
+.tile.grid .tile-name {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  line-height: 1.3;
 }
 .tile.grid .tile-more {
   top: auto;

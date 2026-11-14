@@ -42,6 +42,7 @@ import type { DashStyle, PenStyle, TextContent } from '../model/types';
 import { boxCorners, DEFAULT_TEXT_WIDTH, makeTextStroke, retextStroke, TEXT_FONT_ORDER, TEXT_FONTS } from './text';
 import { makeShapeStroke, makeTapeStroke } from './shapeTool';
 import { revealedTape } from './render';
+import { noteTapHandled } from './tapSignal';
 import { displayColor } from './inkTheme';
 import { audioStamp, getPlayback, onRecordingChange, seekRecording } from './recording';
 import { DashSample } from '../ui/Icon';
@@ -1674,6 +1675,7 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
         // A link in the imported PDF: follow it.
         const pdfLink = pdfLinkAreas.find((a) => rectContains(a, press.at));
         if (pdfLink && background) {
+          noteTapHandled();
           if (pdfLink.url) followLink({ kind: 'url', url: pdfLink.url });
           else if (pdfLink.pageIndex !== undefined) followLink({ kind: 'pdfPage', fileId: background.fileId, pageIndex: pdfLink.pageIndex });
           return;
@@ -1683,6 +1685,7 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
         if (playing) {
           const timed = strokeAt(press.at);
           if (timed?.audio?.rec === playing.rec) {
+            noteTapHandled();
             seekRecording(playing.rec, Math.max(0, timed.audio.t - 1500));
             return;
           }
@@ -1690,6 +1693,7 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
         // Tapping tape peeks under it (like flash cards); tapping ink selects it.
         const tape = tapeAt(press.at);
         const hit = strokeAt(press.at);
+        if (tape || hit) noteTapHandled();
         if (tape && (!hit || hit.id === tape.id || hit.createdAt < tape.createdAt)) toggleTape(tape);
         else if (hit && selection && !selection.ids.has(hit.id)) {
           // Something is already selected: a finger tap adds to it (tap empty paper to clear).

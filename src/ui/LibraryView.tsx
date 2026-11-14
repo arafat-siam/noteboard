@@ -600,16 +600,18 @@ function Tile(props: {
  */
 function NotebookCover({ notebook, size }: { notebook: Notebook; size: number }) {
   const first = notebook.pageIds[0];
+  // Every card has the same shape: a long or wide page shows its top part, not its whole length.
+  const height = Math.round(size * 1.3);
   return (
-    <div className="doc-cover" style={{ ['--cover' as string]: notebook.coverColor, width: size }}>
+    <div className="doc-cover" style={{ ['--cover' as string]: notebook.coverColor, width: size, height }}>
       {notebook.lock ? (
-        <div className="doc-locked" style={{ height: size * 1.3 }}>
+        <div className="doc-locked" style={{ height }}>
           <Icon name="lock" size={size > 60 ? 28 : 14} />
         </div>
       ) : first ? (
-        <PageThumbnail pageId={first} width={size} />
+        <PageThumbnail pageId={first} width={size} fillHeight={height} />
       ) : (
-        <div className="doc-locked" style={{ height: size * 1.3 }} />
+        <div className="doc-locked" style={{ height }} />
       )}
     </div>
   );

@@ -260,7 +260,16 @@ export function PageManager(props: {
 }
 
 /** A small picture of a page (paper, PDF page, pictures and ink), drawn when it scrolls into view. */
-export function PageThumbnail({ pageId, width: thumbWidth = THUMB }: { pageId: ID; width?: number }) {
+export function PageThumbnail({
+  pageId,
+  width: thumbWidth = THUMB,
+  fillHeight,
+}: {
+  pageId: ID;
+  width?: number;
+  /** Cover a `width` × `fillHeight` box (the caller crops it); otherwise fit the width. */
+  fillHeight?: number;
+}) {
   const record = useLiveQuery(() => db.pages.get(pageId), [pageId]);
   const strokeCount = useLiveQuery(() => db.strokes.where('pageId').equals(pageId).count(), [pageId]);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -275,7 +284,11 @@ export function PageThumbnail({ pageId, width: thumbWidth = THUMB }: { pageId: I
     return () => io.disconnect();
   }, []);
 
-  const k = record ? thumbWidth / record.width : 1;
+  const k = record
+    ? fillHeight
+      ? Math.max(thumbWidth / record.width, fillHeight / record.height)
+      : thumbWidth / record.width
+    : 1;
   const updatedAt = record?.updatedAt;
 
   useEffect(() => {
@@ -314,8 +327,8 @@ export function PageThumbnail({ pageId, width: thumbWidth = THUMB }: { pageId: I
     // Redraw when the page changes.
   }, [visible, pageId, updatedAt, strokeCount, k, record?.template, record?.background?.fileId]);
 
-  const width = thumbWidth;
-  const height = record ? record.height * k : thumbWidth * 1.414;
+  const width = record ? record.width * k : thumbWidth;
+  const height = record ? record.height * k : (fillHeight ?? thumbWidth * 1.414);
   return (
     <div
       ref={holderRef}

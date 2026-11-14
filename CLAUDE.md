@@ -65,6 +65,7 @@ Verify UI changes in the browser pane (launch config `noteboard-dev`). Synthetic
 - Tape = `tool: 'tape'` band along its points; tapping (tape tool or finger) peeks under it via `revealedTape` in render.ts (session only, never saved).
 - Pens: 8 types in `src/ink/brushes.ts`; per-pen `penStyle` (opacity, thinning, taper, stabilize) is saved on each stroke so it looks the same everywhere. Unknown brush names draw as fountain pen.
 - Toolbar layout (`usePaletteLayout` in ToolPalette): floating or docked, top/bottom/left/right. Docked bars sit in `.editor-body`'s flex layout; floating ones are fixed.
+- Optional "Tap empty space to hide bars" (`layout.tapHidesBars`, `src/ui/useBarsAutoHide.ts`): a single-finger tap on empty space hides the top bar (kept mounted, `display: none` after a slide) and shrinks the tools to the pen button. Pages call `noteTapHandled()` (`src/ink/tapSignal.ts`) when a tap selected ink / followed a link / peeked tape, so it doesn't also toggle.
 - Theme: `src/ui/theme.ts` sets `data-theme` on <html> (index.html applies it before load). All colours are CSS tokens in styles.css; pages stay white. No emoji in the UI: use `src/ui/Icon.tsx`.
 - Sync quick check: `driveChangesToken` meta + Drive changes feed; an idle device makes one small request. A full folder listing still runs on any foreign change, local change, or every 15 min.
 - Logo: `scripts/make-icons.mjs` → `npm run icons` (see docs/CHANGE_LOGO.md). The launch screen in index.html uses `public/icon.svg`.
