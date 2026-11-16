@@ -1636,7 +1636,7 @@ export function InkPage({
               : tool === "shape"
                 ? 18
                 : Math.max(
-                    settings.pointer?.cursor === "dot" ? 0.2 : 0.4,
+                    settings.pointer?.cursor === "dot" ? 0.05 : 0.1,
                     settings.penSize * scale,
                   );
     if (tool === "eraser" || settings.hoverPreview !== false) {
