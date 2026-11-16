@@ -1,15 +1,54 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { newId, type Page, type Stroke } from '../model/types';
-import { applyRegion, DEFAULT_FILL_OPACITY, drawPage, drawPageParts, drawStroke, type CanvasRegion, type PixelRect } from './render';
-import { adjustShape, polylinePoints, recognizeShape, type ShapeKind } from './shapes';
-import { buildGuides, sameSnap, snapLineEnd, snapToPoint, type SnapGuides, type SnapResult } from './snapping';
-import { pencilHaptic } from '../pencil/haptics';
-import { makeImageStroke, onImageLoaded, preloadImages, readDropped, resolveDropped, storeImage } from './images';
-import { shareOrDownload } from '../export/exporters';
-import { arrange, type ArrangeAction } from './layers';
-import { getClip, inkForPaste, onClipChange, setClip } from './clipboard';
-import { Slider } from './Slider';
-import { dragVertex, shapeVertices, strokeThrough, type ShapeVertices } from './shapeEdit';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { newId, type Page, type Stroke } from "../model/types";
+import {
+  applyRegion,
+  DEFAULT_FILL_OPACITY,
+  drawPage,
+  drawPageParts,
+  drawStroke,
+  type CanvasRegion,
+  type PixelRect,
+} from "./render";
+import {
+  adjustShape,
+  polylinePoints,
+  recognizeShape,
+  type ShapeKind,
+} from "./shapes";
+import {
+  buildGuides,
+  sameSnap,
+  snapLineEnd,
+  snapToPoint,
+  type SnapGuides,
+  type SnapResult,
+} from "./snapping";
+import { pencilHaptic } from "../pencil/haptics";
+import {
+  makeImageStroke,
+  onImageLoaded,
+  preloadImages,
+  readDropped,
+  resolveDropped,
+  storeImage,
+} from "./images";
+import { shareOrDownload } from "../export/exporters";
+import { arrange, type ArrangeAction } from "./layers";
+import { getClip, inkForPaste, onClipChange, setClip } from "./clipboard";
+import { Slider } from "./Slider";
+import {
+  dragVertex,
+  shapeVertices,
+  strokeThrough,
+  type ShapeVertices,
+} from "./shapeEdit";
 import {
   boundsOf,
   rectContains,
@@ -25,9 +64,9 @@ import {
   unionRects,
   type Point,
   type Rect,
-} from './geometry';
-import { eraseFromStroke } from './erase';
-import type { BrushKind } from './brushes';
+} from "./geometry";
+import { eraseFromStroke } from "./erase";
+import type { BrushKind } from "./brushes";
 import {
   PEN_COLORS,
   SHAPE_SIZE_RANGE,
@@ -36,22 +75,45 @@ import {
   type ShapeToolSettings,
   type TapeToolSettings,
   type TextToolSettings,
-} from './palette';
-import { templateStyle } from './templates';
-import type { DashStyle, PenStyle, TextContent } from '../model/types';
-import { boxCorners, DEFAULT_TEXT_WIDTH, makeTextStroke, retextStroke, TEXT_FONT_ORDER, TEXT_FONTS } from './text';
-import { makeShapeStroke, makeTapeStroke } from './shapeTool';
-import { revealedTape, TAPE_CHANGE } from './render';
-import { noteTapHandled } from './tapSignal';
-import { handwriting, inkImage, recognitionLanguage, typedTextOf } from '../search/textIndex';
-import { getToken } from '../sync/auth';
-import { DriveClient } from '../sync/drive';
-import { displayColor } from './inkTheme';
-import { audioStamp, getPlayback, onRecordingChange, seekRecording } from './recording';
-import { DashSample } from '../ui/Icon';
-import { describeLink, followLink, pdfLinks, type PdfLinkArea } from './links';
-import { LinkDialog, LinkGlyph } from '../ui/LinkDialog';
-import { edgeNear, getGuide, projectOnEdge, protractorDegrees, type GuideEdge } from './guides';
+} from "./palette";
+import { templateStyle } from "./templates";
+import type { DashStyle, PenStyle, TextContent } from "../model/types";
+import {
+  boxCorners,
+  DEFAULT_TEXT_WIDTH,
+  makeTextStroke,
+  retextStroke,
+  TEXT_FONT_ORDER,
+  TEXT_FONTS,
+} from "./text";
+import { makeShapeStroke, makeTapeStroke } from "./shapeTool";
+import { revealedTape, TAPE_CHANGE } from "./render";
+import { noteTapHandled } from "./tapSignal";
+import {
+  handwriting,
+  inkImage,
+  recognitionLanguage,
+  typedTextOf,
+} from "../search/textIndex";
+import { getToken } from "../sync/auth";
+import { DriveClient } from "../sync/drive";
+import { displayColor } from "./inkTheme";
+import {
+  audioStamp,
+  getPlayback,
+  onRecordingChange,
+  seekRecording,
+} from "./recording";
+import { DashSample } from "../ui/Icon";
+import { describeLink, followLink, pdfLinks, type PdfLinkArea } from "./links";
+import { LinkDialog, LinkGlyph } from "../ui/LinkDialog";
+import {
+  edgeNear,
+  getGuide,
+  projectOnEdge,
+  protractorDegrees,
+  type GuideEdge,
+} from "./guides";
 import {
   alignStrokes,
   distributeStrokes,
@@ -68,18 +130,31 @@ import {
   type AlignMode,
   type Guide,
   type ItemKind,
-} from './selection';
-import type { PDFDocumentProxy, RenderTask } from 'pdfjs-dist';
-import { db } from '../db/db';
-import { useLiveQuery } from 'dexie-react-hooks';
-import { getPdf, pdfPageText, renderPdfRegion } from '../pdf/pdf';
-import { lineAt, pageTextFromRuns, snapHighlight, textInRect } from '../pdf/pdfText';
-import type { PdfTextRun } from '../db/db';
-import { noteHover, notePen, penActiveWithin } from './penState';
-import { diagnostics, recordEvent, recordFrame } from './diagnostics';
-import { hideHoverCursor, showHoverCursor } from './hoverCursor';
+} from "./selection";
+import type { PDFDocumentProxy, RenderTask } from "pdfjs-dist";
+import { db } from "../db/db";
+import { useLiveQuery } from "dexie-react-hooks";
+import { getPdf, pdfPageText, renderPdfRegion } from "../pdf/pdf";
+import {
+  lineAt,
+  pageTextFromRuns,
+  snapHighlight,
+  textInRect,
+} from "../pdf/pdfText";
+import type { PdfTextRun } from "../db/db";
+import { noteHover, notePen, penActiveWithin } from "./penState";
+import { diagnostics, recordEvent, recordFrame } from "./diagnostics";
+import { hideHoverCursor, showHoverCursor } from "./hoverCursor";
 
-export type ToolKind = 'pen' | 'highlighter' | 'eraser' | 'lasso' | 'laser' | 'text' | 'shape' | 'tape';
+export type ToolKind =
+  | "pen"
+  | "highlighter"
+  | "eraser"
+  | "lasso"
+  | "laser"
+  | "text"
+  | "shape"
+  | "tape";
 
 export interface ToolSettings {
   tool: ToolKind;
@@ -97,7 +172,7 @@ export interface ToolSettings {
   /** Pen type used by the pen tool. */
   penBrush: BrushKind;
   /** Eraser removes whole strokes, or only the ink under it. */
-  eraserMode: 'stroke' | 'partial';
+  eraserMode: "stroke" | "partial";
   /** The user's pens (tray order) and which one is in hand. color/penSize/... mirror it. */
   slots: PenSlot[];
   activeSlot: string;
@@ -112,7 +187,7 @@ export interface ToolSettings {
   tape: TapeToolSettings;
   pointer: PointerSettings;
   /** Lasso: freehand loop or rectangle, and which kinds of items it picks up. */
-  lasso?: { mode: 'free' | 'rect'; kinds: ItemKind[] };
+  lasso?: { mode: "free" | "rect"; kinds: ItemKind[] };
 }
 
 interface Props {
@@ -135,7 +210,18 @@ interface Props {
 
 interface Gesture {
   pointerId: number;
-  kind: 'ink' | 'erase' | 'lasso' | 'move' | 'scale' | 'rotate' | 'laser' | 'vertex' | 'shape' | 'tape' | 'text';
+  kind:
+    | "ink"
+    | "erase"
+    | "lasso"
+    | "move"
+    | "scale"
+    | "rotate"
+    | "laser"
+    | "vertex"
+    | "shape"
+    | "tape"
+    | "text";
   /** Page position on screen at gesture start; reading layout on every sample would stall the pen. */
   origin: { left: number; top: number };
   points: number[];
@@ -162,12 +248,22 @@ interface Gesture {
   /** Which directions a resize handle stretches (corners: both; side handles: one). */
   axis: { x: boolean; y: boolean };
   /** Dragging one point of a shape (line end, rectangle corner, polygon corner). */
-  vertex: { index: number; shape: ShapeVertices; stroke: Stroke; current: Point[] } | null;
+  vertex: {
+    index: number;
+    shape: ShapeVertices;
+    stroke: Stroke;
+    current: Point[];
+  } | null;
   /** Rotating a selection: pointer angle at start and current rotation (radians). */
   startAngle: number;
   angle: number;
   /** Snapped shape that keeps following the Pencil until it lifts (Drawboard-style). */
-  shape: { kind: ShapeKind; base: Point[]; from: Point; pressure: number } | null;
+  shape: {
+    kind: ShapeKind;
+    base: Point[];
+    from: Point;
+    pressure: number;
+  } | null;
   /** When the gesture started (performance.now), to tell a tap from a stroke. */
   startedAt: number;
   /** Straight ink on the page a snapped line can snap to (built once, when the line snaps). */
@@ -198,15 +294,15 @@ interface TextDraft {
   factor: number;
   content: string;
   color: string;
-  style: Omit<TextToolSettings, 'color'>;
+  style: Omit<TextToolSettings, "color">;
 }
 
 const HOLD_TO_SNAP_MS = 500;
 /** A finger touch shorter than this (that didn't move) is a tap: on ink it selects it, like Drawboard. */
 const TAP_MS = 300;
-type Corner = 'nw' | 'ne' | 'se' | 'sw';
-type Side = 'n' | 'e' | 's' | 'w';
-type Handle = Corner | Side | 'rotate' | `v${number}`;
+type Corner = "nw" | "ne" | "se" | "sw";
+type Side = "n" | "e" | "s" | "w";
+type Handle = Corner | Side | "rotate" | `v${number}`;
 /** Rotation snaps to every 15° when within this many degrees. */
 const ROTATE_SNAP_DEG = 3;
 const LONG_PRESS_MS = 480;
@@ -234,7 +330,11 @@ export function isControl(target: EventTarget | null): boolean {
 }
 
 /** Swaps replaced items' ids in a selection (recolour / fill make new strokes). */
-function replaceIds(ids: Set<string>, before: Stroke[], after: Stroke[]): Set<string> {
+function replaceIds(
+  ids: Set<string>,
+  before: Stroke[],
+  after: Stroke[],
+): Set<string> {
   const next = new Set(ids);
   before.forEach((s, i) => {
     next.delete(s.id);
@@ -244,9 +344,9 @@ function replaceIds(ids: Set<string>, before: Stroke[], after: Stroke[]): Set<st
 }
 
 /** Editor → page requests (the page currently on screen handles them). */
-export const PAGE_ACTION = 'noteboard-page-action';
+export const PAGE_ACTION = "noteboard-page-action";
 /** Editor → pages: recompute the visible area now (after a zoom's scroll jump). */
-export const RELAYOUT = 'noteboard-relayout';
+export const RELAYOUT = "noteboard-relayout";
 /**
  * After a pinch, the editor first puts the scroll position back and only then asks the pages to
  * draw at the new zoom. Without this each page drew twice (new canvases + all ink, both times).
@@ -259,12 +359,18 @@ export function relayoutPages(): void {
   layoutDeferred = false;
   window.dispatchEvent(new Event(RELAYOUT));
 }
-export type PageAction = { pageId: string; action: 'insertPictures' | 'paste' | 'selectAll'; files: Blob[] };
+export type PageAction = {
+  pageId: string;
+  action: "insertPictures" | "paste" | "selectAll";
+  files: Blob[];
+};
 
-function getLiveContext(canvas: HTMLCanvasElement | null): CanvasRenderingContext2D | null {
+function getLiveContext(
+  canvas: HTMLCanvasElement | null,
+): CanvasRenderingContext2D | null {
   // Plain context on purpose: the low-latency 'desynchronized' mode changes how Safari composites
   // the page and is a suspect for the hover pointer's ghost copy.
-  return canvas?.getContext('2d') ?? null;
+  return canvas?.getContext("2d") ?? null;
 }
 
 const contains = (outer: Rect, inner: Rect) =>
@@ -273,7 +379,17 @@ const contains = (outer: Rect, inner: Rect) =>
   inner.x + inner.width <= outer.x + outer.width + 0.5 &&
   inner.y + inner.height <= outer.y + outer.height + 0.5;
 
-export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold, onRequestSelect, dark = false, invertPdf = false }: Props) {
+export function InkPage({
+  page,
+  scale,
+  settings,
+  scroller,
+  onChange,
+  onHoverHold,
+  onRequestSelect,
+  dark = false,
+  invertPdf = false,
+}: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const inkRef = useRef<HTMLCanvasElement>(null);
   const liveRef = useRef<HTMLCanvasElement>(null);
@@ -282,8 +398,19 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
   const laserRef = useRef<{ x: number; y: number; t: number }[][]>([]);
   const hiddenRef = useRef<Set<string>>(new Set());
   const frameRef = useRef<number | null>(null);
-  const hoverRef = useRef<{ x: number; y: number; timer: number | null } | null>(null);
-  const pressRef = useRef<{ id: number; x: number; y: number; at: Point; t: number; timer: number } | null>(null);
+  const hoverRef = useRef<{
+    x: number;
+    y: number;
+    timer: number | null;
+  } | null>(null);
+  const pressRef = useRef<{
+    id: number;
+    x: number;
+    y: number;
+    at: Point;
+    t: number;
+    timer: number;
+  } | null>(null);
   const selectionBoxRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const textEditorRef = useRef<HTMLDivElement>(null);
@@ -293,7 +420,10 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
   // Imported PDF page under the ink.
   const pdfCanvasRef = useRef<HTMLCanvasElement>(null);
   const pdfDocRef = useRef<PDFDocumentProxy | null>(null);
-  const pdfRenderRef = useRef<{ task: RenderTask | null; generation: number }>({ task: null, generation: 0 });
+  const pdfRenderRef = useRef<{ task: RenderTask | null; generation: number }>({
+    task: null,
+    generation: 0,
+  });
   const [pdfMissing, setPdfMissing] = useState(false);
   /** Links inside the imported PDF page (tap with a finger to follow). */
   const [pdfLinkAreas, setPdfLinkAreas] = useState<PdfLinkArea[]>([]);
@@ -303,7 +433,10 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
   const bgFile = page.background?.fileId;
   const bgIndex = page.background?.pageIndex;
   const background = useMemo(
-    () => (bgFile !== undefined && bgIndex !== undefined ? { kind: 'pdf' as const, fileId: bgFile, pageIndex: bgIndex } : undefined),
+    () =>
+      bgFile !== undefined && bgIndex !== undefined
+        ? { kind: "pdf" as const, fileId: bgFile, pageIndex: bgIndex }
+        : undefined,
     [bgFile, bgIndex],
   );
   const lastScrollTop = useRef(0);
@@ -311,7 +444,10 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
   /** Which part of the page the canvases currently show, at what resolution. */
   const regionRef = useRef<CanvasRegion | null>(null);
   /** What is painted on the ink canvas, to skip needless full redraws. */
-  const paintedRef = useRef<{ region: CanvasRegion | null; ids: Set<string> }>({ region: null, ids: new Set() });
+  const paintedRef = useRef<{ region: CanvasRegion | null; ids: Set<string> }>({
+    region: null,
+    ids: new Set(),
+  });
   const strokesRef = useRef(page.strokes);
   strokesRef.current = page.strokes;
   const [selection, setSelection] = useState<Selection | null>(null);
@@ -320,14 +456,14 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
   const pageHeight = page.height;
   const cssWidth = page.width * scale;
   const cssHeight = page.height * scale;
-  const dpr = typeof window === 'undefined' ? 1 : window.devicePixelRatio || 1;
+  const dpr = typeof window === "undefined" ? 1 : window.devicePixelRatio || 1;
   diagnostics.devicePixelRatio = dpr;
 
   // ---- Rendering ---------------------------------------------------------------------------
   const paintInk = useCallback((force = false) => {
     const canvas = inkRef.current;
     const region = regionRef.current;
-    const ctx = canvas?.getContext('2d');
+    const ctx = canvas?.getContext("2d");
     if (!canvas || !ctx || !region) return;
     const strokes = strokesRef.current;
     const hidden = hiddenRef.current;
@@ -360,7 +496,13 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
     const pixelWidth = Math.max(1, Math.ceil(region.width * region.k));
     const pixelHeight = Math.max(1, Math.ceil(region.height * region.k));
     try {
-      const { canvas, task } = await renderPdfRegion(doc, background.pageIndex, region, pixelWidth, pixelHeight);
+      const { canvas, task } = await renderPdfRegion(
+        doc,
+        background.pageIndex,
+        region,
+        pixelWidth,
+        pixelHeight,
+      );
       if (generation !== state.generation) return task.cancel();
       state.task = task;
       await task.promise;
@@ -371,7 +513,7 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
       target.style.top = `${region.y * scale}px`;
       target.style.width = `${(pixelWidth / region.k) * scale}px`;
       target.style.height = `${(pixelHeight / region.k) * scale}px`;
-      target.getContext('2d')!.drawImage(canvas, 0, 0);
+      target.getContext("2d")!.drawImage(canvas, 0, 0);
     } catch {
       // Cancelled by a newer render, or a broken page: keep whatever is showing.
     }
@@ -384,7 +526,12 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
       if (!container || !scroller) return;
       const pr = container.getBoundingClientRect();
       const sr = scroller.getBoundingClientRect();
-      const toPage = (left: number, top: number, right: number, bottom: number): Rect => ({
+      const toPage = (
+        left: number,
+        top: number,
+        right: number,
+        bottom: number,
+      ): Rect => ({
         x: (left - pr.left) / scale,
         y: (top - pr.top) / scale,
         width: (right - left) / scale,
@@ -402,21 +549,34 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
       lastScrollTop.current = scrollTop;
       const ahead = sr.height * VIEW_MARGIN_AHEAD;
       const behind = sr.height * (VIEW_MARGIN * 2 - VIEW_MARGIN_AHEAD);
-      const above = scrollDirection.current < 0 ? ahead : scrollDirection.current > 0 ? behind : sr.height * VIEW_MARGIN;
-      const below = scrollDirection.current > 0 ? ahead : scrollDirection.current < 0 ? behind : sr.height * VIEW_MARGIN;
+      const above =
+        scrollDirection.current < 0
+          ? ahead
+          : scrollDirection.current > 0
+            ? behind
+            : sr.height * VIEW_MARGIN;
+      const below =
+        scrollDirection.current > 0
+          ? ahead
+          : scrollDirection.current < 0
+            ? behind
+            : sr.height * VIEW_MARGIN;
       const left = Math.max(pr.left, sr.left - mx);
       const right = Math.min(pr.right, sr.right + mx);
       const top = Math.max(pr.top, sr.top - above);
       const bottom = Math.min(pr.bottom, sr.bottom + below);
 
-      const canvases = [inkRef.current, liveRef.current].filter((c): c is HTMLCanvasElement => !!c);
+      const canvases = [inkRef.current, liveRef.current].filter(
+        (c): c is HTMLCanvasElement => !!c,
+      );
       if (right <= left || bottom <= top) {
         // Far from view: free the canvas memory.
         if (regionRef.current) {
           for (const c of canvases) c.width = c.height = 0;
           pdfRenderRef.current.task?.cancel();
           pdfRenderRef.current.generation++;
-          if (pdfCanvasRef.current) pdfCanvasRef.current.width = pdfCanvasRef.current.height = 0;
+          if (pdfCanvasRef.current)
+            pdfCanvasRef.current.width = pdfCanvasRef.current.height = 0;
           regionRef.current = null;
           paintedRef.current = { region: null, ids: new Set() };
         }
@@ -431,9 +591,18 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
       // The canvas keeps one size for a given zoom and screen (the screen plus its margins, or
       // the whole page if that is smaller) and slides along the page. A canvas that never
       // changes size is never re-created, and what it already shows can be kept when it moves.
-      const width = Math.min(pageWidth, (sr.width * (1 + 2 * VIEW_MARGIN)) / scale);
-      const height = Math.min(pageHeight, (sr.height * (1 + 2 * VIEW_MARGIN)) / scale);
-      const k = Math.min(scale * dpr, Math.sqrt(MAX_CANVAS_PIXELS / (width * height)));
+      const width = Math.min(
+        pageWidth,
+        (sr.width * (1 + 2 * VIEW_MARGIN)) / scale,
+      );
+      const height = Math.min(
+        pageHeight,
+        (sr.height * (1 + 2 * VIEW_MARGIN)) / scale,
+      );
+      const k = Math.min(
+        scale * dpr,
+        Math.sqrt(MAX_CANVAS_PIXELS / (width * height)),
+      );
       const pixelWidth = Math.max(1, Math.ceil(width * k));
       const pixelHeight = Math.max(1, Math.ceil(height * k));
       const ink = inkRef.current;
@@ -456,16 +625,31 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
         live.style.height = `${(pixelHeight / k) * scale}px`;
       };
       const sameSize =
-        !!current && !!ink && Math.abs(current.k - k) < 1e-6 && ink.width === pixelWidth && ink.height === pixelHeight;
+        !!current &&
+        !!ink &&
+        Math.abs(current.k - k) < 1e-6 &&
+        ink.width === pixelWidth &&
+        ink.height === pixelHeight;
       if (!force && current && sameSize) {
         // Move on a little before the visible part reaches the canvas edge (in the direction of
         // scrolling), so the strip that has to be drawn is still off screen.
         const lead = (sr.height * VIEW_LEAD) / scale;
         const direction = scrollDirection.current;
         const y0 = Math.max(0, visible.y - (direction < 0 ? lead : 0));
-        const y1 = Math.min(pageHeight, visible.y + visible.height + (direction > 0 ? lead : 0));
-        if (contains(current, { x: visible.x, y: y0, width: visible.width, height: y1 - y0 })) {
-          if (live && (live.width !== 0) !== onScreen && !gestureRef.current) fitLive(current);
+        const y1 = Math.min(
+          pageHeight,
+          visible.y + visible.height + (direction > 0 ? lead : 0),
+        );
+        if (
+          contains(current, {
+            x: visible.x,
+            y: y0,
+            width: visible.width,
+            height: y1 - y0,
+          })
+        ) {
+          if (live && (live.width !== 0) !== onScreen && !gestureRef.current)
+            fitLive(current);
           return;
         }
       }
@@ -484,7 +668,7 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
 
       const dx = current ? Math.round((current.x - region.x) * k) : 0;
       const dy = current ? Math.round((current.y - region.y) * k) : 0;
-      const ctx = ink?.getContext('2d');
+      const ctx = ink?.getContext("2d");
       if (
         !force &&
         sameSize &&
@@ -501,17 +685,36 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
         fitLive(region);
         ctx.save();
         ctx.setTransform(1, 0, 0, 1, 0, 0);
-        ctx.globalCompositeOperation = 'copy';
+        ctx.globalCompositeOperation = "copy";
         ctx.drawImage(ink, dx, dy);
         ctx.restore();
         const keptTop = Math.max(0, dy);
         const keptBottom = pixelHeight + Math.min(0, dy);
         const parts: PixelRect[] = [];
         if (dy > 0) parts.push({ x: 0, y: 0, width: pixelWidth, height: dy });
-        else if (dy < 0) parts.push({ x: 0, y: keptBottom, width: pixelWidth, height: -dy });
-        if (dx > 0) parts.push({ x: 0, y: keptTop, width: dx, height: keptBottom - keptTop });
-        else if (dx < 0) parts.push({ x: pixelWidth + dx, y: keptTop, width: -dx, height: keptBottom - keptTop });
-        drawPageParts(ctx, strokesRef.current, region, hiddenRef.current, parts);
+        else if (dy < 0)
+          parts.push({ x: 0, y: keptBottom, width: pixelWidth, height: -dy });
+        if (dx > 0)
+          parts.push({
+            x: 0,
+            y: keptTop,
+            width: dx,
+            height: keptBottom - keptTop,
+          });
+        else if (dx < 0)
+          parts.push({
+            x: pixelWidth + dx,
+            y: keptTop,
+            width: -dx,
+            height: keptBottom - keptTop,
+          });
+        drawPageParts(
+          ctx,
+          strokesRef.current,
+          region,
+          hiddenRef.current,
+          parts,
+        );
         paintedRef.current.region = region;
       } else {
         if (ink) {
@@ -526,7 +729,7 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
           ink.style.height = `${(pixelHeight / k) * scale}px`;
         }
         fitLive(region);
-        const liveCtx = live?.width ? live.getContext('2d') : null;
+        const liveCtx = live?.width ? live.getContext("2d") : null;
         liveCtx?.setTransform(1, 0, 0, 1, 0, 0);
         liveCtx?.clearRect(0, 0, pixelWidth, pixelHeight);
         paintInk(true);
@@ -543,7 +746,10 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
 
   // Re-open once a PDF that was still syncing arrives on this device.
   const pdfAvailable = useLiveQuery(
-    async () => (background ? (await db.files.where('id').equals(background.fileId).count()) > 0 : false),
+    async () =>
+      background
+        ? (await db.files.where("id").equals(background.fileId).count()) > 0
+        : false,
     [background],
   );
 
@@ -556,8 +762,18 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
       pdfDocRef.current = doc;
       setPdfMissing(!doc);
       void renderPdf();
-      if (doc) void pdfLinks(doc, background.fileId, background.pageIndex, page.width, page.height).then((areas) => alive && setPdfLinkAreas(areas));
-      if (doc) void pdfPageText(doc, background.pageIndex).then((t) => alive && setPdfRuns(t.runs)).catch(() => undefined);
+      if (doc)
+        void pdfLinks(
+          doc,
+          background.fileId,
+          background.pageIndex,
+          page.width,
+          page.height,
+        ).then((areas) => alive && setPdfLinkAreas(areas));
+      if (doc)
+        void pdfPageText(doc, background.pageIndex)
+          .then((t) => alive && setPdfRuns(t.runs))
+          .catch(() => undefined);
     });
     return () => {
       alive = false;
@@ -582,13 +798,13 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
         });
       }
     };
-    scroller.addEventListener('scroll', onScroll, { passive: true });
+    scroller.addEventListener("scroll", onScroll, { passive: true });
     const relayout = () => layoutRef.current(true);
     window.addEventListener(RELAYOUT, relayout);
     const observer = new ResizeObserver(() => layout());
     observer.observe(scroller);
     return () => {
-      scroller.removeEventListener('scroll', onScroll);
+      scroller.removeEventListener("scroll", onScroll);
       window.removeEventListener(RELAYOUT, relayout);
       observer.disconnect();
       if (raf != null) cancelAnimationFrame(raf);
@@ -606,18 +822,19 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
   }, [page.strokes, paintInk]);
 
   useEffect(() => {
-    if (settings.tool === 'eraser') setSelection(null);
+    if (settings.tool === "eraser") setSelection(null);
   }, [settings.tool]);
 
   // Playback moved on: ink appears as the recording reaches it.
   useEffect(() => {
-    let last = '';
+    let last = "";
     return onRecordingChange(() => {
       const p = getPlayback();
-      const key = p ? `${p.rec}|${Math.floor(p.t / 250)}` : '';
+      const key = p ? `${p.rec}|${Math.floor(p.t / 250)}` : "";
       if (key === last) return;
       last = key;
-      if (p ? page.strokes.some((s) => s.audio?.rec === p.rec) : true) paintInk(true);
+      if (p ? page.strokes.some((s) => s.audio?.rec === p.rec) : true)
+        paintInk(true);
     });
   });
 
@@ -638,22 +855,33 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
     });
   }, [page.strokes]);
 
-  const pressureOf = (e: PointerEvent) => (e.pointerType === 'pen' ? Math.max(0.05, e.pressure || 0.5) : 0.5);
+  const pressureOf = (e: PointerEvent) =>
+    e.pointerType === "pen" ? Math.max(0.05, e.pressure || 0.5) : 0.5;
 
   /** Draws the fading laser trails; returns true while anything is still visible. */
-  const drawLaser = (ctx: CanvasRenderingContext2D, region: CanvasRegion): boolean => {
+  const drawLaser = (
+    ctx: CanvasRenderingContext2D,
+    region: CanvasRegion,
+  ): boolean => {
     const now = performance.now();
-    const drawing = gestureRef.current?.kind === 'laser';
-    const { laserColor, laserSize, laserTrail } = settings.pointer ?? { laserColor: '#ff3b30', laserSize: 10, laserTrail: LASER_LIFE_MS };
+    const drawing = gestureRef.current?.kind === "laser";
+    const { laserColor, laserSize, laserTrail } = settings.pointer ?? {
+      laserColor: "#ff3b30",
+      laserSize: 10,
+      laserTrail: LASER_LIFE_MS,
+    };
     const life = Math.max(120, laserTrail || 0);
     // Drop faded points (the trail being drawn keeps at least its tip).
     laserRef.current = laserRef.current
       .map((trail, i, all) => {
         const live = drawing && i === all.length - 1;
         // "Dot only": no trail, just the tip while it moves.
-        if (!laserTrail) return live && trail.length ? [trail[trail.length - 1]!] : [];
+        if (!laserTrail)
+          return live && trail.length ? [trail[trail.length - 1]!] : [];
         const kept = trail.filter((q) => now - q.t < life);
-        return live && !kept.length && trail.length ? [trail[trail.length - 1]!] : kept;
+        return live && !kept.length && trail.length
+          ? [trail[trail.length - 1]!]
+          : kept;
       })
       .filter((trail) => trail.length);
     clearLive(ctx, null);
@@ -661,8 +889,8 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
     applyRegion(ctx, region);
     const px = 1 / scale;
     ctx.save();
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
     for (const trail of laserRef.current) {
       for (let i = 1; i < trail.length; i++) {
         const a = trail[i - 1]!;
@@ -706,11 +934,17 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
   }, [selection, page.strokes]);
 
   /** Moves the point handles during a drag (no React re-render per frame). */
-  const placeVertexHandles = (vertices: Point[], stroke?: Stroke, closed = false) => {
+  const placeVertexHandles = (
+    vertices: Point[],
+    stroke?: Stroke,
+    closed = false,
+  ) => {
     const box = selectionBoxRef.current;
     if (!box || !selection) return;
     // The frame (and the menu on it) follows the shape while a point is dragged.
-    const b = stroke ? strokeBounds(strokeThrough(stroke, vertices, closed, stroke.id)) : selection.bounds;
+    const b = stroke
+      ? strokeBounds(strokeThrough(stroke, vertices, closed, stroke.id))
+      : selection.bounds;
     box.style.left = `${b.x * scale}px`;
     box.style.top = `${b.y * scale}px`;
     box.style.width = `${b.width * scale}px`;
@@ -728,7 +962,11 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
     if (!selection) return false;
     const pad = 12 / scale;
     const b = selection.bounds;
-    const inBox = p.x >= b.x - pad && p.x <= b.x + b.width + pad && p.y >= b.y - pad && p.y <= b.y + b.height + pad;
+    const inBox =
+      p.x >= b.x - pad &&
+      p.x <= b.x + b.width + pad &&
+      p.y >= b.y - pad &&
+      p.y <= b.y + b.height + pad;
     if (!inBox) return false;
     if (!editShape || editShape.shape.closed) return true;
     // A line: only near the line itself, not the whole empty box around a diagonal.
@@ -748,12 +986,12 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
       top = box.top + box.height / 2 - page.top - 14;
     }
     el.textContent = text;
-    el.style.display = 'block';
+    el.style.display = "block";
     el.style.left = `${left}px`;
     el.style.top = `${top}px`;
   };
   const hideBadge = () => {
-    if (badgeRef.current) badgeRef.current.style.display = 'none';
+    if (badgeRef.current) badgeRef.current.style.display = "none";
   };
 
   /** How close (page units) the Pencil must come to a point for it to snap: ~12 screen px. */
@@ -774,16 +1012,16 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
     if (!snap) return;
     const px = 1 / scale;
     ctx.save();
-    ctx.strokeStyle = '#637381';
-    ctx.fillStyle = '#637381';
+    ctx.strokeStyle = "#637381";
+    ctx.fillStyle = "#637381";
     ctx.lineWidth = 1.5 * px;
-    if (snap.kind === 'end' || snap.kind === 'mid') {
+    if (snap.kind === "end" || snap.kind === "mid") {
       ctx.beginPath();
       ctx.arc(snap.point.x, snap.point.y, 6 * px, 0, Math.PI * 2);
       ctx.stroke();
-      if (snap.kind === 'mid') {
+      if (snap.kind === "mid") {
         ctx.font = `${11 * px}px -apple-system, system-ui, sans-serif`;
-        ctx.fillText('midpoint', snap.point.x + 9 * px, snap.point.y - 9 * px);
+        ctx.fillText("midpoint", snap.point.x + 9 * px, snap.point.y - 9 * px);
       }
     } else {
       const a = g.shape?.base[0];
@@ -812,7 +1050,11 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
         ctx.globalAlpha = 1;
       }
       const label =
-        snap.kind === 'perpendicular' ? '⊥ 90°' : snap.kind === 'parallel' ? '∥ parallel' : `${Math.round(((snap.degrees ?? 0) % 180 + 180) % 180)}°`;
+        snap.kind === "perpendicular"
+          ? "⊥ 90°"
+          : snap.kind === "parallel"
+            ? "∥ parallel"
+            : `${Math.round((((snap.degrees ?? 0) % 180) + 180) % 180)}°`;
       ctx.font = `${11 * px}px -apple-system, system-ui, sans-serif`;
       ctx.fillText(label, snap.point.x + 9 * px, snap.point.y - 9 * px);
     }
@@ -820,34 +1062,53 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
   };
 
   const liveStroke = (g: Gesture, withPrediction: boolean): Stroke => {
-    const highlighter = settings.tool === 'highlighter';
+    const highlighter = settings.tool === "highlighter";
     return {
-      id: 'live',
-      tool: highlighter ? 'highlighter' : 'pen',
+      id: "live",
+      tool: highlighter ? "highlighter" : "pen",
       color: highlighter ? settings.highlighterColor : settings.color,
       size: highlighter ? settings.highlighterSize : settings.penSize,
-      points: withPrediction && !g.snapped ? g.points.concat(g.predicted) : g.points,
+      points:
+        withPrediction && !g.snapped ? g.points.concat(g.predicted) : g.points,
       hasPressure: g.hasPressure,
       createdAt: Date.now(),
       ...(highlighter ? {} : { brush: settings.penBrush }),
-      ...(!highlighter && settings.penStyle && Object.keys(settings.penStyle).length ? { penStyle: settings.penStyle } : {}),
+      ...(!highlighter &&
+      settings.penStyle &&
+      Object.keys(settings.penStyle).length
+        ? { penStyle: settings.penStyle }
+        : {}),
       ...(!highlighter && settings.penDash ? { dash: settings.penDash } : {}),
     };
   };
 
   /** The shape or tape being dragged out, as it would be saved. */
-  const dragItem = (g: Gesture, id = 'live'): Stroke | null => {
+  const dragItem = (g: Gesture, id = "live"): Stroke | null => {
     const a = g.moveStart;
     const b = g.scaleFrom;
     if (Math.hypot(b.x - a.x, b.y - a.y) < 3) return null;
-    if (g.kind === 'tape') return makeTapeStroke(a, b, settings.tape.color, settings.tape.width, id);
+    if (g.kind === "tape")
+      return makeTapeStroke(a, b, settings.tape.color, settings.tape.width, id);
     const s = settings.shape;
-    return makeShapeStroke(s.kind, a, b, { color: s.color, size: s.size, dash: s.dash, fill: s.fill, fillOpacity: s.fillOpacity }, id);
+    return makeShapeStroke(
+      s.kind,
+      a,
+      b,
+      {
+        color: s.color,
+        size: s.size,
+        dash: s.dash,
+        fill: s.fill,
+        fillOpacity: s.fillOpacity,
+      },
+      id,
+    );
   };
 
   const growDirty = (g: Gesture, x: number, y: number) => {
     const pad = Math.max(settings.penSize, settings.highlighterSize) * 2 + 4;
-    if (!g.dirty) g.dirty = { x: x - pad, y: y - pad, width: pad * 2, height: pad * 2 };
+    if (!g.dirty)
+      g.dirty = { x: x - pad, y: y - pad, width: pad * 2, height: pad * 2 };
     else {
       const minX = Math.min(g.dirty.x, x - pad);
       const minY = Math.min(g.dirty.y, y - pad);
@@ -880,15 +1141,20 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
     if (!ctx || !region) return;
     if (laserRef.current.length) {
       if (drawLaser(ctx, region)) requestRender();
-      if (!g || g.kind === 'laser') return;
+      if (!g || g.kind === "laser") return;
     }
     if (!g) {
       clearLive(ctx, null);
       return;
     }
 
-    if (g.kind === 'ink') {
-      if (settings.shapeSnap && !g.snapped && Date.now() - g.holdSince > HOLD_TO_SNAP_MS && g.points.length > 12) {
+    if (g.kind === "ink") {
+      if (
+        settings.shapeSnap &&
+        !g.snapped &&
+        Date.now() - g.holdSince > HOLD_TO_SNAP_MS &&
+        g.points.length > 12
+      ) {
         const pts: Point[] = [];
         let pressure = 0;
         for (let i = 0; i < g.points.length; i += 3) {
@@ -901,8 +1167,13 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
           g.points = shape.points.flatMap((p) => [p.x, p.y, avg]);
           for (const p of shape.points) growDirty(g, p.x, p.y);
           g.snapped = true;
-          g.shape = { kind: shape.kind, base: shape.points, from: pts[pts.length - 1]!, pressure: avg };
-          if (shape.kind === 'line') {
+          g.shape = {
+            kind: shape.kind,
+            base: shape.points,
+            from: pts[pts.length - 1]!,
+            pressure: avg,
+          };
+          if (shape.kind === "line") {
             g.guides = buildGuides(page.strokes);
             // Start the line exactly on a nearby end / midpoint, so lines connect.
             const start = snapToPoint(shape.points[0]!, g.guides, snapRadius());
@@ -911,7 +1182,11 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
             g.shape.base = [a, end];
             setLine(g, a, end);
           }
-          pencilHaptic('pathCompleted', g.origin.left + pts[pts.length - 1]!.x * scale, g.origin.top + pts[pts.length - 1]!.y * scale);
+          pencilHaptic(
+            "pathCompleted",
+            g.origin.left + pts[pts.length - 1]!.x * scale,
+            g.origin.top + pts[pts.length - 1]!.y * scale,
+          );
           g.needsDraw = true;
         } else {
           g.holdSince = Infinity; // don't retry on every frame
@@ -924,7 +1199,11 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
         if (g.snap) drawSnapGuide(ctx, g);
         drawStroke(ctx, liveStroke(g, true), true);
         g.needsDraw = false;
-        if (diagnostics.enabled) recordFrame(performance.now() - start, performance.now() - g.lastSampleAt);
+        if (diagnostics.enabled)
+          recordFrame(
+            performance.now() - start,
+            performance.now() - g.lastSampleAt,
+          );
       }
       // Keep ticking while the pen is down so hold-to-snap fires even without movement.
       requestRender();
@@ -933,30 +1212,36 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
 
     clearLive(ctx, null);
     applyRegion(ctx, region);
-    if (g.kind === 'shape' || g.kind === 'tape') {
+    if (g.kind === "shape" || g.kind === "tape") {
       const item = dragItem(g);
       if (item) drawStroke(ctx, item, true);
-      if (item && g.kind === 'shape') {
+      if (item && g.kind === "shape") {
         const b = strokeBounds(item);
-        showBadge(`${Math.round(b.width)} × ${Math.round(b.height)}`, (b.x + b.width / 2) * scale, b.y * scale - 22);
+        showBadge(
+          `${Math.round(b.width)} × ${Math.round(b.height)}`,
+          (b.x + b.width / 2) * scale,
+          b.y * scale - 22,
+        );
       }
-    } else if (g.kind === 'lasso' && g.lasso.length > 1) {
+    } else if (g.kind === "lasso" && g.lasso.length > 1) {
       ctx.setLineDash([6 / scale, 5 / scale]);
       ctx.lineWidth = 1.5 / scale;
-      ctx.strokeStyle = '#637381';
+      ctx.strokeStyle = "#637381";
       ctx.beginPath();
-      g.lasso.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)));
+      g.lasso.forEach((p, i) =>
+        i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y),
+      );
       ctx.closePath();
       ctx.stroke();
-    } else if (g.kind === 'move' && selection) {
+    } else if (g.kind === "move" && selection) {
       if (g.moveGuides.length) {
         ctx.save();
-        ctx.strokeStyle = '#919eab';
+        ctx.strokeStyle = "#919eab";
         ctx.lineWidth = 1 / scale;
         ctx.setLineDash([5 / scale, 4 / scale]);
         ctx.beginPath();
         for (const guide of g.moveGuides) {
-          if (guide.axis === 'x') {
+          if (guide.axis === "x") {
             ctx.moveTo(guide.at, 0);
             ctx.lineTo(guide.at, page.height);
           } else {
@@ -968,54 +1253,74 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
         ctx.restore();
       }
       ctx.translate(g.offset.x, g.offset.y);
-      for (const s of page.strokes) if (selection.ids.has(s.id)) drawStroke(ctx, s);
-      setBoxTransform(`translate(${g.offset.x * scale}px, ${g.offset.y * scale}px)`);
-    } else if (g.kind === 'scale' && selection) {
+      for (const s of page.strokes)
+        if (selection.ids.has(s.id)) drawStroke(ctx, s);
+      setBoxTransform(
+        `translate(${g.offset.x * scale}px, ${g.offset.y * scale}px)`,
+      );
+    } else if (g.kind === "scale" && selection) {
       ctx.translate(g.anchor.x, g.anchor.y);
       ctx.scale(g.sx, g.sy);
       ctx.translate(-g.anchor.x, -g.anchor.y);
-      for (const s of page.strokes) if (selection.ids.has(s.id)) drawStroke(ctx, s);
+      for (const s of page.strokes)
+        if (selection.ids.has(s.id)) drawStroke(ctx, s);
       const b = selection.bounds;
-      setBoxTransform(`scale(${g.sx}, ${g.sy})`, `${(g.anchor.x - b.x) * scale}px ${(g.anchor.y - b.y) * scale}px`);
-      showBadge(`${Math.round(b.width * g.sx)} × ${Math.round(b.height * g.sy)}`);
-    } else if (g.kind === 'rotate' && selection) {
+      setBoxTransform(
+        `scale(${g.sx}, ${g.sy})`,
+        `${(g.anchor.x - b.x) * scale}px ${(g.anchor.y - b.y) * scale}px`,
+      );
+      showBadge(
+        `${Math.round(b.width * g.sx)} × ${Math.round(b.height * g.sy)}`,
+      );
+    } else if (g.kind === "rotate" && selection) {
       ctx.translate(g.anchor.x, g.anchor.y);
       ctx.rotate(g.angle);
       ctx.translate(-g.anchor.x, -g.anchor.y);
-      for (const s of page.strokes) if (selection.ids.has(s.id)) drawStroke(ctx, s);
-      setBoxTransform(`rotate(${g.angle}rad)`, '50% 50%');
+      for (const s of page.strokes)
+        if (selection.ids.has(s.id)) drawStroke(ctx, s);
+      setBoxTransform(`rotate(${g.angle}rad)`, "50% 50%");
       // Angle readout, like Drawboard: -180° … 180°.
       let deg = Math.round((g.angle * 180) / Math.PI) % 360;
       if (deg > 180) deg -= 360;
       if (deg <= -180) deg += 360;
       showBadge(`${deg}°`);
-    } else if (g.kind === 'vertex' && g.vertex) {
+    } else if (g.kind === "vertex" && g.vertex) {
       const v = g.vertex;
       // live = true: draw the new outline (the saved outline for this id is the old shape).
-      drawStroke(ctx, strokeThrough(v.stroke, v.current, v.shape.closed, v.stroke.id), true);
+      drawStroke(
+        ctx,
+        strokeThrough(v.stroke, v.current, v.shape.closed, v.stroke.id),
+        true,
+      );
       if (g.snap) {
-        g.shape = { kind: 'line', base: [v.shape.vertices[1 - v.index]!], from: { x: 0, y: 0 }, pressure: 0.5 };
+        g.shape = {
+          kind: "line",
+          base: [v.shape.vertices[1 - v.index]!],
+          from: { x: 0, y: 0 },
+          pressure: 0.5,
+        };
         drawSnapGuide(ctx, g);
         g.shape = null;
       }
-    } else if (g.kind === 'erase' && g.pieces.size) {
-      for (const pieces of g.pieces.values()) for (const s of pieces) drawStroke(ctx, s);
+    } else if (g.kind === "erase" && g.pieces.size) {
+      for (const pieces of g.pieces.values())
+        for (const s of pieces) drawStroke(ctx, s);
     }
   };
 
   /** Moves the selection frame with the ink during a drag (no React re-render per frame). */
-  const setBoxTransform = (transform: string, origin = '0 0') => {
+  const setBoxTransform = (transform: string, origin = "0 0") => {
     const box = selectionBoxRef.current;
     if (!box) return;
     box.style.transformOrigin = origin;
     box.style.transform = transform;
     // The menu hides while the selection is being moved, resized or rotated.
-    box.classList.toggle('transforming', !!transform);
+    box.classList.toggle("transforming", !!transform);
   };
 
   /** Paints strokes on the ink layer right away, so nothing blinks while the save completes. */
   const paintNow = (strokes: Stroke[]) => {
-    const ctx = inkRef.current?.getContext('2d');
+    const ctx = inkRef.current?.getContext("2d");
     const region = regionRef.current;
     if (!ctx || !region) return;
     applyRegion(ctx, region);
@@ -1027,7 +1332,7 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
 
   // A new selection (or new bounds) resets the frame's drag transform.
   useLayoutEffect(() => {
-    setBoxTransform('');
+    setBoxTransform("");
   }, [selection]);
 
   /**
@@ -1042,7 +1347,9 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
     const view = (scroller ?? document.documentElement).getBoundingClientRect();
     // Inner size (without scroll bars): a menu must never make the page scroll sideways.
     const innerRight = scroller ? view.left + scroller.clientWidth : view.right;
-    const innerBottom = scroller ? view.top + scroller.clientHeight : view.bottom;
+    const innerBottom = scroller
+      ? view.top + scroller.clientHeight
+      : view.bottom;
     let top = Math.max(view.top, 0) + 8;
     let bottom = Math.min(innerBottom, window.innerHeight) - 8;
     let left = Math.max(view.left, 0) + 8;
@@ -1053,13 +1360,19 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
       top = Math.max(top, vv.offsetTop + 8);
       bottom = Math.min(bottom, vv.offsetTop + vv.height - 8);
     }
-    const palette = document.querySelector<HTMLElement>('.tool-palette.floating:not(.minimized)');
+    const palette = document.querySelector<HTMLElement>(
+      ".tool-palette.floating:not(.minimized)",
+    );
     if (palette) {
       const p = palette.getBoundingClientRect();
-      if (palette.classList.contains('side-top')) top = Math.max(top, p.bottom + 8);
-      else if (palette.classList.contains('side-bottom')) bottom = Math.min(bottom, p.top - 8);
-      else if (palette.classList.contains('side-left')) left = Math.max(left, p.right + 8);
-      else if (palette.classList.contains('side-right')) right = Math.min(right, p.left - 8);
+      if (palette.classList.contains("side-top"))
+        top = Math.max(top, p.bottom + 8);
+      else if (palette.classList.contains("side-bottom"))
+        bottom = Math.min(bottom, p.top - 8);
+      else if (palette.classList.contains("side-left"))
+        left = Math.max(left, p.right + 8);
+      else if (palette.classList.contains("side-right"))
+        right = Math.min(right, p.left - 8);
     }
     return { top, bottom, left, right };
   };
@@ -1070,13 +1383,18 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
     const editor = textEditorRef.current;
     if (!bar || !editor) return;
     const { top, bottom, left, right } = visibleBounds();
-    bar.style.left = '0px';
+    bar.style.left = "0px";
     bar.style.maxWidth = `${Math.max(200, right - left)}px`;
     const e = editor.getBoundingClientRect();
     const h = bar.offsetHeight;
     const above = e.top - h - 10;
     const below = e.bottom + 10;
-    const y = above >= top ? above : below + h <= bottom ? below : Math.max(top, Math.min(bottom - h, above));
+    const y =
+      above >= top
+        ? above
+        : below + h <= bottom
+          ? below
+          : Math.max(top, Math.min(bottom - h, above));
     bar.style.top = `${y - e.top}px`;
     const r = bar.getBoundingClientRect();
     let dx = 0;
@@ -1089,8 +1407,8 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
     const menu = menuRef.current;
     const box = selectionBoxRef.current;
     if (!menu || !box) return;
-    menu.style.transform = '';
-    menu.style.left = '0px';
+    menu.style.transform = "";
+    menu.style.left = "0px";
     const { top, bottom, left, right } = visibleBounds();
     // Never wider than the visible area (it wraps onto two rows instead).
     menu.style.maxWidth = `${Math.max(200, right - left)}px`;
@@ -1099,7 +1417,12 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
     const above = b.top - h - 12;
     // Below the selection means below its rotate handle.
     const below = b.bottom + 46;
-    const y = above >= top ? above : below + h <= bottom ? below : Math.max(top, Math.min(bottom - h, above));
+    const y =
+      above >= top
+        ? above
+        : below + h <= bottom
+          ? below
+          : Math.max(top, Math.min(bottom - h, above));
     menu.style.top = `${y - b.top}px`;
     const r = menu.getBoundingClientRect();
     let dx = 0;
@@ -1107,11 +1430,15 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
     if (r.left + dx < left) dx = left - r.left;
     // Moved with `left` (not a transform), so it never widens the scrollable area.
     if (dx) menu.style.left = `${dx}px`;
-    const panel = menu.querySelector<HTMLElement>('.sel-panel');
+    const panel = menu.querySelector<HTMLElement>(".sel-panel");
     if (panel) {
-      panel.classList.remove('up');
-      panel.style.left = '0px';
-      if (panel.getBoundingClientRect().bottom > bottom && y - panel.offsetHeight - 6 >= top) panel.classList.add('up');
+      panel.classList.remove("up");
+      panel.style.left = "0px";
+      if (
+        panel.getBoundingClientRect().bottom > bottom &&
+        y - panel.offsetHeight - 6 >= top
+      )
+        panel.classList.add("up");
       const pr = panel.getBoundingClientRect();
       let px = 0;
       if (pr.right > right) px = right - pr.right;
@@ -1141,36 +1468,44 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
         });
     };
     const vv = window.visualViewport;
-    scroller?.addEventListener('scroll', onMove, { passive: true });
-    window.addEventListener('resize', onMove);
-    vv?.addEventListener('resize', onMove);
-    vv?.addEventListener('scroll', onMove);
+    scroller?.addEventListener("scroll", onMove, { passive: true });
+    window.addEventListener("resize", onMove);
+    vv?.addEventListener("resize", onMove);
+    vv?.addEventListener("scroll", onMove);
     return () => {
-      scroller?.removeEventListener('scroll', onMove);
-      window.removeEventListener('resize', onMove);
-      vv?.removeEventListener('resize', onMove);
-      vv?.removeEventListener('scroll', onMove);
+      scroller?.removeEventListener("scroll", onMove);
+      window.removeEventListener("resize", onMove);
+      vv?.removeEventListener("resize", onMove);
+      vv?.removeEventListener("scroll", onMove);
       if (raf != null) cancelAnimationFrame(raf);
     };
   }, [floating, scroller]);
 
   const requestRender = () => {
-    if (frameRef.current == null) frameRef.current = requestAnimationFrame(renderLive);
+    if (frameRef.current == null)
+      frameRef.current = requestAnimationFrame(renderLive);
   };
 
   /** What the eraser may touch: never pictures or text; only highlighter if so set. */
   const erasable = (s: Stroke) =>
-    !s.locked && s.tool !== 'image' && s.tool !== 'text' && (!settings.eraseHighlighterOnly || s.tool === 'highlighter');
+    !s.locked &&
+    s.tool !== "image" &&
+    s.tool !== "text" &&
+    (!settings.eraseHighlighterOnly || s.tool === "highlighter");
 
   const eraseAt = (g: Gesture, p: Point) => {
     const radius = settings.eraserSize / 2;
     let changed = false;
-    if (settings.eraserMode === 'partial') {
+    if (settings.eraserMode === "partial") {
       for (const s of page.strokes) {
         if (!erasable(s)) continue;
-        if (s.tool === 'tape') {
+        if (s.tool === "tape") {
           // Tape comes off whole.
-          if (!g.erased.has(s.id) && !g.pieces.has(s.id) && strokeHit(s, p, radius)) {
+          if (
+            !g.erased.has(s.id) &&
+            !g.pieces.has(s.id) &&
+            strokeHit(s, p, radius)
+          ) {
             g.pieces.set(s.id, []);
             hiddenRef.current.add(s.id);
             changed = true;
@@ -1239,7 +1574,7 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
   const tapeAt = (p: Point): Stroke | undefined => {
     for (let i = page.strokes.length - 1; i >= 0; i--) {
       const s = page.strokes[i]!;
-      if (s.tool === 'tape' && strokeHit(s, p, 2)) return s;
+      if (s.tool === "tape" && strokeHit(s, p, 2)) return s;
     }
     return undefined;
   };
@@ -1262,7 +1597,7 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
   const textAt = (p: Point): Stroke | undefined => {
     for (let i = page.strokes.length - 1; i >= 0; i--) {
       const s = page.strokes[i]!;
-      if (s.tool === 'text' && strokeHit(s, p, 2)) return s;
+      if (s.tool === "text" && strokeHit(s, p, 2)) return s;
     }
     return undefined;
   };
@@ -1272,7 +1607,11 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
     const all = expandGroups(page.strokes, ids);
     const picked = page.strokes.filter((x) => all.has(x.id));
     const bounds = unionRects(picked.map(strokeBounds));
-    setSelection(picked.length && bounds ? { ids: new Set(picked.map((x) => x.id)), bounds } : null);
+    setSelection(
+      picked.length && bounds
+        ? { ids: new Set(picked.map((x) => x.id)), bounds }
+        : null,
+    );
   };
   const selectStroke = (s: Stroke) => selectIds([s.id]);
 
@@ -1286,30 +1625,33 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
     const tool = settings.tool;
     // Preview exactly where (and how big) ink will land.
     const size =
-      tool === 'laser'
-        ? settings.pointer?.laserSize ?? 10
-        : tool === 'eraser'
+      tool === "laser"
+        ? (settings.pointer?.laserSize ?? 10)
+        : tool === "eraser"
           ? settings.eraserSize * scale
-          : tool === 'highlighter'
+          : tool === "highlighter"
             ? settings.highlighterSize * scale
-            : tool === 'tape'
+            : tool === "tape"
               ? settings.tape.width * scale
-              : tool === 'shape'
+              : tool === "shape"
                 ? 18
-                : Math.max(settings.pointer?.cursor === 'dot' ? 5 : 9, settings.penSize * scale);
-    if (tool === 'eraser' || settings.hoverPreview !== false) {
+                : Math.max(
+                    settings.pointer?.cursor === "dot" ? 3 : 6,
+                    settings.penSize * scale,
+                  );
+    if (tool === "eraser" || settings.hoverPreview !== false) {
       showHoverCursor(e.nativeEvent, {
         tool,
         size,
         variant: settings.pointer?.cursor,
         color:
-          tool === 'highlighter'
+          tool === "highlighter"
             ? settings.highlighterColor
-            : tool === 'laser'
-              ? settings.pointer?.laserColor ?? '#ff3b30'
-              : tool === 'tape'
+            : tool === "laser"
+              ? (settings.pointer?.laserColor ?? "#ff3b30")
+              : tool === "tape"
                 ? settings.tape.color
-                : tool === 'shape'
+                : tool === "shape"
                   ? displayColor(settings.shape.color)
                   : displayColor(settings.color),
       });
@@ -1343,17 +1685,25 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
     const native = e.nativeEvent;
     if (diagnostics.enabled) {
       diagnostics.pointerType = e.pointerType;
-      diagnostics.coalescedSupported = typeof native.getCoalescedEvents === 'function';
-      diagnostics.predictedSupported = typeof native.getPredictedEvents === 'function';
+      diagnostics.coalescedSupported =
+        typeof native.getCoalescedEvents === "function";
+      diagnostics.predictedSupported =
+        typeof native.getPredictedEvents === "function";
     }
-    if (e.pointerType === 'pen') notePen(true);
-    const handle = (e.target as Element).closest('[data-handle]')?.getAttribute('data-handle') as Handle | null;
+    if (e.pointerType === "pen") notePen(true);
+    const handle = (e.target as Element)
+      .closest("[data-handle]")
+      ?.getAttribute("data-handle") as Handle | null;
     const box = containerRef.current!.getBoundingClientRect();
-    const at = { x: (e.clientX - box.left) / scale, y: (e.clientY - box.top) / scale };
-    const onSelection = !!selection && (!!handle || rectContains(selection.bounds, at));
+    const at = {
+      x: (e.clientX - box.left) / scale,
+      y: (e.clientY - box.top) / scale,
+    };
+    const onSelection =
+      !!selection && (!!handle || rectContains(selection.bounds, at));
     // Fingers scroll/zoom (handled by the editor) unless finger drawing is on — but a finger
     // may always move or resize a selection.
-    if (e.pointerType === 'touch' && !settings.fingerDraws && !onSelection) {
+    if (e.pointerType === "touch" && !settings.fingerDraws && !onSelection) {
       // Tap ink with a finger to select it (like Drawboard), or long-press it (like Apple Notes).
       cancelPress();
       if (!onRequestSelect) return;
@@ -1378,7 +1728,7 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
       };
       return;
     }
-    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    if (e.pointerType === "mouse" && e.button !== 0) return;
     if (gestureRef.current || !regionRef.current) return;
     e.preventDefault();
     e.stopPropagation();
@@ -1390,13 +1740,16 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
 
     const rect = containerRef.current!.getBoundingClientRect();
     const origin = { left: rect.left, top: rect.top };
-    const p = { x: (e.clientX - origin.left) / scale, y: (e.clientY - origin.top) / scale };
+    const p = {
+      x: (e.clientX - origin.left) / scale,
+      y: (e.clientY - origin.top) / scale,
+    };
     const g: Gesture = {
       pointerId: e.pointerId,
-      kind: 'ink',
+      kind: "ink",
       origin,
       points: [p.x, p.y, pressureOf(native)],
-      hasPressure: e.pointerType === 'pen',
+      hasPressure: e.pointerType === "pen",
       predicted: [],
       dirty: null,
       needsDraw: true,
@@ -1427,21 +1780,26 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
     };
     growDirty(g, p.x, p.y);
 
-    if (handle === 'rotate' && selection) {
+    if (handle === "rotate" && selection) {
       const b = selection.bounds;
-      g.kind = 'rotate';
+      g.kind = "rotate";
       g.anchor = { x: b.x + b.width / 2, y: b.y + b.height / 2 };
       g.startAngle = Math.atan2(p.y - g.anchor.y, p.x - g.anchor.x);
       for (const id of selection.ids) hiddenRef.current.add(id);
       paintInk(true);
-    } else if (handle?.startsWith('v') && selection && editShape) {
+    } else if (handle?.startsWith("v") && selection && editShape) {
       // Drag one point of the shape.
-      g.kind = 'vertex';
-      g.vertex = { index: Number(handle.slice(1)), shape: editShape.shape, stroke: editShape.stroke, current: editShape.shape.vertices };
+      g.kind = "vertex";
+      g.vertex = {
+        index: Number(handle.slice(1)),
+        shape: editShape.shape,
+        stroke: editShape.stroke,
+        current: editShape.shape.vertices,
+      };
       g.guides = buildGuides(page.strokes, selection.ids);
       hiddenRef.current.add(editShape.stroke.id);
       paintInk(true);
-    } else if (handle && handle !== 'rotate' && selection) {
+    } else if (handle && handle !== "rotate" && selection) {
       const b = selection.bounds;
       const x0 = b.x;
       const x1 = b.x + b.width;
@@ -1461,38 +1819,42 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
         w: [{ x: x0, y: ym }, { x: x1, y: ym }, true, false],
       };
       const [from, anchor, ax, ay] = spec[handle as Corner | Side];
-      g.kind = 'scale';
+      g.kind = "scale";
       g.anchor = anchor;
       g.scaleFrom = from;
       g.axis = { x: ax, y: ay };
       for (const id of selection.ids) hiddenRef.current.add(id);
       paintInk(true);
-    } else if (selection && settings.tool !== 'eraser' && onSelectionBody(p)) {
-      g.kind = 'move';
+    } else if (selection && settings.tool !== "eraser" && onSelectionBody(p)) {
+      g.kind = "move";
       g.moveTargets = guideTargets(page.strokes, selection.ids, page);
       for (const id of selection.ids) hiddenRef.current.add(id);
       paintInk(true);
-    } else if (settings.tool === 'laser') {
-      g.kind = 'laser';
+    } else if (settings.tool === "laser") {
+      g.kind = "laser";
       laserRef.current.push([{ ...p, t: performance.now() }]);
-    } else if (settings.tool === 'shape' || settings.tool === 'tape' || settings.tool === 'text') {
+    } else if (
+      settings.tool === "shape" ||
+      settings.tool === "tape" ||
+      settings.tool === "text"
+    ) {
       if (selection) setSelection(null);
       g.kind = settings.tool;
       g.moveStart = p;
       g.scaleFrom = p;
-    } else if (settings.tool === 'lasso') {
+    } else if (settings.tool === "lasso") {
       setSelection(null);
-      g.kind = 'lasso';
+      g.kind = "lasso";
     } else {
       if (selection) setSelection(null);
-      if (settings.tool === 'eraser') {
-        g.kind = 'erase';
+      if (settings.tool === "eraser") {
+        g.kind = "erase";
         eraseAt(g, p);
       }
     }
     // Started next to the ruler or protractor: the stroke follows its edge.
     const drawingGuide = getGuide();
-    if (g.kind === 'ink' && drawingGuide) {
+    if (g.kind === "ink" && drawingGuide) {
       const edge = edgeNear(drawingGuide, { x: e.clientX, y: e.clientY });
       if (edge) {
         g.guideEdge = edge;
@@ -1507,18 +1869,36 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
 
   /** A client point moved onto the guide edge, in page units. */
   const guidedPoint = (g: Gesture, clientX: number, clientY: number): Point => {
-    const inset = ((settings.tool === 'highlighter' ? settings.highlighterSize : settings.penSize) * scale) / 2;
-    const q = g.guideEdge ? projectOnEdge(g.guideEdge, { x: clientX, y: clientY }, inset) : { x: clientX, y: clientY };
-    return { x: (q.x - g.origin.left) / scale, y: (q.y - g.origin.top) / scale };
+    const inset =
+      ((settings.tool === "highlighter"
+        ? settings.highlighterSize
+        : settings.penSize) *
+        scale) /
+      2;
+    const q = g.guideEdge
+      ? projectOnEdge(g.guideEdge, { x: clientX, y: clientY }, inset)
+      : { x: clientX, y: clientY };
+    return {
+      x: (q.x - g.origin.left) / scale,
+      y: (q.y - g.origin.top) / scale,
+    };
   };
 
   const onPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
     const press = pressRef.current;
-    if (press && press.id === e.pointerId && Math.hypot(e.clientX - press.x, e.clientY - press.y) > 10) cancelPress();
+    if (
+      press &&
+      press.id === e.pointerId &&
+      Math.hypot(e.clientX - press.x, e.clientY - press.y) > 10
+    )
+      cancelPress();
     const g = gestureRef.current;
-    if (diagnostics.enabled && e.pointerType === 'pen') {
-      const n = e.nativeEvent as PointerEvent & { altitudeAngle?: number; azimuthAngle?: number };
-      if (e.buttons === 0) diagnostics.hover = 'yes';
+    if (diagnostics.enabled && e.pointerType === "pen") {
+      const n = e.nativeEvent as PointerEvent & {
+        altitudeAngle?: number;
+        azimuthAngle?: number;
+      };
+      if (e.buttons === 0) diagnostics.hover = "yes";
       const deg = (r: number) => Math.round((r * 180) / Math.PI);
       diagnostics.tilt =
         n.altitudeAngle != null
@@ -1526,14 +1906,14 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
           : `x ${e.tiltX} y ${e.tiltY}`;
       diagnostics.twist = e.twist;
     }
-    if (!g && e.pointerType === 'pen' && e.buttons === 0) {
+    if (!g && e.pointerType === "pen" && e.buttons === 0) {
       // Over a menu the Pencil is pointing at controls: no ink cursor, no hover palette.
       if (isControl(e.target)) endHover();
       else onHover(e);
       return;
     }
     // Only contact counts for palm rejection; a hovering Pencil must not block finger scrolling.
-    if (e.pointerType === 'pen' && e.buttons > 0) notePen();
+    if (e.pointerType === "pen" && e.buttons > 0) notePen();
     if (!g || g.pointerId !== e.pointerId) return;
     e.stopPropagation();
     const native = e.nativeEvent;
@@ -1546,20 +1926,34 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
     }
 
     for (const ev of events) {
-      const p = { x: (ev.clientX - g.origin.left) / scale, y: (ev.clientY - g.origin.top) / scale };
+      const p = {
+        x: (ev.clientX - g.origin.left) / scale,
+        y: (ev.clientY - g.origin.top) / scale,
+      };
       switch (g.kind) {
-        case 'ink':
+        case "ink":
           if (g.snapped) {
-            if (g.shape?.kind === 'line') {
+            if (g.shape?.kind === "line") {
               const a = g.shape.base[0]!;
-              const snap = g.guides ? snapLineEnd(a, p, g.guides, snapRadius()) : null;
+              const snap = g.guides
+                ? snapLineEnd(a, p, g.guides, snapRadius())
+                : null;
               if (snap && !sameSnap(snap, g.snap)) {
-                pencilHaptic('alignment', g.origin.left + snap.point.x * scale, g.origin.top + snap.point.y * scale);
+                pencilHaptic(
+                  "alignment",
+                  g.origin.left + snap.point.x * scale,
+                  g.origin.top + snap.point.y * scale,
+                );
               }
               g.snap = snap;
               setLine(g, a, snap?.point ?? p);
             } else if (g.shape) {
-              const pts = adjustShape(g.shape.kind, g.shape.base, g.shape.from, p);
+              const pts = adjustShape(
+                g.shape.kind,
+                g.shape.base,
+                g.shape.from,
+                p,
+              );
               const pr = g.shape.pressure;
               g.points = pts.flatMap((q) => [q.x, q.y, pr]);
               for (const q of pts) growDirty(g, q.x, q.y);
@@ -1580,47 +1974,58 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
             g.holdSince = Date.now();
           }
           break;
-        case 'erase':
+        case "erase":
           eraseAt(g, p);
           break;
-        case 'lasso':
-          if (settings.lasso?.mode === 'rect') {
+        case "lasso":
+          if (settings.lasso?.mode === "rect") {
             const a = g.moveStart;
             g.lasso = [a, { x: p.x, y: a.y }, p, { x: a.x, y: p.y }];
           } else g.lasso.push(p);
           break;
-        case 'laser':
-          laserRef.current[laserRef.current.length - 1]?.push({ ...p, t: performance.now() });
+        case "laser":
+          laserRef.current[laserRef.current.length - 1]?.push({
+            ...p,
+            t: performance.now(),
+          });
           break;
-        case 'move':
+        case "move":
           {
             const raw = { x: p.x - g.moveStart.x, y: p.y - g.moveStart.y };
             if (selection && g.moveTargets) {
-              const snapped = snapMove(selection.bounds, raw, g.moveTargets, Math.max(3, 8 / scale));
+              const snapped = snapMove(
+                selection.bounds,
+                raw,
+                g.moveTargets,
+                Math.max(3, 8 / scale),
+              );
               g.offset = snapped.offset;
               g.moveGuides = snapped.guides;
             } else g.offset = raw;
           }
           break;
-        case 'shape':
-        case 'tape':
-        case 'text':
+        case "shape":
+        case "tape":
+        case "text":
           g.scaleFrom = p;
           break;
-        case 'rotate': {
-          let angle = Math.atan2(p.y - g.anchor.y, p.x - g.anchor.x) - g.startAngle;
+        case "rotate": {
+          let angle =
+            Math.atan2(p.y - g.anchor.y, p.x - g.anchor.x) - g.startAngle;
           // Snap to every 15° (0°, 15°, 30°, 45°, 90°…) when close, with a Pencil tick.
           const step = Math.PI / 12;
           const snapped = Math.round(angle / step) * step;
-          const isSnapped = Math.abs(angle - snapped) < (ROTATE_SNAP_DEG * Math.PI) / 180;
+          const isSnapped =
+            Math.abs(angle - snapped) < (ROTATE_SNAP_DEG * Math.PI) / 180;
           if (isSnapped) {
-            if (Math.abs(snapped - g.angle) > 1e-6) pencilHaptic('alignment', ev.clientX, ev.clientY);
+            if (Math.abs(snapped - g.angle) > 1e-6)
+              pencilHaptic("alignment", ev.clientX, ev.clientY);
             angle = snapped;
           }
           g.angle = angle;
           break;
         }
-        case 'scale': {
+        case "scale": {
           // Free resize: width and height stretch separately (corners), or one of them (sides).
           const stretch = (from: number, anchor: number, to: number) => {
             const d0 = from - anchor;
@@ -1637,7 +2042,7 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
           }
           break;
         }
-        case 'vertex': {
+        case "vertex": {
           const v = g.vertex;
           if (!v) break;
           let to = p;
@@ -1645,7 +2050,8 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
             // A line's end snaps like when drawing it (ends, midpoints, perpendicular, angles).
             const fixed = v.shape.vertices[1 - v.index]!;
             const snap = snapLineEnd(fixed, p, g.guides, snapRadius());
-            if (snap && !sameSnap(snap, g.snap)) pencilHaptic('alignment', ev.clientX, ev.clientY);
+            if (snap && !sameSnap(snap, g.snap))
+              pencilHaptic("alignment", ev.clientX, ev.clientY);
             g.snap = snap;
             to = snap?.point ?? p;
           }
@@ -1655,9 +2061,9 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
         }
       }
     }
-    if (g.kind === 'ink' && g.snapped) {
+    if (g.kind === "ink" && g.snapped) {
       g.lastSampleAt = performance.now();
-    } else if (g.kind === 'ink' && g.guideEdge) {
+    } else if (g.kind === "ink" && g.guideEdge) {
       // Along a guide: show the length (ruler) or angle (protractor) instead of predicting.
       g.predicted = [];
       g.needsDraw = true;
@@ -1666,11 +2072,11 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
       const last = { x: g.points[n - 3]!, y: g.points[n - 2]! };
       const guide = getGuide();
       const text =
-        guide?.kind === 'protractor'
+        guide?.kind === "protractor"
           ? `${protractorDegrees(guide, { x: g.origin.left + last.x * scale, y: g.origin.top + last.y * scale })}°`
-          : `${(Math.hypot(last.x - g.points[0]!, last.y - g.points[1]!) * (25.4 / 96) / 10).toFixed(1)} cm`;
+          : `${((Math.hypot(last.x - g.points[0]!, last.y - g.points[1]!) * (25.4 / 96)) / 10).toFixed(1)} cm`;
       showBadge(text, last.x * scale, last.y * scale - 36);
-    } else if (g.kind === 'ink') {
+    } else if (g.kind === "ink") {
       const predicted = native.getPredictedEvents?.() ?? [];
       g.predicted = predicted.flatMap((ev) => {
         const x = (ev.clientX - g.origin.left) / scale;
@@ -1684,7 +2090,10 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
     requestRender();
   };
 
-  const finish = (e: React.PointerEvent<HTMLDivElement>, cancelled: boolean) => {
+  const finish = (
+    e: React.PointerEvent<HTMLDivElement>,
+    cancelled: boolean,
+  ) => {
     const press = pressRef.current;
     if (press?.id === e.pointerId) {
       cancelPress();
@@ -1694,8 +2103,13 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
         const pdfLink = pdfLinkAreas.find((a) => rectContains(a, press.at));
         if (pdfLink && background) {
           noteTapHandled();
-          if (pdfLink.url) followLink({ kind: 'url', url: pdfLink.url });
-          else if (pdfLink.pageIndex !== undefined) followLink({ kind: 'pdfPage', fileId: background.fileId, pageIndex: pdfLink.pageIndex });
+          if (pdfLink.url) followLink({ kind: "url", url: pdfLink.url });
+          else if (pdfLink.pageIndex !== undefined)
+            followLink({
+              kind: "pdfPage",
+              fileId: background.fileId,
+              pageIndex: pdfLink.pageIndex,
+            });
           return;
         }
         // Playing a recording: tapping ink written during it jumps the audio there.
@@ -1712,14 +2126,18 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
         const tape = tapeAt(press.at);
         const hit = strokeAt(press.at);
         if (tape || hit) noteTapHandled();
-        if (tape && (!hit || hit.id === tape.id || hit.createdAt < tape.createdAt)) toggleTape(tape);
+        if (
+          tape &&
+          (!hit || hit.id === tape.id || hit.createdAt < tape.createdAt)
+        )
+          toggleTape(tape);
         else if (hit && selection && !selection.ids.has(hit.id)) {
           // Something is already selected: a finger tap adds to it (tap empty paper to clear).
           selectIds([...selection.ids, hit.id]);
         } else if (hit) selectStroke(hit);
       }
     }
-    if (e.pointerType === 'pen') notePen(false);
+    if (e.pointerType === "pen") notePen(false);
     const g = gestureRef.current;
     if (!g || g.pointerId !== e.pointerId) return;
     gestureRef.current = null;
@@ -1727,21 +2145,35 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
     hideBadge();
 
     // A cancelled pen stroke (iPadOS occasionally cancels) is still kept: losing ink is worse.
-    const keepInk = g.kind === 'ink' && g.points.length >= 3;
+    const keepInk = g.kind === "ink" && g.points.length >= 3;
     if (!cancelled || keepInk) {
       switch (g.kind) {
-        case 'ink': {
-          if (g.points.length === 3) g.points.push(g.points[0]! + 0.1, g.points[1]! + 0.1, g.points[2]!); // a dot
+        case "ink": {
+          if (g.points.length === 3)
+            g.points.push(g.points[0]! + 0.1, g.points[1]! + 0.1, g.points[2]!); // a dot
           // Written while recording: remember the moment, for synced playback.
           const stamp = audioStamp();
-          const stroke: Stroke = { ...liveStroke(g, false), id: newId(), ...(stamp ? { audio: stamp } : {}) };
+          const stroke: Stroke = {
+            ...liveStroke(g, false),
+            id: newId(),
+            ...(stamp ? { audio: stamp } : {}),
+          };
           // Text-aware highlighter: a sideways swipe over PDF text becomes neat bands on the lines.
-          const bands = stroke.tool === 'highlighter' && !g.snapped ? snapHighlight(stroke.points, stroke.size, pdfRuns) : null;
+          const bands =
+            stroke.tool === "highlighter" && !g.snapped
+              ? snapHighlight(stroke.points, stroke.size, pdfRuns)
+              : null;
           const made: Stroke[] = bands
-            ? bands.map((b, i) => ({ ...stroke, id: i ? newId() : stroke.id, points: [b.x0, b.y, 0.5, b.x1, b.y, 0.5], size: b.height, hasPressure: false }))
+            ? bands.map((b, i) => ({
+                ...stroke,
+                id: i ? newId() : stroke.id,
+                points: [b.x0, b.y, 0.5, b.x1, b.y, 0.5],
+                size: b.height,
+                hasPressure: false,
+              }))
             : [stroke];
           if (bands) requestRender();
-          const ctx = inkRef.current?.getContext('2d');
+          const ctx = inkRef.current?.getContext("2d");
           const region = regionRef.current;
           if (ctx && region && !bands) {
             applyRegion(ctx, region);
@@ -1750,46 +2182,72 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
           }
           onChange(page.id, made, []);
           // Like Drawboard: a recognised shape stays selected, ready to move, resize or rotate.
-          if (g.snapped) setSelection({ ids: new Set([stroke.id]), bounds: strokeBounds(stroke) });
+          if (g.snapped)
+            setSelection({
+              ids: new Set([stroke.id]),
+              bounds: strokeBounds(stroke),
+            });
           break;
         }
-        case 'shape':
-        case 'tape': {
+        case "shape":
+        case "tape": {
           const item = dragItem(g, newId());
           if (!item) {
             // A tap with the tape tool peeks under tape.
-            const tape = g.kind === 'tape' ? tapeAt(g.moveStart) : undefined;
+            const tape = g.kind === "tape" ? tapeAt(g.moveStart) : undefined;
             if (tape) toggleTape(tape);
             break;
           }
           paintNow([item]);
           onChange(page.id, [item], []);
-          if (g.kind === 'shape') setSelection({ ids: new Set([item.id]), bounds: strokeBounds(item) });
+          if (g.kind === "shape")
+            setSelection({
+              ids: new Set([item.id]),
+              bounds: strokeBounds(item),
+            });
           break;
         }
-        case 'text': {
+        case "text": {
           const existing = textAt(g.moveStart);
-          if (existing && Math.hypot(g.scaleFrom.x - g.moveStart.x, g.scaleFrom.y - g.moveStart.y) < 6) {
+          if (
+            existing &&
+            Math.hypot(
+              g.scaleFrom.x - g.moveStart.x,
+              g.scaleFrom.y - g.moveStart.y,
+            ) < 6
+          ) {
             startTextEdit(existing);
             break;
           }
           // Drag sideways to choose the box width; a tap gives the standard width.
           const dx = g.scaleFrom.x - g.moveStart.x;
-          const width = Math.min(page.width - 16, Math.abs(dx) > 40 ? Math.abs(dx) : DEFAULT_TEXT_WIDTH);
-          const start = Math.abs(dx) > 40 ? Math.min(g.moveStart.x, g.scaleFrom.x) : g.moveStart.x;
+          const width = Math.min(
+            page.width - 16,
+            Math.abs(dx) > 40 ? Math.abs(dx) : DEFAULT_TEXT_WIDTH,
+          );
+          const start =
+            Math.abs(dx) > 40
+              ? Math.min(g.moveStart.x, g.scaleFrom.x)
+              : g.moveStart.x;
           // Near the right edge the box slides left, so it keeps its width instead of being squeezed.
           const x = Math.max(8, Math.min(start, page.width - width - 8));
-          startTextEdit(null, { x, y: Math.max(4, g.moveStart.y - settings.text.size * 0.9) }, width);
+          startTextEdit(
+            null,
+            { x, y: Math.max(4, g.moveStart.y - settings.text.size * 0.9) },
+            width,
+          );
           break;
         }
-        case 'erase':
+        case "erase":
           if (g.pieces.size) {
-            onChange(page.id, [...g.pieces.values()].flat(), [...g.pieces.keys()]);
+            onChange(page.id, [...g.pieces.values()].flat(), [
+              ...g.pieces.keys(),
+            ]);
           } else if (g.erased.size) {
             onChange(page.id, [], [...g.erased]);
           }
           break;
-        case 'rotate': {
+        case "rotate": {
           if (!selection) break;
           if (Math.abs(g.angle) < 0.005) {
             hiddenRef.current = new Set();
@@ -1802,26 +2260,41 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
           paintNow(rotated);
           onChange(page.id, rotated, [...selection.ids]);
           const bounds = unionRects(rotated.map(strokeBounds));
-          if (bounds) setSelection({ ids: new Set(rotated.map((s) => s.id)), bounds });
+          if (bounds)
+            setSelection({ ids: new Set(rotated.map((s) => s.id)), bounds });
           break;
         }
-        case 'vertex': {
+        case "vertex": {
           const v = g.vertex;
           if (!v || !selection) break;
-          const moved = v.current.some((q, i) => Math.hypot(q.x - v.shape.vertices[i]!.x, q.y - v.shape.vertices[i]!.y) > 0.3);
+          const moved = v.current.some(
+            (q, i) =>
+              Math.hypot(
+                q.x - v.shape.vertices[i]!.x,
+                q.y - v.shape.vertices[i]!.y,
+              ) > 0.3,
+          );
           if (!moved) {
             hiddenRef.current = new Set();
             paintInk(true);
             placeVertexHandles(v.shape.vertices);
             break;
           }
-          const edited = strokeThrough(v.stroke, v.current, v.shape.closed, newId());
+          const edited = strokeThrough(
+            v.stroke,
+            v.current,
+            v.shape.closed,
+            newId(),
+          );
           paintNow([edited]);
           onChange(page.id, [edited], [v.stroke.id]);
-          setSelection({ ids: new Set([edited.id]), bounds: strokeBounds(edited) });
+          setSelection({
+            ids: new Set([edited.id]),
+            bounds: strokeBounds(edited),
+          });
           break;
         }
-        case 'scale': {
+        case "scale": {
           if (!selection) break;
           if (Math.abs(g.sx - 1) < 0.005 && Math.abs(g.sy - 1) < 0.005) {
             hiddenRef.current = new Set();
@@ -1841,11 +2314,16 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
           const y1 = g.anchor.y + (b.y + b.height - g.anchor.y) * sy;
           setSelection({
             ids: new Set(scaled.map((s) => s.id)),
-            bounds: { x: Math.min(x0, x1), y: Math.min(y0, y1), width: Math.abs(x1 - x0), height: Math.abs(y1 - y0) },
+            bounds: {
+              x: Math.min(x0, x1),
+              y: Math.min(y0, y1),
+              width: Math.abs(x1 - x0),
+              height: Math.abs(y1 - y0),
+            },
           });
           break;
         }
-        case 'lasso': {
+        case "lasso": {
           // A tap (no real loop) selects the ink under the tip.
           const loop = boundsOf(g.lasso);
           if (loop.width < 8 && loop.height < 8) {
@@ -1855,12 +2333,15 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
           }
           const kinds = settings.lasso?.kinds;
           const picked = page.strokes.filter(
-            (s) => isSelectable(s) && (!kinds?.length || kinds.includes(kindOf(s))) && strokeInLasso(s, g.lasso),
+            (s) =>
+              isSelectable(s) &&
+              (!kinds?.length || kinds.includes(kindOf(s))) &&
+              strokeInLasso(s, g.lasso),
           );
           if (picked.length) selectIds(picked.map((s) => s.id));
           break;
         }
-        case 'move': {
+        case "move": {
           if (!selection) break;
           const { x: dx, y: dy } = g.offset;
           if (Math.hypot(dx, dy) < 0.5) {
@@ -1875,54 +2356,92 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
           onChange(page.id, moved, [...selection.ids]);
           setSelection({
             ids: new Set(moved.map((s) => s.id)),
-            bounds: { ...selection.bounds, x: selection.bounds.x + dx, y: selection.bounds.y + dy },
+            bounds: {
+              ...selection.bounds,
+              x: selection.bounds.x + dx,
+              y: selection.bounds.y + dy,
+            },
           });
           break;
         }
       }
-    } else if (g.erased.size || g.pieces.size || g.kind === 'move' || g.kind === 'scale' || g.kind === 'rotate' || g.kind === 'vertex') {
+    } else if (
+      g.erased.size ||
+      g.pieces.size ||
+      g.kind === "move" ||
+      g.kind === "scale" ||
+      g.kind === "rotate" ||
+      g.kind === "vertex"
+    ) {
       hiddenRef.current = new Set();
       paintInk(true);
     }
-    if (g.kind === 'shape') hideBadge();
+    if (g.kind === "shape") hideBadge();
     requestRender(); // clears the live layer
   };
 
   const recolorSelection = (color: string) => {
     if (!selection) return;
-    const targets = page.strokes.filter((s) => selection.ids.has(s.id) && s.tool !== 'image');
+    const targets = page.strokes.filter(
+      (s) => selection.ids.has(s.id) && s.tool !== "image",
+    );
     if (!targets.length) return;
     const recolored = targets.map((s) => recolorStroke(s, color, newId()));
     paintNow(recolored);
-    onChange(page.id, recolored, targets.map((s) => s.id));
+    onChange(
+      page.id,
+      recolored,
+      targets.map((s) => s.id),
+    );
     keepPanelRef.current = true;
-    setSelection({ ...selection, ids: replaceIds(selection.ids, targets, recolored) });
+    setSelection({
+      ...selection,
+      ids: replaceIds(selection.ids, targets, recolored),
+    });
   };
 
   /** Fills the selected strokes (null = remove fill). */
   const fillSelection = (fill: string | null, opacity: number) => {
     if (!selection) return;
-    const targets = page.strokes.filter((s) => selection.ids.has(s.id) && (s.tool === 'pen' || s.tool === 'highlighter'));
+    const targets = page.strokes.filter(
+      (s) =>
+        selection.ids.has(s.id) &&
+        (s.tool === "pen" || s.tool === "highlighter"),
+    );
     if (!targets.length) return;
     const filled = targets.map((s) => fillStroke(s, fill, opacity, newId()));
     paintNow(filled);
-    onChange(page.id, filled, targets.map((s) => s.id));
+    onChange(
+      page.id,
+      filled,
+      targets.map((s) => s.id),
+    );
     keepPanelRef.current = true;
-    setSelection({ ...selection, ids: replaceIds(selection.ids, targets, filled) });
+    setSelection({
+      ...selection,
+      ids: replaceIds(selection.ids, targets, filled),
+    });
   };
-  const selectedFill = selection ? page.strokes.find((s) => selection.ids.has(s.id) && s.fill) : undefined;
+  const selectedFill = selection
+    ? page.strokes.find((s) => selection.ids.has(s.id) && s.fill)
+    : undefined;
 
   /** Shows the selection with a different fill opacity while the slider moves (not saved yet). */
   const previewFill = (opacity: number) => {
     if (!selection || !selectedFill?.fill) return;
-    const targets = page.strokes.filter((s) => selection.ids.has(s.id) && (s.tool === 'pen' || s.tool === 'highlighter'));
+    const targets = page.strokes.filter(
+      (s) =>
+        selection.ids.has(s.id) &&
+        (s.tool === "pen" || s.tool === "highlighter"),
+    );
     hiddenRef.current = new Set(targets.map((s) => s.id));
     paintInk(true);
-    const ctx = inkRef.current?.getContext('2d');
+    const ctx = inkRef.current?.getContext("2d");
     const region = regionRef.current;
     if (!ctx || !region) return;
     applyRegion(ctx, region);
-    for (const s of targets) drawStroke(ctx, s.fill ? fillStroke(s, s.fill, opacity, s.id) : s);
+    for (const s of targets)
+      drawStroke(ctx, s.fill ? fillStroke(s, s.fill, opacity, s.id) : s);
   };
   const endPreview = () => {
     if (!hiddenRef.current.size) return;
@@ -1933,14 +2452,29 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
   const [linking, setLinking] = useState(false);
   const [keepAspect, setKeepAspectState] = useState(getKeepAspect);
   /** Which pop-up of the selection menu is open. */
-  const [menuPanel, setMenuPanel] = useState<'color' | 'fill' | 'arrange' | 'style' | null>(null);
-  const onlyPictures = !!selection && page.strokes.every((s) => !selection.ids.has(s.id) || s.tool === 'image');
+  const [menuPanel, setMenuPanel] = useState<
+    "color" | "fill" | "arrange" | "style" | null
+  >(null);
+  const onlyPictures =
+    !!selection &&
+    page.strokes.every((s) => !selection.ids.has(s.id) || s.tool === "image");
   /** Fill applies to ink and shapes, not to pictures, text or tape. */
-  const canFill = !!selection && page.strokes.some((s) => selection.ids.has(s.id) && (s.tool === 'pen' || s.tool === 'highlighter'));
-  const singleText = !!selection && selection.ids.size === 1 && page.strokes.some((s) => selection.ids.has(s.id) && s.tool === 'text');
-  const selectedColor = (selection && page.strokes.find((s) => selection.ids.has(s.id))?.color) || settings.color;
+  const canFill =
+    !!selection &&
+    page.strokes.some(
+      (s) =>
+        selection.ids.has(s.id) &&
+        (s.tool === "pen" || s.tool === "highlighter"),
+    );
+  const singleText =
+    !!selection &&
+    selection.ids.size === 1 &&
+    page.strokes.some((s) => selection.ids.has(s.id) && s.tool === "text");
+  const selectedColor =
+    (selection && page.strokes.find((s) => selection.ids.has(s.id))?.color) ||
+    settings.color;
   // A new selection starts with the pop-ups closed and the slider showing its current fill.
-  const selectionKey = selection ? [...selection.ids].join() : '';
+  const selectionKey = selection ? [...selection.ids].join() : "";
   /** Set when the menu itself changed the selection (recolour, fill, arrange): keep its pop-up open. */
   const keepPanelRef = useRef(false);
   useEffect(() => {
@@ -1951,7 +2485,8 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
     setMenuPanel(null);
   }, [selectionKey]);
   useEffect(() => {
-    if (selectedFill?.fillOpacity != null) setFillOpacity(selectedFill.fillOpacity);
+    if (selectedFill?.fillOpacity != null)
+      setFillOpacity(selectedFill.fillOpacity);
   }, [selectedFill?.fillOpacity]);
 
   useEffect(() => {
@@ -1960,33 +2495,57 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
     const isInside = (e: PointerEvent) => {
       const target = e.target as Element | null;
       // Selection menu/handles, the tool palette, the quick palette and dialogs never deselect.
-      if (target?.closest?.('.selection-box, .tool-palette, .quick-palette, .modal-backdrop, .editor-top')) return true;
+      if (
+        target?.closest?.(
+          ".selection-box, .tool-palette, .quick-palette, .modal-backdrop, .editor-top",
+        )
+      )
+        return true;
       const box = selectionBoxRef.current?.getBoundingClientRect();
-      return !!box && e.clientX >= box.left && e.clientX <= box.right && e.clientY >= box.top && e.clientY <= box.bottom;
+      return (
+        !!box &&
+        e.clientX >= box.left &&
+        e.clientX <= box.right &&
+        e.clientY >= box.top &&
+        e.clientY <= box.bottom
+      );
     };
     const onDown = (e: PointerEvent) => {
       if (isInside(e)) return;
       // A finger may be starting to scroll: only a tap deselects. Pencil/mouse deselect at once.
-      if (e.pointerType === 'touch') tap = { id: e.pointerId, x: e.clientX, y: e.clientY, t: performance.now() };
+      if (e.pointerType === "touch")
+        tap = {
+          id: e.pointerId,
+          x: e.clientX,
+          y: e.clientY,
+          t: performance.now(),
+        };
       else setSelection(null);
     };
     const onUp = (e: PointerEvent) => {
-      if (tap && tap.id === e.pointerId && Math.hypot(e.clientX - tap.x, e.clientY - tap.y) < 10 && performance.now() - tap.t < 400) {
+      if (
+        tap &&
+        tap.id === e.pointerId &&
+        Math.hypot(e.clientX - tap.x, e.clientY - tap.y) < 10 &&
+        performance.now() - tap.t < 400
+      ) {
         setSelection(null);
       }
       tap = null;
     };
-    window.addEventListener('pointerdown', onDown, true);
-    window.addEventListener('pointerup', onUp, true);
+    window.addEventListener("pointerdown", onDown, true);
+    window.addEventListener("pointerup", onUp, true);
     return () => {
-      window.removeEventListener('pointerdown', onDown, true);
-      window.removeEventListener('pointerup', onUp, true);
+      window.removeEventListener("pointerdown", onDown, true);
+      window.removeEventListener("pointerup", onUp, true);
     };
   }, [selection]);
 
   // ---- Copy / cut / paste, layering, pictures ------------------------------------------------
   /** Long-press menu on the paper (with the locked item under the finger, if any). */
-  const [canvasMenu, setCanvasMenu] = useState<(Point & { lockedId?: string }) | null>(null);
+  const [canvasMenu, setCanvasMenu] = useState<
+    (Point & { lockedId?: string }) | null
+  >(null);
   const [clipKind, setClipKind] = useState(() => getClip()?.kind ?? null);
   useEffect(() => onClipChange(() => setClipKind(getClip()?.kind ?? null)), []);
   const imageInputRef = useRef<HTMLInputElement>(null);
@@ -1996,16 +2555,18 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
   // Pictures decode in the background; repaint when one arrives.
   useEffect(() => onImageLoaded(() => paintInk(true)), [paintInk]);
 
-  const selectedStrokes = () => (selection ? page.strokes.filter((s) => selection.ids.has(s.id)) : []);
+  const selectedStrokes = () =>
+    selection ? page.strokes.filter((s) => selection.ids.has(s.id)) : [];
 
   const selectAll = (strokes: Stroke[]) => {
     const bounds = unionRects(strokes.map(strokeBounds));
-    if (strokes.length && bounds) setSelection({ ids: new Set(strokes.map((s) => s.id)), bounds });
+    if (strokes.length && bounds)
+      setSelection({ ids: new Set(strokes.map((s) => s.id)), bounds });
   };
 
   const copySelection = () => {
     const strokes = selectedStrokes();
-    if (strokes.length) setClip({ kind: 'ink', strokes });
+    if (strokes.length) setClip({ kind: "ink", strokes });
     setMenuPanel(null);
   };
 
@@ -2017,7 +2578,7 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
   /** Pastes Noteboard's clipboard ink at a point (page units), or next to where it was copied. */
   const pasteInk = (at: Point | null) => {
     const clip = getClip();
-    if (clip?.kind !== 'ink') return false;
+    if (clip?.kind !== "ink") return false;
     const copies = inkForPaste(clip.strokes, at);
     if (!copies.length) return false;
     paintNow(copies);
@@ -2036,8 +2597,14 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
     const left = Math.max(box.left, view.left);
     const right = Math.min(box.right, view.right);
     return {
-      x: Math.min(page.width, Math.max(0, ((left + right) / 2 - box.left) / scale)),
-      y: Math.min(page.height, Math.max(0, ((top + bottom) / 2 - box.top) / scale)),
+      x: Math.min(
+        page.width,
+        Math.max(0, ((left + right) / 2 - box.left) / scale),
+      ),
+      y: Math.min(
+        page.height,
+        Math.max(0, ((top + bottom) / 2 - box.top) / scale),
+      ),
     };
   };
 
@@ -2047,11 +2614,24 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
     const added: Stroke[] = [];
     for (const [i, file] of files.entries()) {
       try {
-        const { fileId, width, height } = await storeImage(file, (file as File).name || 'Picture');
+        const { fileId, width, height } = await storeImage(
+          file,
+          (file as File).name || "Picture",
+        );
         const pos = { x: center.x + i * 24, y: center.y + i * 24 };
-        added.push({ ...makeImageStroke(fileId, width, height, pos, page.width * 0.7, page.height * 0.5), createdAt: Date.now() + i });
+        added.push({
+          ...makeImageStroke(
+            fileId,
+            width,
+            height,
+            pos,
+            page.width * 0.7,
+            page.height * 0.5,
+          ),
+          createdAt: Date.now() + i,
+        });
       } catch {
-        alert('This picture could not be added.');
+        alert("This picture could not be added.");
       }
     }
     if (!added.length) return;
@@ -2066,7 +2646,7 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
       const items = await navigator.clipboard.read();
       const blobs: Blob[] = [];
       for (const item of items) {
-        const type = item.types.find((ty) => ty.startsWith('image/'));
+        const type = item.types.find((ty) => ty.startsWith("image/"));
         if (type) blobs.push(await item.getType(type));
       }
       if (blobs.length) {
@@ -2082,7 +2662,8 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
   const paste = async (at: Point | null) => {
     setCanvasMenu(null);
     if (pasteInk(at)) return;
-    if (!(await pasteFromSystem(at))) alert('Nothing to paste. Copy ink or a picture first.');
+    if (!(await pasteFromSystem(at)))
+      alert("Nothing to paste. Copy ink or a picture first.");
   };
 
   const arrangeSelection = (action: ArrangeAction) => {
@@ -2099,11 +2680,13 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
     const onAction = (e: Event) => {
       const detail = (e as CustomEvent<PageAction>).detail;
       if (detail.pageId !== page.id) return;
-      if (detail.action === 'selectAll') selectAllOnPage();
-      else if (detail.action === 'insertPictures') void insertPictures(detail.files, null);
-      else if (detail.action === 'paste') {
+      if (detail.action === "selectAll") selectAllOnPage();
+      else if (detail.action === "insertPictures")
+        void insertPictures(detail.files, null);
+      else if (detail.action === "paste") {
         if (detail.files.length) void insertPictures(detail.files, null);
-        else if (!pasteInk(visibleCenter())) void pasteFromSystem(visibleCenter());
+        else if (!pasteInk(visibleCenter()))
+          void pasteFromSystem(visibleCenter());
       }
     };
     window.addEventListener(PAGE_ACTION, onAction);
@@ -2114,10 +2697,11 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
   useEffect(() => {
     if (!canvasMenu) return;
     const close = (e: PointerEvent) => {
-      if (!(e.target as Element | null)?.closest?.('.canvas-menu')) setCanvasMenu(null);
+      if (!(e.target as Element | null)?.closest?.(".canvas-menu"))
+        setCanvasMenu(null);
     };
-    window.addEventListener('pointerdown', close, true);
-    return () => window.removeEventListener('pointerdown', close, true);
+    window.addEventListener("pointerdown", close, true);
+    return () => window.removeEventListener("pointerdown", close, true);
   }, [canvasMenu]);
 
   // ---- Text boxes ------------------------------------------------------------------------
@@ -2128,7 +2712,11 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
   useEffect(() => setTextEditOpen(!!textEdit), [!!textEdit]);
 
   /** Opens the text editor on a box (or a new one at `at`). Focuses synchronously so the iPad keyboard opens. */
-  const startTextEdit = (existing: Stroke | null, at?: Point, width?: number) => {
+  const startTextEdit = (
+    existing: Stroke | null,
+    at?: Point,
+    width?: number,
+  ) => {
     if (textEditRef.current) commitText();
     let draft: TextDraft;
     if (existing?.text) {
@@ -2141,7 +2729,15 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
         factor: Math.hypot(tr.x - tl.x, tr.y - tl.y) / (t.width || 1),
         content: t.content,
         color: existing.color,
-        style: { font: t.font, size: t.size, bold: !!t.bold, italic: !!t.italic, underline: !!t.underline, align: t.align ?? 'left', background: t.background ?? null },
+        style: {
+          font: t.font,
+          size: t.size,
+          bold: !!t.bold,
+          italic: !!t.italic,
+          underline: !!t.underline,
+          align: t.align ?? "left",
+          background: t.background ?? null,
+        },
       };
       hiddenRef.current.add(existing.id);
       paintInk(true);
@@ -2153,9 +2749,17 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
         at: at ?? visibleCenter(),
         width: width ?? DEFAULT_TEXT_WIDTH,
         factor: 1,
-        content: '',
+        content: "",
         color: s.color,
-        style: { font: s.font, size: s.size, bold: s.bold, italic: s.italic, underline: s.underline, align: s.align, background: s.background },
+        style: {
+          font: s.font,
+          size: s.size,
+          bold: s.bold,
+          italic: s.italic,
+          underline: s.underline,
+          align: s.align,
+          background: s.background,
+        },
       };
     }
     const area = textAreaRef.current;
@@ -2172,15 +2776,21 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
     textEditRef.current = null;
     setTextEdit(null);
     textAreaRef.current?.blur();
-    const content = d.content.replace(/\s+$/, '');
+    const content = d.content.replace(/\s+$/, "");
     const { background, ...style } = d.style;
-    const text: Omit<TextContent, 'height'> = { ...style, ...(background ? { background } : {}), content, width: d.width };
+    const text: Omit<TextContent, "height"> = {
+      ...style,
+      ...(background ? { background } : {}),
+      content,
+      width: d.width,
+    };
     if (d.editing?.text) {
       const before = d.editing.text;
       const same =
         content === before.content &&
         d.color === d.editing.color &&
-        JSON.stringify({ ...before, height: 0 }) === JSON.stringify({ ...text, height: 0 });
+        JSON.stringify({ ...before, height: 0 }) ===
+          JSON.stringify({ ...text, height: 0 });
       if (same) {
         hiddenRef.current.delete(d.editing.id);
         paintInk(true);
@@ -2191,7 +2801,14 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
         return;
       }
       const { background: _bg, ...rest } = before;
-      const next = retextStroke({ ...d.editing, text: { ...rest, height: before.height } as TextContent }, text, d.color);
+      const next = retextStroke(
+        {
+          ...d.editing,
+          text: { ...rest, height: before.height } as TextContent,
+        },
+        text,
+        d.color,
+      );
       paintNow([next]);
       onChange(page.id, [next], [d.editing.id]);
       return;
@@ -2208,42 +2825,60 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
   useEffect(() => {
     if (!textEdit) return;
     const onDown = (e: PointerEvent) => {
-      if (!(e.target as Element | null)?.closest?.('.text-editor')) commitTextRef.current();
+      if (!(e.target as Element | null)?.closest?.(".text-editor"))
+        commitTextRef.current();
     };
-    window.addEventListener('pointerdown', onDown, true);
-    return () => window.removeEventListener('pointerdown', onDown, true);
+    window.addEventListener("pointerdown", onDown, true);
+    return () => window.removeEventListener("pointerdown", onDown, true);
   }, [!!textEdit]);
   useEffect(() => {
-    if (settings.tool !== 'text') commitTextRef.current();
+    if (settings.tool !== "text") commitTextRef.current();
   }, [settings.tool]);
   // Grow the box with its text.
   useLayoutEffect(() => {
     const area = textAreaRef.current;
     if (!area || !textEdit) return;
-    area.style.height = '0px';
+    area.style.height = "0px";
     area.style.height = `${area.scrollHeight}px`;
   }, [textEdit, scale]);
 
-  const patchDraft = (patch: Partial<TextDraft['style']> & { color?: string }) => {
+  const patchDraft = (
+    patch: Partial<TextDraft["style"]> & { color?: string },
+  ) => {
     const { color, ...style } = patch;
-    setTextEdit((d) => (d ? { ...d, ...(color ? { color } : {}), style: { ...d.style, ...style } } : d));
+    setTextEdit((d) =>
+      d
+        ? { ...d, ...(color ? { color } : {}), style: { ...d.style, ...style } }
+        : d,
+    );
     // Keep the keyboard up while formatting.
-    requestAnimationFrame(() => textAreaRef.current?.focus({ preventScroll: true }));
+    requestAnimationFrame(() =>
+      textAreaRef.current?.focus({ preventScroll: true }),
+    );
   };
 
   const editSelectedText = () => {
-    const s = selection && page.strokes.find((x) => selection.ids.has(x.id) && x.tool === 'text');
+    const s =
+      selection &&
+      page.strokes.find((x) => selection.ids.has(x.id) && x.tool === "text");
     if (s) startTextEdit(s);
   };
 
   // ---- Line style of selected shapes / ink ---------------------------------------------------
-  const restyleSelection = (patch: { dash?: DashStyle | null; arrowStart?: boolean; arrowEnd?: boolean; size?: number }) => {
+  const restyleSelection = (patch: {
+    dash?: DashStyle | null;
+    arrowStart?: boolean;
+    arrowEnd?: boolean;
+    size?: number;
+  }) => {
     if (!selection) return;
-    const targets = page.strokes.filter((s) => selection.ids.has(s.id) && s.tool === 'pen');
+    const targets = page.strokes.filter(
+      (s) => selection.ids.has(s.id) && s.tool === "pen",
+    );
     if (!targets.length) return;
     const next = targets.map((s) => {
       const out: Stroke = { ...s, id: newId() };
-      if ('dash' in patch) {
+      if ("dash" in patch) {
         if (patch.dash) out.dash = patch.dash;
         else delete out.dash;
       }
@@ -2259,25 +2894,45 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
       return out;
     });
     paintNow(next);
-    onChange(page.id, next, targets.map((s) => s.id));
+    onChange(
+      page.id,
+      next,
+      targets.map((s) => s.id),
+    );
     keepPanelRef.current = true;
     const bounds = unionRects(next.map(strokeBounds));
-    setSelection({ ids: replaceIds(selection.ids, targets, next), bounds: bounds ?? selection.bounds });
+    setSelection({
+      ids: replaceIds(selection.ids, targets, next),
+      bounds: bounds ?? selection.bounds,
+    });
   };
-  const selectedPens = selection ? page.strokes.filter((s) => selection.ids.has(s.id) && s.tool === 'pen') : [];
-  const selectedLine = selectedPens.length === 1 && editShape && !editShape.shape.closed ? selectedPens[0] : undefined;
+  const selectedPens = selection
+    ? page.strokes.filter((s) => selection.ids.has(s.id) && s.tool === "pen")
+    : [];
+  const selectedLine =
+    selectedPens.length === 1 && editShape && !editShape.shape.closed
+      ? selectedPens[0]
+      : undefined;
   const [lineWidth, setLineWidth] = useState(2);
   useEffect(() => {
     if (selectedPens[0]) setLineWidth(selectedPens[0].size);
   }, [selectedPens[0]?.size]);
 
   /** Replaces the selected items with changed copies (one undo step) and keeps them selected. */
-  const replaceSelected = (targets: Stroke[], next: Stroke[], keepSelected = true) => {
+  const replaceSelected = (
+    targets: Stroke[],
+    next: Stroke[],
+    keepSelected = true,
+  ) => {
     if (!next.length) return;
     hiddenRef.current = new Set(targets.map((s) => s.id));
     paintInk(true);
     paintNow(next);
-    onChange(page.id, next, targets.map((s) => s.id));
+    onChange(
+      page.id,
+      next,
+      targets.map((s) => s.id),
+    );
     keepPanelRef.current = true;
     if (!keepSelected) {
       setSelection(null);
@@ -2291,30 +2946,45 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
     const { before, after } = alignStrokes(targets, mode);
     replaceSelectedPartial(targets, before, after);
   };
-  const distributeSelection = (axis: 'horizontal' | 'vertical') => {
+  const distributeSelection = (axis: "horizontal" | "vertical") => {
     const targets = selectedStrokes();
     const { before, after } = distributeStrokes(targets, axis);
     replaceSelectedPartial(targets, before, after);
   };
   /** Like replaceSelected when only some of the selected items changed. */
-  const replaceSelectedPartial = (all: Stroke[], changed: Stroke[], next: Stroke[]) => {
+  const replaceSelectedPartial = (
+    all: Stroke[],
+    changed: Stroke[],
+    next: Stroke[],
+  ) => {
     if (!next.length) return;
     hiddenRef.current = new Set(changed.map((s) => s.id));
     paintInk(true);
     paintNow(next);
-    onChange(page.id, next, changed.map((s) => s.id));
+    onChange(
+      page.id,
+      next,
+      changed.map((s) => s.id),
+    );
     keepPanelRef.current = true;
     const kept = all.filter((s) => !changed.includes(s));
     const items = [...kept, ...next];
     const bounds = unionRects(items.map(strokeBounds));
     if (bounds) setSelection({ ids: new Set(items.map((s) => s.id)), bounds });
   };
-  const flipSelection = (axis: 'horizontal' | 'vertical') => {
+  const flipSelection = (axis: "horizontal" | "vertical") => {
     const targets = selectedStrokes();
     replaceSelected(targets, flipStrokes(targets, axis));
   };
-  const selectedGroups = new Set(selectedStrokes().map((s) => s.group).filter(Boolean));
-  const canGroup = !!selection && selection.ids.size > 1 && !(selectedGroups.size === 1 && selectedStrokes().every((s) => s.group));
+  const selectedGroups = new Set(
+    selectedStrokes()
+      .map((s) => s.group)
+      .filter(Boolean),
+  );
+  const canGroup =
+    !!selection &&
+    selection.ids.size > 1 &&
+    !(selectedGroups.size === 1 && selectedStrokes().every((s) => s.group));
   const groupSelection = () => {
     const targets = selectedStrokes();
     replaceSelected(targets, regroup(targets, newId()));
@@ -2331,9 +3001,15 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
   const unlockItem = (id: string) => {
     const item = page.strokes.find((s) => s.id === id);
     if (!item) return;
-    const targets = page.strokes.filter((s) => s.id === id || (item.group && s.group === item.group && s.locked));
+    const targets = page.strokes.filter(
+      (s) => s.id === id || (item.group && s.group === item.group && s.locked),
+    );
     const next = setLocked(targets, false);
-    onChange(page.id, next, targets.map((s) => s.id));
+    onChange(
+      page.id,
+      next,
+      targets.map((s) => s.id),
+    );
     const bounds = unionRects(next.map(strokeBounds));
     if (bounds) setSelection({ ids: new Set(next.map((s) => s.id)), bounds });
     onRequestSelect?.();
@@ -2351,35 +3027,45 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
   const copySelectionAsText = async () => {
     const strokes = selectedStrokes();
     // Typed text boxes, plus the PDF text under the selection.
-    const pdfUnder = pdfRuns.length && selection ? textInRect(pdfRuns, selection.bounds) : '';
-    const typed = [typedTextOf(strokes), pdfUnder].filter(Boolean).join('\n');
+    const pdfUnder =
+      pdfRuns.length && selection ? textInRect(pdfRuns, selection.bounds) : "";
+    const typed = [typedTextOf(strokes), pdfUnder].filter(Boolean).join("\n");
     let text = typed;
     if (handwriting(strokes).length) {
       const token = getToken();
       if (!token || !navigator.onLine) {
-        alert('Reading handwriting requires an internet connection and Google Drive. Connect Google Drive from the account menu, then try again.');
+        alert(
+          "Reading handwriting requires an internet connection and Google Drive. Connect Google Drive from the account menu, then try again.",
+        );
         return;
       }
       setCopyingText(true);
       try {
         const image = await inkImage(strokes, 1);
-        const read = image ? await new DriveClient(token).readTextFromImage(image, recognitionLanguage()) : '';
-        text = [read, typed].filter(Boolean).join('\n');
+        const read = image
+          ? await new DriveClient(token).readTextFromImage(
+              image,
+              recognitionLanguage(),
+            )
+          : "";
+        text = [read, typed].filter(Boolean).join("\n");
       } catch {
-        alert('The handwriting could not be read. Check the connection and try again.');
+        alert(
+          "The handwriting could not be read. Check the connection and try again.",
+        );
         return;
       } finally {
         setCopyingText(false);
       }
     }
     if (!text) {
-      alert('No text was found in the selection.');
+      alert("No text was found in the selection.");
       return;
     }
     try {
       await navigator.clipboard.writeText(text);
     } catch {
-      prompt('Copy this text:', text);
+      prompt("Copy this text:", text);
     }
     setMenuPanel(null);
   };
@@ -2389,18 +3075,28 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
     const b = unionRects(strokes.map(strokeBounds));
     if (!b) return;
     const k = 3;
-    const canvas = document.createElement('canvas');
+    const canvas = document.createElement("canvas");
     canvas.width = Math.max(1, Math.ceil(b.width * k));
     canvas.height = Math.max(1, Math.ceil(b.height * k));
-    const ctx = canvas.getContext('2d')!;
+    const ctx = canvas.getContext("2d")!;
     await preloadImages(strokes);
-    drawPage(ctx, strokes, { x: b.x, y: b.y, width: b.width, height: b.height, k });
-    const blob = await new Promise<Blob | null>((r) => canvas.toBlob(r, 'image/png'));
+    drawPage(ctx, strokes, {
+      x: b.x,
+      y: b.y,
+      width: b.width,
+      height: b.height,
+      k,
+    });
+    const blob = await new Promise<Blob | null>((r) =>
+      canvas.toBlob(r, "image/png"),
+    );
     if (!blob) return;
     try {
-      await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+      await navigator.clipboard.write([
+        new ClipboardItem({ "image/png": blob }),
+      ]);
     } catch {
-      await shareOrDownload(blob, 'Selection.png');
+      await shareOrDownload(blob, "Selection.png");
     }
     setMenuPanel(null);
   };
@@ -2408,24 +3104,39 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
   // Keyboard (Magic Keyboard / Smart Keyboard): arrows nudge, Delete removes, Esc deselects.
   const keyActionsRef = useRef<(e: KeyboardEvent) => void>(() => {});
   keyActionsRef.current = (e: KeyboardEvent) => {
-    if (!selection || (e.target as HTMLElement | null)?.closest?.('input, textarea, select')) return;
+    if (
+      !selection ||
+      (e.target as HTMLElement | null)?.closest?.("input, textarea, select")
+    )
+      return;
     const step = e.shiftKey ? 10 : 1;
-    const move: Record<string, [number, number]> = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] };
+    const move: Record<string, [number, number]> = {
+      ArrowLeft: [-step, 0],
+      ArrowRight: [step, 0],
+      ArrowUp: [0, -step],
+      ArrowDown: [0, step],
+    };
     if (move[e.key]) {
       e.preventDefault();
       const [dx, dy] = move[e.key]!;
       const targets = selectedStrokes();
-      replaceSelected(targets, targets.map((s) => ({ ...translateStroke(s, dx, dy, newId()), createdAt: s.createdAt })));
-    } else if (e.key === 'Delete' || e.key === 'Backspace') {
+      replaceSelected(
+        targets,
+        targets.map((s) => ({
+          ...translateStroke(s, dx, dy, newId()),
+          createdAt: s.createdAt,
+        })),
+      );
+    } else if (e.key === "Delete" || e.key === "Backspace") {
       e.preventDefault();
       deleteSelection();
-    } else if (e.key === 'Escape') setSelection(null);
+    } else if (e.key === "Escape") setSelection(null);
   };
   useEffect(() => {
     if (!selection) return;
     const onKey = (e: KeyboardEvent) => keyActionsRef.current(e);
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
   }, [!!selection]);
 
   const deleteSelection = () => {
@@ -2438,21 +3149,34 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
     if (!selection) return;
     const copies = page.strokes
       .filter((s) => selection.ids.has(s.id))
-      .map((s, i) => ({ ...translateStroke(s, 20, 20, newId()), createdAt: Date.now() + i / 1000 }));
+      .map((s, i) => ({
+        ...translateStroke(s, 20, 20, newId()),
+        createdAt: Date.now() + i / 1000,
+      }));
     onChange(page.id, copies, []);
     const b = boundsOf(copies.flatMap(strokePoints));
     setSelection({
       ids: new Set(copies.map((s) => s.id)),
-      bounds: { ...b, x: b.x - 4, y: b.y - 4, width: b.width + 8, height: b.height + 8 },
+      bounds: {
+        ...b,
+        x: b.x - 4,
+        y: b.y - 4,
+        width: b.width + 8,
+        height: b.height + 8,
+      },
     });
   };
 
   return (
     <div
       ref={containerRef}
-      className={`ink-page${dark ? ' night' : ''}${invertPdf ? ' invert-pdf' : ''}`}
+      className={`ink-page${dark ? " night" : ""}${invertPdf ? " invert-pdf" : ""}`}
       data-page-width={page.width}
-      style={{ width: cssWidth, height: cssHeight, ...templateStyle(page.template, scale, dark, page, page.paper) }}
+      style={{
+        width: cssWidth,
+        height: cssHeight,
+        ...templateStyle(page.template, scale, dark, page, page.paper),
+      }}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={(e) => finish(e, false)}
@@ -2464,17 +3188,23 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
       onDragEnter={(e) => e.preventDefault()}
       onDragOver={(e) => {
         e.preventDefault();
-        e.dataTransfer.dropEffect = 'copy';
+        e.dataTransfer.dropEffect = "copy";
       }}
       onDrop={(e) => {
         e.preventDefault();
         e.stopPropagation();
         const dropped = readDropped(e.dataTransfer); // read now: the data is gone after this event
         const box = containerRef.current!.getBoundingClientRect();
-        const at = { x: (e.clientX - box.left) / scale, y: (e.clientY - box.top) / scale };
+        const at = {
+          x: (e.clientX - box.left) / scale,
+          y: (e.clientY - box.top) / scale,
+        };
         void resolveDropped(dropped).then((blobs) => {
           if (blobs.length) void insertPictures(blobs, at);
-          else if (dropped.files.length || dropped.urls.length) alert('This picture could not be added. Save it to Photos first, then drag it from there.');
+          else if (dropped.files.length || dropped.urls.length)
+            alert(
+              "This picture could not be added. Save it to Photos first, then drag it from there.",
+            );
         });
       }}
     >
@@ -2486,7 +3216,7 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
         hidden
         onChange={(e) => {
           const files = [...(e.target.files ?? [])];
-          e.target.value = '';
+          e.target.value = "";
           if (files.length) void insertPictures(files, insertAtRef.current);
         }}
       />
@@ -2508,32 +3238,37 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
               Unlock
             </button>
           )}
-          {pdfRuns.length > 0 && lineAt(pdfRuns, canvasMenu.x, canvasMenu.y) && (
-            <button
-              role="menuitem"
-              onClick={() => {
-                const line = lineAt(pdfRuns, canvasMenu.x, canvasMenu.y)!;
-                setCanvasMenu(null);
-                void navigator.clipboard.writeText(line).catch(() => prompt('Copy this text:', line));
-              }}
-            >
-              Copy line
-            </button>
-          )}
+          {pdfRuns.length > 0 &&
+            lineAt(pdfRuns, canvasMenu.x, canvasMenu.y) && (
+              <button
+                role="menuitem"
+                onClick={() => {
+                  const line = lineAt(pdfRuns, canvasMenu.x, canvasMenu.y)!;
+                  setCanvasMenu(null);
+                  void navigator.clipboard
+                    .writeText(line)
+                    .catch(() => prompt("Copy this text:", line));
+                }}
+              >
+                Copy line
+              </button>
+            )}
           {pdfRuns.length > 0 && (
             <button
               role="menuitem"
               onClick={() => {
                 const all = pageTextFromRuns(pdfRuns);
                 setCanvasMenu(null);
-                void navigator.clipboard.writeText(all).catch(() => prompt('Copy this text:', all));
+                void navigator.clipboard
+                  .writeText(all)
+                  .catch(() => prompt("Copy this text:", all));
               }}
             >
               Copy page text
             </button>
           )}
           <button role="menuitem" onClick={() => void paste(canvasMenu)}>
-            Paste{clipKind === 'ink' ? '' : ' picture'}
+            Paste{clipKind === "ink" ? "" : " picture"}
           </button>
           <button
             role="menuitem"
@@ -2556,14 +3291,30 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
           </button>
         </div>
       )}
-      {background && <canvas ref={pdfCanvasRef} className="ink-layer pdf-layer" width={0} height={0} />}
-      {background && pdfMissing && <div className="pdf-missing">PDF is still downloading from Google Drive…</div>}
+      {background && (
+        <canvas
+          ref={pdfCanvasRef}
+          className="ink-layer pdf-layer"
+          width={0}
+          height={0}
+        />
+      )}
+      {background && pdfMissing && (
+        <div className="pdf-missing">
+          PDF is still downloading from Google Drive…
+        </div>
+      )}
       <canvas ref={inkRef} className="ink-layer" width={0} height={0} />
-      <canvas ref={liveRef} className="ink-layer ink-input" width={0} height={0} />
+      <canvas
+        ref={liveRef}
+        className="ink-layer ink-input"
+        width={0}
+        height={0}
+      />
       {selection && (
         <div
           ref={selectionBoxRef}
-          className={`selection-box${editShape && !editShape.shape.closed ? ' line-mode' : ''}`}
+          className={`selection-box${editShape && !editShape.shape.closed ? " line-mode" : ""}`}
           style={{
             left: selection.bounds.x * scale,
             top: selection.bounds.y * scale,
@@ -2571,91 +3322,189 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
             height: selection.bounds.height * scale,
           }}
         >
-          <div ref={menuRef} className="selection-menu" role="toolbar" aria-label="Selection">
+          <div
+            ref={menuRef}
+            className="selection-menu"
+            role="toolbar"
+            aria-label="Selection"
+          >
             {!onlyPictures && (
-            <button
-              className={`sel-btn${menuPanel === 'color' ? ' open' : ''}`}
-              aria-label="Colour"
-              aria-expanded={menuPanel === 'color'}
-              onClick={() => setMenuPanel((p) => (p === 'color' ? null : 'color'))}
-            >
-              <span className="sel-swatch" style={{ background: selectedColor }} />
-              <span className="sel-label">Colour</span>
-            </button>
+              <button
+                className={`sel-btn${menuPanel === "color" ? " open" : ""}`}
+                aria-label="Colour"
+                aria-expanded={menuPanel === "color"}
+                onClick={() =>
+                  setMenuPanel((p) => (p === "color" ? null : "color"))
+                }
+              >
+                <span
+                  className="sel-swatch"
+                  style={{ background: selectedColor }}
+                />
+                <span className="sel-label">Colour</span>
+              </button>
             )}
-            <button className="sel-btn" aria-label="Link" onClick={() => setLinking(true)}>
+            <button
+              className="sel-btn"
+              aria-label="Link"
+              onClick={() => setLinking(true)}
+            >
               <LinkGlyph />
               <span className="sel-label">Link</span>
             </button>
             {singleText && (
-              <button className="sel-btn" aria-label="Edit text" onClick={editSelectedText}>
-                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 6.5V5h14v1.5M12 5v14M9 19h6" /></svg>
+              <button
+                className="sel-btn"
+                aria-label="Edit text"
+                onClick={editSelectedText}
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M5 6.5V5h14v1.5M12 5v14M9 19h6" />
+                </svg>
                 <span className="sel-label">Edit</span>
               </button>
             )}
             {selectedPens.length > 0 && (
               <button
-                className={`sel-btn${menuPanel === 'style' ? ' open' : ''}`}
+                className={`sel-btn${menuPanel === "style" ? " open" : ""}`}
                 aria-label="Line style"
-                aria-expanded={menuPanel === 'style'}
-                onClick={() => setMenuPanel((p) => (p === 'style' ? null : 'style'))}
+                aria-expanded={menuPanel === "style"}
+                onClick={() =>
+                  setMenuPanel((p) => (p === "style" ? null : "style"))
+                }
               >
-                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16" /><path d="M4 12h3M10.5 12h3M17 12h3" /><path d="M4.5 17h.01M8.5 17h.01M12.5 17h.01M16.5 17h.01M20 17h.01" strokeWidth="2.6" /></svg>
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M4 7h16" />
+                  <path d="M4 12h3M10.5 12h3M17 12h3" />
+                  <path
+                    d="M4.5 17h.01M8.5 17h.01M12.5 17h.01M16.5 17h.01M20 17h.01"
+                    strokeWidth="2.6"
+                  />
+                </svg>
                 <span className="sel-label">Style</span>
               </button>
             )}
             {canFill && (
-            <button
-              className={`sel-btn${menuPanel === 'fill' ? ' open' : ''}`}
-              aria-label="Fill"
-              aria-expanded={menuPanel === 'fill'}
-              onClick={() => setMenuPanel((p) => (p === 'fill' ? null : 'fill'))}
-            >
-              <span
-                className={`sel-swatch fill${selectedFill?.fill ? '' : ' none'}`}
-                style={selectedFill?.fill ? { background: selectedFill.fill, opacity: Math.max(0.35, selectedFill.fillOpacity ?? DEFAULT_FILL_OPACITY) } : undefined}
-              />
-              <span className="sel-label">Fill</span>
-            </button>
+              <button
+                className={`sel-btn${menuPanel === "fill" ? " open" : ""}`}
+                aria-label="Fill"
+                aria-expanded={menuPanel === "fill"}
+                onClick={() =>
+                  setMenuPanel((p) => (p === "fill" ? null : "fill"))
+                }
+              >
+                <span
+                  className={`sel-swatch fill${selectedFill?.fill ? "" : " none"}`}
+                  style={
+                    selectedFill?.fill
+                      ? {
+                          background: selectedFill.fill,
+                          opacity: Math.max(
+                            0.35,
+                            selectedFill.fillOpacity ?? DEFAULT_FILL_OPACITY,
+                          ),
+                        }
+                      : undefined
+                  }
+                />
+                <span className="sel-label">Fill</span>
+              </button>
             )}
             <button
-              className={`sel-btn${menuPanel === 'arrange' ? ' open' : ''}`}
+              className={`sel-btn${menuPanel === "arrange" ? " open" : ""}`}
               aria-label="Arrange"
-              aria-expanded={menuPanel === 'arrange'}
-              onClick={() => setMenuPanel((p) => (p === 'arrange' ? null : 'arrange'))}
+              aria-expanded={menuPanel === "arrange"}
+              onClick={() =>
+                setMenuPanel((p) => (p === "arrange" ? null : "arrange"))
+              }
             >
-              <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="3.5" width="11" height="11" rx="2" /><rect x="9.5" y="9.5" width="11" height="11" rx="2" fill="currentColor" fillOpacity="0.25" /></svg>
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <rect x="3.5" y="3.5" width="11" height="11" rx="2" />
+                <rect
+                  x="9.5"
+                  y="9.5"
+                  width="11"
+                  height="11"
+                  rx="2"
+                  fill="currentColor"
+                  fillOpacity="0.25"
+                />
+              </svg>
               <span className="sel-label">Arrange</span>
             </button>
             <span className="sel-divider" />
-            <button className="sel-btn" aria-label="Copy" onClick={copySelection}>
-              <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2.5" /><path d="M16 8V6.5A2.5 2.5 0 0 0 13.5 4h-7A2.5 2.5 0 0 0 4 6.5v7A2.5 2.5 0 0 0 6.5 16H8" /></svg>
+            <button
+              className="sel-btn"
+              aria-label="Copy"
+              onClick={copySelection}
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <rect x="8" y="8" width="12" height="12" rx="2.5" />
+                <path d="M16 8V6.5A2.5 2.5 0 0 0 13.5 4h-7A2.5 2.5 0 0 0 4 6.5v7A2.5 2.5 0 0 0 6.5 16H8" />
+              </svg>
               <span className="sel-label">Copy</span>
             </button>
             <button className="sel-btn" aria-label="Cut" onClick={cutSelection}>
-              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="6.5" cy="17.5" r="2.8" /><circle cx="17.5" cy="17.5" r="2.8" /><path d="M8.5 15.5 18 4M15.5 15.5 6 4" /></svg>
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <circle cx="6.5" cy="17.5" r="2.8" />
+                <circle cx="17.5" cy="17.5" r="2.8" />
+                <path d="M8.5 15.5 18 4M15.5 15.5 6 4" />
+              </svg>
               <span className="sel-label">Cut</span>
             </button>
-            <button className="sel-btn" aria-label="Duplicate" onClick={duplicateSelection}>
-              <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="11" height="11" rx="2.5" /><rect x="9" y="9" width="11" height="11" rx="2.5" /><path d="M14.5 12.5v4M12.5 14.5h4" /></svg>
+            <button
+              className="sel-btn"
+              aria-label="Duplicate"
+              onClick={duplicateSelection}
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <rect x="4" y="4" width="11" height="11" rx="2.5" />
+                <rect x="9" y="9" width="11" height="11" rx="2.5" />
+                <path d="M14.5 12.5v4M12.5 14.5h4" />
+              </svg>
               <span className="sel-label">Duplicate</span>
             </button>
-            <button className="sel-btn" aria-label="Lock" title="Lock to prevent selecting or moving" onClick={lockSelection}>
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 10.5h11a1.5 1.5 0 0 1 1.5 1.5v7a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 5 19v-7a1.5 1.5 0 0 1 1.5-1.5zM8.5 10.5V7.5a3.5 3.5 0 0 1 7 0v3" /></svg>
+            <button
+              className="sel-btn"
+              aria-label="Lock"
+              title="Lock to prevent selecting or moving"
+              onClick={lockSelection}
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M6.5 10.5h11a1.5 1.5 0 0 1 1.5 1.5v7a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 5 19v-7a1.5 1.5 0 0 1 1.5-1.5zM8.5 10.5V7.5a3.5 3.5 0 0 1 7 0v3" />
+              </svg>
               <span className="sel-label">Lock</span>
             </button>
-            <button className="sel-btn danger" aria-label="Delete" onClick={deleteSelection}>
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4.5h6V7M6.5 7l1 13h9l1-13M10 11v5.5M14 11v5.5" /></svg>
+            <button
+              className="sel-btn danger"
+              aria-label="Delete"
+              onClick={deleteSelection}
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M4 7h16M9 7V4.5h6V7M6.5 7l1 13h9l1-13M10 11v5.5M14 11v5.5" />
+              </svg>
               <span className="sel-label">Delete</span>
             </button>
-            {menuPanel === 'arrange' && (
-              <div className="sel-panel sel-arrange" role="group" aria-label="Arrange">
+            {menuPanel === "arrange" && (
+              <div
+                className="sel-panel sel-arrange"
+                role="group"
+                aria-label="Arrange"
+              >
                 <div className="sel-section">Layer</div>
                 <div className="sel-grid four">
-                  <button onClick={() => arrangeSelection('front')}>To front</button>
-                  <button onClick={() => arrangeSelection('forward')}>Forward</button>
-                  <button onClick={() => arrangeSelection('backward')}>Backward</button>
-                  <button onClick={() => arrangeSelection('back')}>To back</button>
+                  <button onClick={() => arrangeSelection("front")}>
+                    To front
+                  </button>
+                  <button onClick={() => arrangeSelection("forward")}>
+                    Forward
+                  </button>
+                  <button onClick={() => arrangeSelection("backward")}>
+                    Backward
+                  </button>
+                  <button onClick={() => arrangeSelection("back")}>
+                    To back
+                  </button>
                 </div>
                 {selection.ids.size > 1 && (
                   <>
@@ -2663,16 +3512,23 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
                     <div className="sel-grid six">
                       {(
                         [
-                          ['left', 'M5 4v16M8 8h10M8 15h6'],
-                          ['center', 'M12 4v16M6 8h12M8 15h8'],
-                          ['right', 'M19 4v16M6 8h10M10 15h6'],
-                          ['top', 'M4 5h16M8 8v10M15 8v6'],
-                          ['middle', 'M4 12h16M8 6v12M15 8v8'],
-                          ['bottom', 'M4 19h16M8 6v10M15 10v6'],
+                          ["left", "M5 4v16M8 8h10M8 15h6"],
+                          ["center", "M12 4v16M6 8h12M8 15h8"],
+                          ["right", "M19 4v16M6 8h10M10 15h6"],
+                          ["top", "M4 5h16M8 8v10M15 8v6"],
+                          ["middle", "M4 12h16M8 6v12M15 8v8"],
+                          ["bottom", "M4 19h16M8 6v10M15 10v6"],
                         ] as [AlignMode, string][]
                       ).map(([mode, d]) => (
-                        <button key={mode} aria-label={`Align ${mode}`} title={`Align ${mode}`} onClick={() => alignSelection(mode)}>
-                          <svg viewBox="0 0 24 24" aria-hidden="true"><path d={d} /></svg>
+                        <button
+                          key={mode}
+                          aria-label={`Align ${mode}`}
+                          title={`Align ${mode}`}
+                          onClick={() => alignSelection(mode)}
+                        >
+                          <svg viewBox="0 0 24 24" aria-hidden="true">
+                            <path d={d} />
+                          </svg>
                         </button>
                       ))}
                     </div>
@@ -2680,16 +3536,26 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
                 )}
                 {selection.ids.size > 2 && (
                   <div className="sel-grid two">
-                    <button onClick={() => distributeSelection('horizontal')}>Space across</button>
-                    <button onClick={() => distributeSelection('vertical')}>Space down</button>
+                    <button onClick={() => distributeSelection("horizontal")}>
+                      Space across
+                    </button>
+                    <button onClick={() => distributeSelection("vertical")}>
+                      Space down
+                    </button>
                   </div>
                 )}
                 <div className="sel-section">Transform</div>
                 <div className="sel-grid two">
-                  <button onClick={() => flipSelection('horizontal')}>Flip horizontal</button>
-                  <button onClick={() => flipSelection('vertical')}>Flip vertical</button>
+                  <button onClick={() => flipSelection("horizontal")}>
+                    Flip horizontal
+                  </button>
+                  <button onClick={() => flipSelection("vertical")}>
+                    Flip vertical
+                  </button>
                   {canGroup && <button onClick={groupSelection}>Group</button>}
-                  {selectedGroups.size > 0 && <button onClick={ungroupSelection}>Ungroup</button>}
+                  {selectedGroups.size > 0 && (
+                    <button onClick={ungroupSelection}>Ungroup</button>
+                  )}
                 </div>
                 <button
                   className="sel-toggle"
@@ -2701,35 +3567,70 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
                   }}
                 >
                   <span>Keep proportions when resizing</span>
-                  <span className={`switch ${keepAspect ? 'on' : ''}`} />
+                  <span className={`switch ${keepAspect ? "on" : ""}`} />
                 </button>
-                <button onClick={() => void copySelectionAsImage()}>Copy as image</button>
-                <button disabled={copyingText} onClick={() => void copySelectionAsText()}>{copyingText ? 'Reading handwriting…' : 'Copy as text'}</button>
+                <button onClick={() => void copySelectionAsImage()}>
+                  Copy as image
+                </button>
+                <button
+                  disabled={copyingText}
+                  onClick={() => void copySelectionAsText()}
+                >
+                  {copyingText ? "Reading handwriting…" : "Copy as text"}
+                </button>
               </div>
             )}
-            {menuPanel === 'style' && selectedPens.length > 0 && (
-              <div className="sel-panel sel-style" role="group" aria-label="Line style">
+            {menuPanel === "style" && selectedPens.length > 0 && (
+              <div
+                className="sel-panel sel-style"
+                role="group"
+                aria-label="Line style"
+              >
                 <div className="segmented compact">
-                  {([null, 'dashed', 'dotted'] as const).map((d) => (
+                  {([null, "dashed", "dotted"] as const).map((d) => (
                     <button
-                      key={d ?? 'solid'}
-                      className={(selectedPens[0]!.dash ?? null) === d ? 'on' : ''}
+                      key={d ?? "solid"}
+                      className={
+                        (selectedPens[0]!.dash ?? null) === d ? "on" : ""
+                      }
                       onClick={() => restyleSelection({ dash: d })}
-                      aria-label={d ?? 'Solid'}
+                      aria-label={d ?? "Solid"}
                     >
                       <DashSample dash={d} />
-                      <span>{d === 'dashed' ? 'Dashed' : d === 'dotted' ? 'Dotted' : 'Solid'}</span>
+                      <span>
+                        {d === "dashed"
+                          ? "Dashed"
+                          : d === "dotted"
+                            ? "Dotted"
+                            : "Solid"}
+                      </span>
                     </button>
                   ))}
                 </div>
                 {selectedLine && (
                   <div className="segmented compact">
-                    <button className={selectedLine.arrowStart ? 'on' : ''} onClick={() => restyleSelection({ arrowStart: !selectedLine.arrowStart })}>
-                      <svg viewBox="0 0 32 12" aria-hidden="true"><path d="M3 6h26M9 1.5 3 6l6 4.5" /></svg>
+                    <button
+                      className={selectedLine.arrowStart ? "on" : ""}
+                      onClick={() =>
+                        restyleSelection({
+                          arrowStart: !selectedLine.arrowStart,
+                        })
+                      }
+                    >
+                      <svg viewBox="0 0 32 12" aria-hidden="true">
+                        <path d="M3 6h26M9 1.5 3 6l6 4.5" />
+                      </svg>
                       <span>Start arrow</span>
                     </button>
-                    <button className={selectedLine.arrowEnd ? 'on' : ''} onClick={() => restyleSelection({ arrowEnd: !selectedLine.arrowEnd })}>
-                      <svg viewBox="0 0 32 12" aria-hidden="true"><path d="M3 6h26M23 1.5 29 6l-6 4.5" /></svg>
+                    <button
+                      className={selectedLine.arrowEnd ? "on" : ""}
+                      onClick={() =>
+                        restyleSelection({ arrowEnd: !selectedLine.arrowEnd })
+                      }
+                    >
+                      <svg viewBox="0 0 32 12" aria-hidden="true">
+                        <path d="M3 6h26M23 1.5 29 6l-6 4.5" />
+                      </svg>
                       <span>End arrow</span>
                     </button>
                   </div>
@@ -2744,43 +3645,51 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
                     label="Line width"
                     onInput={setLineWidth}
                     onCommit={(v) => {
-                      if (Math.abs(v - (selectedPens[0]?.size ?? v)) > 0.01) restyleSelection({ size: v });
+                      if (Math.abs(v - (selectedPens[0]?.size ?? v)) > 0.01)
+                        restyleSelection({ size: v });
                     }}
                   />
                   <span className="sel-value">{lineWidth.toFixed(1)}</span>
                 </label>
               </div>
             )}
-            {menuPanel === 'color' && (
+            {menuPanel === "color" && (
               <div className="sel-panel" role="group" aria-label="Colours">
                 <div className="sel-swatches">
                   {PEN_COLORS.map((c) => (
                     <button
                       key={c}
-                      className={`sel-color${c === selectedColor ? ' current' : ''}`}
+                      className={`sel-color${c === selectedColor ? " current" : ""}`}
                       style={{ background: c }}
                       aria-label={`Colour ${c}`}
                       onClick={() => recolorSelection(c)}
                     />
                   ))}
-                  <label className="sel-color custom" aria-label="Custom colour">
-                    <input type="color" value={selectedColor} onChange={(e) => recolorSelection(e.target.value)} />
+                  <label
+                    className="sel-color custom"
+                    aria-label="Custom colour"
+                  >
+                    <input
+                      type="color"
+                      value={selectedColor}
+                      onChange={(e) => recolorSelection(e.target.value)}
+                    />
                   </label>
                 </div>
               </div>
             )}
-            {menuPanel === 'fill' && (
+            {menuPanel === "fill" && (
               <div className="sel-panel" role="group" aria-label="Fill">
                 <div className="sel-swatches">
                   <button
-                    className={`sel-color no-fill${selectedFill ? '' : ' current'}`}
+                    className={`sel-color no-fill${selectedFill ? "" : " current"}`}
                     aria-label="No fill"
                     onClick={() => fillSelection(null, fillOpacity)}
                   />
                   {PEN_COLORS.map((c) => (
                     <button
                       key={c}
-                      className={`sel-color${c === selectedFill?.fill ? ' current' : ''}`}
+                      className={`sel-color${c === selectedFill?.fill ? " current" : ""}`}
                       style={{ background: c }}
                       aria-label={`Fill ${c}`}
                       onClick={() => fillSelection(c, fillOpacity)}
@@ -2800,12 +3709,16 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
                       previewFill(v);
                     }}
                     onCommit={(v) => {
-                      const current = selectedFill?.fillOpacity ?? DEFAULT_FILL_OPACITY;
-                      if (selectedFill?.fill && Math.abs(v - current) > 0.001) fillSelection(selectedFill.fill, v);
+                      const current =
+                        selectedFill?.fillOpacity ?? DEFAULT_FILL_OPACITY;
+                      if (selectedFill?.fill && Math.abs(v - current) > 0.001)
+                        fillSelection(selectedFill.fill, v);
                       else endPreview();
                     }}
                   />
-                  <span className="sel-value">{Math.round(fillOpacity * 100)}%</span>
+                  <span className="sel-value">
+                    {Math.round(fillOpacity * 100)}%
+                  </span>
                 </label>
               </div>
             )}
@@ -2816,16 +3729,38 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
                   key={i}
                   className="vertex-handle"
                   data-handle={`v${i}`}
-                  aria-label={editShape.shape.closed ? `Corner ${i + 1}` : i === 0 ? 'Start of line' : 'End of line'}
-                  style={{ left: (q.x - selection.bounds.x) * scale, top: (q.y - selection.bounds.y) * scale }}
+                  aria-label={
+                    editShape.shape.closed
+                      ? `Corner ${i + 1}`
+                      : i === 0
+                        ? "Start of line"
+                        : "End of line"
+                  }
+                  style={{
+                    left: (q.x - selection.bounds.x) * scale,
+                    top: (q.y - selection.bounds.y) * scale,
+                  }}
                 />
               ))
-            : (['nw', 'ne', 'se', 'sw', 'n', 'e', 's', 'w'] as const).map((h) => (
-                <div key={h} className={`selection-handle ${h}`} data-handle={h} aria-label="Resize" />
-              ))}
+            : (["nw", "ne", "se", "sw", "n", "e", "s", "w"] as const).map(
+                (h) => (
+                  <div
+                    key={h}
+                    className={`selection-handle ${h}`}
+                    data-handle={h}
+                    aria-label="Resize"
+                  />
+                ),
+              )}
           {!(editShape && !editShape.shape.closed) && (
-            <div className="selection-rotate" data-handle="rotate" aria-label="Rotate">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 12a7 7 0 1 1-2.05-4.95M19 4.5V8h-3.5" /></svg>
+            <div
+              className="selection-rotate"
+              data-handle="rotate"
+              aria-label="Rotate"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M19 12a7 7 0 1 1-2.05-4.95M19 4.5V8h-3.5" />
+              </svg>
             </div>
           )}
         </div>
@@ -2857,7 +3792,9 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
               targets,
               targets.map((s) => {
                 const { link: _old, ...rest } = s;
-                return link ? { ...rest, id: newId(), link } : { ...rest, id: newId() };
+                return link
+                  ? { ...rest, id: newId(), link }
+                  : { ...rest, id: newId() };
               }),
             );
           }}
@@ -2866,19 +3803,33 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
       )}
       <div
         ref={textEditorRef}
-        className={`text-editor${textEdit ? ' open' : ''}`}
+        className={`text-editor${textEdit ? " open" : ""}`}
         style={
           textEdit
-            ? { left: textEdit.at.x * scale, top: textEdit.at.y * scale, width: textEdit.width * textEdit.factor * scale }
+            ? {
+                left: textEdit.at.x * scale,
+                top: textEdit.at.y * scale,
+                width: textEdit.width * textEdit.factor * scale,
+              }
             : undefined
         }
       >
         {textEdit && (
-          <div ref={formatBarRef} className="text-format" role="toolbar" aria-label="Text formatting" onPointerDown={(e) => e.preventDefault()}>
+          <div
+            ref={formatBarRef}
+            className="text-format"
+            role="toolbar"
+            aria-label="Text formatting"
+            onPointerDown={(e) => e.preventDefault()}
+          >
             <select
               aria-label="Font"
               value={textEdit.style.font}
-              onChange={(e) => patchDraft({ font: e.target.value as TextDraft['style']['font'] })}
+              onChange={(e) =>
+                patchDraft({
+                  font: e.target.value as TextDraft["style"]["font"],
+                })
+              }
             >
               {TEXT_FONT_ORDER.map((f) => (
                 <option key={f} value={f}>
@@ -2887,33 +3838,70 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
               ))}
             </select>
             <div className="stepper" aria-label="Text size">
-              <button aria-label="Smaller" onClick={() => patchDraft({ size: Math.max(8, textEdit.style.size - 2) })}>
-                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 12h12" /></svg>
+              <button
+                aria-label="Smaller"
+                onClick={() =>
+                  patchDraft({ size: Math.max(8, textEdit.style.size - 2) })
+                }
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M6 12h12" />
+                </svg>
               </button>
               <span>{textEdit.style.size}</span>
-              <button aria-label="Larger" onClick={() => patchDraft({ size: Math.min(120, textEdit.style.size + 2) })}>
-                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 12h12M12 6v12" /></svg>
+              <button
+                aria-label="Larger"
+                onClick={() =>
+                  patchDraft({ size: Math.min(120, textEdit.style.size + 2) })
+                }
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M6 12h12M12 6v12" />
+                </svg>
               </button>
             </div>
             <span className="fmt-divider" />
-            <button className={`fmt${textEdit.style.bold ? ' on' : ''}`} aria-label="Bold" onClick={() => patchDraft({ bold: !textEdit.style.bold })}>
+            <button
+              className={`fmt${textEdit.style.bold ? " on" : ""}`}
+              aria-label="Bold"
+              onClick={() => patchDraft({ bold: !textEdit.style.bold })}
+            >
               <b>B</b>
             </button>
-            <button className={`fmt${textEdit.style.italic ? ' on' : ''}`} aria-label="Italic" onClick={() => patchDraft({ italic: !textEdit.style.italic })}>
+            <button
+              className={`fmt${textEdit.style.italic ? " on" : ""}`}
+              aria-label="Italic"
+              onClick={() => patchDraft({ italic: !textEdit.style.italic })}
+            >
               <i>I</i>
             </button>
             <button
-              className={`fmt${textEdit.style.underline ? ' on' : ''}`}
+              className={`fmt${textEdit.style.underline ? " on" : ""}`}
               aria-label="Underline"
-              onClick={() => patchDraft({ underline: !textEdit.style.underline })}
+              onClick={() =>
+                patchDraft({ underline: !textEdit.style.underline })
+              }
             >
               <u>U</u>
             </button>
             <span className="fmt-divider" />
-            {(['left', 'center', 'right'] as const).map((a) => (
-              <button key={a} className={`fmt${textEdit.style.align === a ? ' on' : ''}`} aria-label={`Align ${a}`} onClick={() => patchDraft({ align: a })}>
+            {(["left", "center", "right"] as const).map((a) => (
+              <button
+                key={a}
+                className={`fmt${textEdit.style.align === a ? " on" : ""}`}
+                aria-label={`Align ${a}`}
+                onClick={() => patchDraft({ align: a })}
+              >
                 <svg viewBox="0 0 24 24" aria-hidden="true">
-                  <path d={a === 'left' ? 'M4 6h16M4 10h10M4 14h16M4 18h10' : a === 'center' ? 'M4 6h16M7 10h10M4 14h16M7 18h10' : 'M4 6h16M10 10h10M4 14h16M10 18h10'} />
+                  <path
+                    d={
+                      a === "left"
+                        ? "M4 6h16M4 10h10M4 14h16M4 18h10"
+                        : a === "center"
+                          ? "M4 6h16M7 10h10M4 14h16M7 18h10"
+                          : "M4 6h16M10 10h10M4 14h16M10 18h10"
+                    }
+                  />
                 </svg>
               </button>
             ))}
@@ -2921,22 +3909,41 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
             {PEN_COLORS.slice(0, 6).map((c) => (
               <button
                 key={c}
-                className={`fmt-color${textEdit.color === c ? ' on' : ''}`}
+                className={`fmt-color${textEdit.color === c ? " on" : ""}`}
                 style={{ background: c }}
                 aria-label={`Text colour ${c}`}
                 onClick={() => patchDraft({ color: c })}
               />
             ))}
             <label className="fmt-color custom" aria-label="Custom text colour">
-              <input type="color" value={textEdit.color} onChange={(e) => patchDraft({ color: e.target.value })} />
+              <input
+                type="color"
+                value={textEdit.color}
+                onChange={(e) => patchDraft({ color: e.target.value })}
+              />
             </label>
             <button
-              className={`fmt${textEdit.style.background ? ' on' : ''}`}
+              className={`fmt${textEdit.style.background ? " on" : ""}`}
               aria-label="Highlight behind text"
               title="Background"
-              onClick={() => patchDraft({ background: textEdit.style.background ? null : '#fff3b0' })}
+              onClick={() =>
+                patchDraft({
+                  background: textEdit.style.background ? null : "#fff3b0",
+                })
+              }
             >
-              <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="14" rx="2.5" fill="currentColor" fillOpacity="0.18" /><path d="M8 15.5 12 8l4 7.5M9.5 13h5" /></svg>
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <rect
+                  x="3.5"
+                  y="5"
+                  width="17"
+                  height="14"
+                  rx="2.5"
+                  fill="currentColor"
+                  fillOpacity="0.18"
+                />
+                <path d="M8 15.5 12 8l4 7.5M9.5 13h5" />
+              </svg>
             </button>
             <button className="fmt done" onClick={() => commitText()}>
               Done
@@ -2948,14 +3955,14 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
           className="textbox-input"
           aria-label="Text"
           spellCheck
-          value={textEdit?.content ?? ''}
-          placeholder={textEdit ? 'Type here' : undefined}
+          value={textEdit?.content ?? ""}
+          placeholder={textEdit ? "Type here" : undefined}
           onChange={(e) => {
             const content = e.target.value;
             setTextEdit((d) => (d ? { ...d, content } : d));
           }}
           onKeyDown={(e) => {
-            if (e.key === 'Escape') commitText();
+            if (e.key === "Escape") commitText();
           }}
           style={
             textEdit
@@ -2963,13 +3970,17 @@ export function InkPage({ page, scale, settings, scroller, onChange, onHoverHold
                   fontFamily: TEXT_FONTS[textEdit.style.font].css,
                   fontSize: textEdit.style.size * textEdit.factor * scale,
                   fontWeight: textEdit.style.bold ? 700 : 400,
-                  fontStyle: textEdit.style.italic ? 'italic' : 'normal',
+                  fontStyle: textEdit.style.italic ? "italic" : "normal",
                   color: displayColor(textEdit.color),
                   textAlign: textEdit.style.align,
-                  textDecoration: textEdit.style.underline ? 'underline' : undefined,
+                  textDecoration: textEdit.style.underline
+                    ? "underline"
+                    : undefined,
                   padding: `${Math.max(2, textEdit.style.size * 0.3) * textEdit.factor * scale}px`,
                   lineHeight: 1.3,
-                  background: textEdit.style.background ? displayColor(textEdit.style.background) : undefined,
+                  background: textEdit.style.background
+                    ? displayColor(textEdit.style.background)
+                    : undefined,
                 }
               : undefined
           }
